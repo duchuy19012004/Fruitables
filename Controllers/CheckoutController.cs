@@ -55,6 +55,8 @@ public class CheckoutController : Controller
         List<AddressViewModel> addressViewModels = new();
         int? defaultAddressId = null;
         string? defaultCommune = null;
+        int? defaultGhnDistrictId = null;
+        string? defaultGhnWardCode = null;
         
         if (userId.HasValue)
         {
@@ -77,11 +79,23 @@ public class CheckoutController : Controller
             {
                 defaultAddressId = defaultAddress.Id;
                 defaultCommune = defaultAddress.CommuneName;
+                defaultGhnDistrictId = defaultAddress.GhnDistrictId;
+                defaultGhnWardCode = defaultAddress.GhnWardCode;
             }
         }
         
         // Load cart, tính phí ship theo commune (xã) mặc định
         var cart = await _cartService.GetCartAsync(sessionId, defaultCommune);
+        if (defaultGhnDistrictId.HasValue && !string.IsNullOrWhiteSpace(defaultGhnWardCode))
+        {
+            var shippingInfo = await _shippingService.CalculateShippingAsync(
+                cart.Subtotal,
+                defaultCommune ?? string.Empty,
+                defaultGhnDistrictId,
+                defaultGhnWardCode);
+
+            ApplyShipping(cart, shippingInfo);
+        }
 
         // Giỏ hàng rỗng → redirect về cart
         if (!cart.Items.Any())
@@ -142,10 +156,14 @@ public class CheckoutController : Controller
         
         // Lấy commune từ địa chỉ đã chọn hoặc từ form
         string? district = null;
+        int? ghnDistrictId = null;
+        string? ghnWardCode = null;
         if (model.SelectedAddressId.HasValue)
         {
             var selectedAddress = await _unitOfWork.Addresses.GetByIdAsync(model.SelectedAddressId.Value);
             district = selectedAddress?.CommuneName;
+            ghnDistrictId = selectedAddress?.GhnDistrictId;
+            ghnWardCode = selectedAddress?.GhnWardCode;
         }
         
         var cart = await _cartService.GetCartAsync(sessionId, district);
@@ -192,7 +210,11 @@ public class CheckoutController : Controller
         
         if (!snapshotShippingFee.HasValue)
         {
-            var shippingInfo = await _shippingService.CalculateShippingAsync(cart.Subtotal, district ?? string.Empty);
+            var shippingInfo = await _shippingService.CalculateShippingAsync(
+                cart.Subtotal,
+                district ?? string.Empty,
+                ghnDistrictId,
+                ghnWardCode);
             snapshotShippingFee = shippingInfo.ShippingFee;
             snapshotZone = shippingInfo.Zone;
         }
@@ -312,6 +334,13 @@ public class CheckoutController : Controller
         return null;
     }
     
+    private static void ApplyShipping(CartViewModel cart, ShippingInfo shippingInfo)
+    {
+        cart.ShippingInfo = shippingInfo;
+        cart.ShippingFee = shippingInfo.ShippingFee;
+        cart.Total = cart.Subtotal + cart.ShippingFee - cart.Discount;
+    }
+
     // Xóa snapshot khỏi session sau khi đặt hàng
     private void ClearShippingSnapshot()
     {
