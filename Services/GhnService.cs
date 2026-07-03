@@ -99,18 +99,19 @@ public class GhnService : IGhnService
         if (districts?.Code != 200)
             return null;
 
+        var matches = new List<GhnAddressCode>();
         foreach (var district in districts?.Data ?? Enumerable.Empty<GhnDistrict>())
         {
             var wards = await PostAsync<GhnListResponse<GhnWard>>($"master-data/ward?district_id={district.DistrictId}", new { district_id = district.DistrictId }, cancellationToken);
             if (wards?.Code != 200)
                 continue;
 
-            var ward = wards?.Data.FirstOrDefault(w => SameName(w.WardName, wardOrCommuneName));
-            if (ward != null)
-                return new GhnAddressCode(district.DistrictId, ward.WardCode);
+            matches.AddRange(wards.Data
+                .Where(w => SameName(w.WardName, wardOrCommuneName))
+                .Select(w => new GhnAddressCode(district.DistrictId, w.WardCode)));
         }
 
-        return null;
+        return matches.Count == 1 ? matches[0] : null;
     }
 
     private async Task<T?> GetAsync<T>(string uri, CancellationToken cancellationToken)

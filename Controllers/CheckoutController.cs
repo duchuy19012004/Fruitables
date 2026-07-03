@@ -204,27 +204,13 @@ public class CheckoutController : Controller
             return View("Index", model);
         }
 
-        // Lấy phí ship từ snapshot (đã lưu lúc vào checkout), fallback tính lại nếu không có
-        var snapshotShippingFee = GetShippingFeeFromSnapshot();
-        var snapshotZone = GetShippingZoneFromSnapshot();
-        
-        if (!snapshotShippingFee.HasValue)
-        {
-            var shippingInfo = await _shippingService.CalculateShippingAsync(
-                cart.Subtotal,
-                district ?? string.Empty,
-                ghnDistrictId,
-                ghnWardCode);
-            snapshotShippingFee = shippingInfo.ShippingFee;
-            snapshotZone = shippingInfo.Zone;
-        }
-        
-        // Gán snapshot vào cart model trước khi tạo order
-        ApplyShipping(cart, new ShippingInfo
-        {
-            ShippingFee = snapshotShippingFee.Value,
-            Zone = snapshotZone ?? ShippingZone.Zone3_Remote
-        });
+        // Recalculate from the submitted address so an old snapshot cannot price a different address.
+        var shippingInfo = await _shippingService.CalculateShippingAsync(
+            cart.Subtotal,
+            district ?? string.Empty,
+            ghnDistrictId,
+            ghnWardCode);
+        ApplyShipping(cart, shippingInfo);
         model.Cart = cart;
 
         try

@@ -95,6 +95,21 @@ public class GhnServiceTests
         Assert.Null(addressCode);
     }
 
+    [Fact]
+    public async Task ResolveAddressAsync_ReturnsNull_WhenWardNameMatchesMultipleDistricts()
+    {
+        var handler = new StubHttpMessageHandler(
+            ("""{"code":200,"data":[{"ProvinceID":201,"ProvinceName":"Ha Noi"}]}""", HttpStatusCode.OK),
+            ("""{"code":200,"data":[{"DistrictID":1442,"DistrictName":"Quan Ba Dinh"},{"DistrictID":1443,"DistrictName":"Quan Hoan Kiem"}]}""", HttpStatusCode.OK),
+            ("""{"code":200,"data":[{"WardCode":"20101","WardName":"Phuong Phuc Xa"}]}""", HttpStatusCode.OK),
+            ("""{"code":200,"data":[{"WardCode":"20102","WardName":"Phuong Phuc Xa"}]}""", HttpStatusCode.OK));
+        var service = CreateService(handler);
+
+        var addressCode = await service.ResolveAddressAsync("Ha Noi", "Phuc Xa");
+
+        Assert.Null(addressCode);
+    }
+
     private static GhnService CreateService(HttpMessageHandler handler, bool setBaseAddress = true, string? baseUrl = null)
     {
         var httpClient = new HttpClient(handler);
