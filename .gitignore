@@ -429,3 +429,4 @@ dotnet-tools.json
 test-results/
 skills-lock.json
 .agents/
+.worktrees/
