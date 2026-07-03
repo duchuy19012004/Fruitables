@@ -24,6 +24,8 @@ public class GhnService : IGhnService
         _httpClient = httpClient;
         _options = options.Value;
         _logger = logger;
+        if (_httpClient.BaseAddress == null && !string.IsNullOrWhiteSpace(_options.BaseUrl))
+            _httpClient.BaseAddress = new Uri(_options.BaseUrl);
     }
 
     public async Task<decimal?> CalculateFeeAsync(
@@ -92,7 +94,7 @@ public class GhnService : IGhnService
         var districts = await PostAsync<GhnListResponse<GhnDistrict>>("master-data/district", new { province_id = province.ProvinceId }, cancellationToken);
         foreach (var district in districts?.Data ?? Enumerable.Empty<GhnDistrict>())
         {
-            var wards = await PostAsync<GhnListResponse<GhnWard>>("master-data/ward?district_id", new { district_id = district.DistrictId }, cancellationToken);
+            var wards = await PostAsync<GhnListResponse<GhnWard>>($"master-data/ward?district_id={district.DistrictId}", new { district_id = district.DistrictId }, cancellationToken);
             var ward = wards?.Data.FirstOrDefault(w => SameName(w.WardName, wardOrCommuneName));
             if (ward != null)
                 return new GhnAddressCode(district.DistrictId, ward.WardCode);

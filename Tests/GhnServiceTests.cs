@@ -40,12 +40,25 @@ public class GhnServiceTests
         Assert.Null(fee);
     }
 
-    private static GhnService CreateService(HttpMessageHandler handler)
+    [Fact]
+    public async Task CalculateFeeAsync_UsesConfiguredBaseUrl_WhenClientHasNoBaseAddress()
     {
-        var httpClient = new HttpClient(handler)
-        {
-            BaseAddress = new Uri("https://dev-online-gateway.ghn.vn/shiip/public-api/")
-        };
+        var handler = new StubHttpMessageHandler("""{"code":200,"data":{"total":32000}}""", HttpStatusCode.OK);
+        var service = CreateService(handler, setBaseAddress: false);
+
+        var fee = await service.CalculateFeeAsync(1454, "21211", 1000, 20, 15, 10);
+
+        Assert.Equal(32000, fee);
+        Assert.Equal(
+            "https://dev-online-gateway.ghn.vn/shiip/public-api/v2/shipping-order/fee",
+            handler.LastRequest!.RequestUri!.ToString());
+    }
+
+    private static GhnService CreateService(HttpMessageHandler handler, bool setBaseAddress = true)
+    {
+        var httpClient = new HttpClient(handler);
+        if (setBaseAddress)
+            httpClient.BaseAddress = new Uri("https://dev-online-gateway.ghn.vn/shiip/public-api/");
 
         var options = Options.Create(new GhnOptions
         {
