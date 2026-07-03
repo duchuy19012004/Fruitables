@@ -56,6 +56,17 @@ public class GhnServiceTests
     }
 
     [Fact]
+    public async Task CalculateFeeAsync_ReturnsNull_WhenBaseUrlInvalidAndClientHasNoBaseAddress()
+    {
+        var handler = new StubHttpMessageHandler("""{"code":200,"data":{"total":32000}}""", HttpStatusCode.OK);
+        var service = CreateService(handler, setBaseAddress: false, baseUrl: "not a url");
+
+        var fee = await service.CalculateFeeAsync(1454, "21211", 1000, 20, 15, 10);
+
+        Assert.Null(fee);
+    }
+
+    [Fact]
     public async Task ResolveAddressAsync_ReturnsAddressCode_WhenGhnMasterDataMatches()
     {
         var handler = new StubHttpMessageHandler(
@@ -84,7 +95,7 @@ public class GhnServiceTests
         Assert.Null(addressCode);
     }
 
-    private static GhnService CreateService(HttpMessageHandler handler, bool setBaseAddress = true)
+    private static GhnService CreateService(HttpMessageHandler handler, bool setBaseAddress = true, string? baseUrl = null)
     {
         var httpClient = new HttpClient(handler);
         if (setBaseAddress)
@@ -92,7 +103,7 @@ public class GhnServiceTests
 
         var options = Options.Create(new GhnOptions
         {
-            BaseUrl = "https://dev-online-gateway.ghn.vn/shiip/public-api/",
+            BaseUrl = baseUrl ?? "https://dev-online-gateway.ghn.vn/shiip/public-api/",
             Token = "test-token",
             ShopId = 885,
             FromDistrictId = 1447,

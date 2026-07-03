@@ -25,8 +25,8 @@ public class GhnService : IGhnService
         _httpClient = httpClient;
         _options = options.Value;
         _logger = logger;
-        if (_httpClient.BaseAddress == null && !string.IsNullOrWhiteSpace(_options.BaseUrl))
-            _httpClient.BaseAddress = new Uri(_options.BaseUrl);
+        if (_httpClient.BaseAddress == null && Uri.TryCreate(_options.BaseUrl, UriKind.Absolute, out var uri))
+            _httpClient.BaseAddress = uri;
     }
 
     public async Task<decimal?> CalculateFeeAsync(
@@ -38,7 +38,7 @@ public class GhnService : IGhnService
         int height,
         CancellationToken cancellationToken = default)
     {
-        if (!_options.IsConfigured || toDistrictId <= 0 || string.IsNullOrWhiteSpace(toWardCode))
+        if (!_options.IsConfigured || _httpClient.BaseAddress == null || toDistrictId <= 0 || string.IsNullOrWhiteSpace(toWardCode))
             return null;
 
         var request = new HttpRequestMessage(HttpMethod.Post, "v2/shipping-order/fee")
@@ -84,7 +84,7 @@ public class GhnService : IGhnService
         string wardOrCommuneName,
         CancellationToken cancellationToken = default)
     {
-        if (!_options.IsConfigured || string.IsNullOrWhiteSpace(provinceName) || string.IsNullOrWhiteSpace(wardOrCommuneName))
+        if (!_options.IsConfigured || _httpClient.BaseAddress == null || string.IsNullOrWhiteSpace(provinceName) || string.IsNullOrWhiteSpace(wardOrCommuneName))
             return null;
 
         var provinces = await GetAsync<GhnListResponse<GhnProvince>>("master-data/province", cancellationToken);
