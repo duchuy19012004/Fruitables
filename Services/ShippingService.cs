@@ -75,24 +75,30 @@ public class ShippingService : IShippingService
     /// <inheritdoc/>
     /// <summary>
     /// Tính toán phí vận chuyển dựa trên tổng tiền hàng và quận/huyện.
-    /// Requirements 4.2, 4.3, 4.4: Tính phí theo zone và ngưỡng miễn phí
-    /// Requirements 5.1, 5.2, 5.3, 5.4: Hiển thị message phù hợp
+    /// Khi có mã GHN và kích thước gói hàng, gọi GHN để tính phí.
+    /// Nếu GHN thất bại hoặc thiếu thông tin, trả về 0 với thông báo lỗi
+    /// thay vì tính phí theo zone thủ công.
     /// </summary>
     public async Task<ShippingInfo> CalculateShippingAsync(
         decimal subtotal,
         string district,
         int? ghnDistrictId = null,
-        string? ghnWardCode = null)
+        string? ghnWardCode = null,
+        PackageSize? packageSize = null)
     {
-        if (subtotal > 0 && ghnDistrictId.HasValue && !string.IsNullOrWhiteSpace(ghnWardCode))
+        if (subtotal > 0
+            && packageSize != null
+            && packageSize.WeightGrams > 0
+            && ghnDistrictId.HasValue
+            && !string.IsNullOrWhiteSpace(ghnWardCode))
         {
             var ghnFee = await _ghnService.CalculateFeeAsync(
                 ghnDistrictId.Value,
                 ghnWardCode,
-                _ghnOptions.DefaultWeight,
-                _ghnOptions.DefaultLength,
-                _ghnOptions.DefaultWidth,
-                _ghnOptions.DefaultHeight);
+                packageSize.WeightGrams,
+                packageSize.Length,
+                packageSize.Width,
+                packageSize.Height);
 
             if (ghnFee.HasValue)
             {
@@ -105,67 +111,14 @@ public class ShippingService : IShippingService
             }
         }
 
-        var config = await GetShippingConfigAsync();
-        var zone = DetermineShippingZone(district, config);
-
-        return CalculateShippingInternal(subtotal, zone, config);
-    }
-
-    /// <summary>
-    /// Internal method to calculate shipping based on subtotal, zone, and config.
-    /// Implements Property 4, 5, and 6 from design document.
-    /// </summary>
-    private static ShippingInfo CalculateShippingInternal(decimal subtotal, ShippingZone zone, ShippingConfig config)
-    {
-        var result = new ShippingInfo
+        return new ShippingInfo
         {
-            Zone = zone,
-            IsFreeShipping = false,
-            IsReducedShipping = false,
-            AmountToFreeShipping = 0m,
-            Message = string.Empty
+            ShippingFee = 0m,
+            Zone = ShippingZone.Zone3_Remote,
+            Message = subtotal > 0
+                ? "Không thể tính phí vận chuyển GHN"
+                : string.Empty
         };
-
-        // Rule 1: If subtotal = 0, shipping = 0 (Requirements 4.4)
-        if (subtotal == 0)
-        {
-            result.ShippingFee = 0m;
-            return result;
-        }
-
-        // Rule 2: If threshold > 0 and subtotal >= threshold (Requirements 4.2, 4.3)
-        if (config.FreeShippingThreshold > 0 && subtotal >= config.FreeShippingThreshold)
-        {
-            if (zone == ShippingZone.Zone1_InnerCity || zone == ShippingZone.Zone2_OuterCity)
-            {
-                // Zone1 or Zone2: free shipping (Requirements 4.2)
-                result.ShippingFee = 0m;
-                result.IsFreeShipping = true;
-                result.Message = "Miễn phí vận chuyển"; // Requirements 5.2
-            }
-            else
-            {
-                // Zone3: reduced shipping (Requirements 4.2)
-                result.ShippingFee = config.ReducedFeeZone3;
-                result.IsReducedShipping = true;
-                result.Message = $"Phí vận chuyển giảm còn {config.ReducedFeeZone3:N0} đ (đơn hàng đạt ngưỡng)"; // Requirements 5.3
-            }
-        }
-        else
-        {
-            // Rule 3: Otherwise, shipping = feeByZone (Requirements 4.3)
-            result.ShippingFee = GetFeeForZone(config, zone);
-            
-            // Calculate amount to free shipping and set message (Requirements 5.1)
-            if (config.FreeShippingThreshold > 0)
-            {
-                result.AmountToFreeShipping = config.FreeShippingThreshold - subtotal;
-                result.Message = $"Mua thêm {result.AmountToFreeShipping:N0} đ để được miễn phí vận chuyển";
-            }
-            // If threshold = 0, no message about free shipping (Requirements 5.4)
-        }
-
-        return result;
     }
 
     /// <inheritdoc/>
@@ -266,17 +219,4 @@ public class ShippingService : IShippingService
         return ValidateShippingFee(fee);
     }
 
-    /// <summary>
-    /// Gets the shipping fee for a specific zone from config
-    /// </summary>
-    private static decimal GetFeeForZone(ShippingConfig config, ShippingZone zone)
-    {
-        return zone switch
-        {
-            ShippingZone.Zone1_InnerCity => config.FeeZone1,
-            ShippingZone.Zone2_OuterCity => config.FeeZone2,
-            ShippingZone.Zone3_Remote => config.FeeZone3,
-            _ => config.FeeZone3 // Default to Zone3 fee
-        };
-    }
 }

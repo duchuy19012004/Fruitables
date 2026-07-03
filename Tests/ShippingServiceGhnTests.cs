@@ -15,14 +15,15 @@ public class ShippingServiceGhnTests
     {
         var settings = CreateSettingsService();
         var ghn = new Mock<IGhnService>();
+        var packageSize = ShippingPackageCalculator.Calculate(3);
 
         ghn.Setup(service => service.CalculateFeeAsync(
                 1442,
                 "20101",
-                1000,
-                20,
-                15,
-                10,
+                packageSize.WeightGrams,
+                packageSize.Length,
+                packageSize.Width,
+                packageSize.Height,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(32000m);
 
@@ -32,25 +33,32 @@ public class ShippingServiceGhnTests
             ghn.Object,
             CreateOptions());
 
-        var result = await service.CalculateShippingAsync(100000m, "Phuong Ben Nghe", 1442, "20101");
+        var result = await service.CalculateShippingAsync(
+            100000m,
+            "Phuong Ben Nghe",
+            1442,
+            "20101",
+            packageSize);
 
         Assert.Equal(32000m, result.ShippingFee);
+        Assert.Equal(ShippingZone.Zone3_Remote, result.Zone);
         Assert.Equal("Phi van chuyen GHN", result.Message);
     }
 
     [Fact]
-    public async Task CalculateShippingAsync_FallsBack_WhenGhnReturnsNull()
+    public async Task CalculateShippingAsync_ReturnsFailure_WhenGhnReturnsNull()
     {
         var settings = CreateSettingsService();
         var ghn = new Mock<IGhnService>();
+        var packageSize = ShippingPackageCalculator.Calculate(3);
 
         ghn.Setup(service => service.CalculateFeeAsync(
                 1442,
                 "20101",
-                1000,
-                20,
-                15,
-                10,
+                packageSize.WeightGrams,
+                packageSize.Length,
+                packageSize.Width,
+                packageSize.Height,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync((decimal?)null);
 
@@ -60,10 +68,80 @@ public class ShippingServiceGhnTests
             ghn.Object,
             CreateOptions());
 
-        var result = await service.CalculateShippingAsync(100000m, "Unknown", 1442, "20101");
+        var result = await service.CalculateShippingAsync(
+            100000m,
+            "Unknown",
+            1442,
+            "20101",
+            packageSize);
 
-        Assert.Equal(50000m, result.ShippingFee);
+        Assert.Equal(0m, result.ShippingFee);
         Assert.Equal(ShippingZone.Zone3_Remote, result.Zone);
+        Assert.Equal("Không thể tính phí vận chuyển GHN", result.Message);
+    }
+
+    [Fact]
+    public async Task CalculateShippingAsync_DoesNotCallGhn_WhenPackageMissing()
+    {
+        var settings = CreateSettingsService();
+        var ghn = new Mock<IGhnService>();
+        var service = new ShippingService(
+            settings.Object,
+            NullLogger<ShippingService>.Instance,
+            ghn.Object,
+            CreateOptions());
+
+        var result = await service.CalculateShippingAsync(
+            100000m,
+            "Phuong Ben Nghe",
+            1442,
+            "20101");
+
+        Assert.Equal(0m, result.ShippingFee);
+        Assert.Equal(ShippingZone.Zone3_Remote, result.Zone);
+        Assert.Equal("Không thể tính phí vận chuyển GHN", result.Message);
+        ghn.Verify(service => service.CalculateFeeAsync(
+                It.IsAny<int>(),
+                It.IsAny<string>(),
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task CalculateShippingAsync_ReturnsEmptyMessage_WhenSubtotalIsZero()
+    {
+        var settings = CreateSettingsService();
+        var ghn = new Mock<IGhnService>();
+        var packageSize = ShippingPackageCalculator.Calculate(3);
+        var service = new ShippingService(
+            settings.Object,
+            NullLogger<ShippingService>.Instance,
+            ghn.Object,
+            CreateOptions());
+
+        var result = await service.CalculateShippingAsync(
+            0m,
+            "Phuong Ben Nghe",
+            1442,
+            "20101",
+            packageSize);
+
+        Assert.Equal(0m, result.ShippingFee);
+        Assert.Equal(ShippingZone.Zone3_Remote, result.Zone);
+        Assert.Equal(string.Empty, result.Message);
+        ghn.Verify(service => service.CalculateFeeAsync(
+                It.IsAny<int>(),
+                It.IsAny<string>(),
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     private static Mock<ISettingsService> CreateSettingsService()
