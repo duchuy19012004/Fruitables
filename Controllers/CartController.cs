@@ -125,6 +125,7 @@ public class CartController : Controller
     // POST: Tính phí vận chuyển bằng AJAX — dùng ShippingService tính theo mã GHN
     // và kích thước gói hàng được suy ra từ giỏ hàng trong session.
     [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> CalculateShippingAjax([FromBody] CalculateShippingRequest request)
     {
         var sessionId = GetSessionId();

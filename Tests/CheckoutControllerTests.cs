@@ -200,6 +200,116 @@ public class CheckoutControllerTests
                 packageSize),
             Times.Once);
     }
+
+    [Fact]
+    public async Task PlaceOrder_WhenCreateOrderThrows_ReloadsSavedAddresses_WithGhnCodes()
+    {
+        var options = CreateInMemoryOptions();
+        using var context = new ApplicationDbContext(options);
+
+        context.Addresses.Add(new Address
+        {
+            Id = 1,
+            UserId = 1,
+            FullName = "Nguyen Van A",
+            Phone = "0901234567",
+            ProvinceCode = "79",
+            ProvinceName = "TP Ho Chi Minh",
+            CommuneCode = "26734",
+            CommuneName = "Phuong Ben Nghe",
+            StreetAddress = "123 Le Loi",
+            IsDefault = true,
+            GhnDistrictId = 1442,
+            GhnWardCode = "20101"
+        });
+        await context.SaveChangesAsync();
+
+        var cartService = new Mock<ICartService>();
+        var orderService = new Mock<IOrderService>();
+        var addressService = new Mock<IAddressService>();
+        var unitOfWork = new UnitOfWork(context);
+        var vietnamAddressService = new Mock<IVietnamAddressService>();
+        var shippingService = new Mock<IShippingService>();
+        var logger = new Mock<ILogger<CheckoutController>>();
+
+        var packageSize = ShippingPackageCalculator.Calculate(4);
+        var cart = new CartViewModel
+        {
+            Items = new List<CartItemViewModel>
+            {
+                new CartItemViewModel { ProductId = 1, ProductName = "Apple", Price = 10000, Quantity = 4 }
+            },
+            Subtotal = 40000,
+            PackageSize = packageSize
+        };
+
+        cartService.Setup(service => service.GetCartAsync(It.IsAny<string>(), It.IsAny<string?>()))
+            .ReturnsAsync(cart);
+
+        addressService.Setup(service => service.GetUserAddressesAsync(1))
+            .ReturnsAsync(new List<Address>
+            {
+                new Address
+                {
+                    Id = 1,
+                    UserId = 1,
+                    FullName = "Nguyen Van A",
+                    Phone = "0901234567",
+                    ProvinceCode = "79",
+                    ProvinceName = "TP Ho Chi Minh",
+                    CommuneCode = "26734",
+                    CommuneName = "Phuong Ben Nghe",
+                    StreetAddress = "123 Le Loi",
+                    IsDefault = true,
+                    GhnDistrictId = 1442,
+                    GhnWardCode = "20101"
+                }
+            });
+
+        shippingService.Setup(service => service.CalculateShippingAsync(
+                It.Is<decimal>(s => s == 40000m),
+                It.Is<string>(d => d == "Phuong Ben Nghe"),
+                It.Is<int?>(id => id == 1442),
+                It.Is<string?>(w => w == "20101"),
+                It.Is<PackageSize?>(ps => ps != null && ps.WeightGrams == packageSize.WeightGrams)))
+            .ReturnsAsync(new ShippingInfo { ShippingFee = 32000m, Zone = ShippingZone.Zone3_Remote });
+
+        orderService.Setup(service => service.CreateOrderAsync(It.IsAny<CheckoutViewModel>(), "session-3", 1))
+            .ThrowsAsync(new InvalidOperationException("Insufficient inventory"));
+
+        var httpContext = TestControllerContext.WithUserId(1).HttpContext;
+        httpContext.Session = new TestSession();
+        httpContext.Session.SetString("SessionId", "session-3");
+
+        var controller = new CheckoutController(
+            cartService.Object,
+            orderService.Object,
+            addressService.Object,
+            unitOfWork,
+            vietnamAddressService.Object,
+            shippingService.Object,
+            logger.Object)
+        {
+            ControllerContext = new ControllerContext { HttpContext = httpContext },
+            TempData = new TempDataDictionary(new DefaultHttpContext(), Mock.Of<ITempDataProvider>())
+        };
+
+        var model = new CheckoutViewModel
+        {
+            SelectedAddressId = 1,
+            PaymentMethod = PaymentMethod.COD
+        };
+
+        var result = await controller.PlaceOrder(model);
+
+        var viewResult = Assert.IsType<ViewResult>(result);
+        Assert.Equal("Index", viewResult.ViewName);
+        var savedAddresses = Assert.IsAssignableFrom<IList<AddressViewModel>>(controller.ViewBag.SavedAddresses);
+        var reloadedAddress = Assert.Single(savedAddresses);
+        Assert.Equal(1442, reloadedAddress.GhnDistrictId);
+        Assert.Equal("20101", reloadedAddress.GhnWardCode);
+        Assert.Equal("Phuong Ben Nghe", reloadedAddress.CommuneName);
+    }
 }
 
 internal class TestSession : ISession
