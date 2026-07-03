@@ -20,7 +20,11 @@ public interface IShippingService
     /// <param name="subtotal">Tổng tiền hàng</param>
     /// <param name="district">Tên quận/huyện giao hàng</param>
     /// <returns>Thông tin phí vận chuyển đầy đủ</returns>
-    Task<ShippingInfo> CalculateShippingAsync(decimal subtotal, string district);
+    Task<ShippingInfo> CalculateShippingAsync(
+        decimal subtotal,
+        string district,
+        int? ghnDistrictId = null,
+        string? ghnWardCode = null);
 
     /// <summary>
     /// Lấy cấu hình phí vận chuyển hiện tại

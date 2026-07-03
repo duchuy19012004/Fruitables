@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Fruitables.Constants;
 using Fruitables.Models;
 using Fruitables.Services.Interfaces;
@@ -13,11 +14,19 @@ public class ShippingService : IShippingService
 {
     private readonly ISettingsService _settingsService;
     private readonly ILogger<ShippingService> _logger;
+    private readonly IGhnService _ghnService;
+    private readonly GhnOptions _ghnOptions;
 
-    public ShippingService(ISettingsService settingsService, ILogger<ShippingService> logger)
+    public ShippingService(
+        ISettingsService settingsService,
+        ILogger<ShippingService> logger,
+        IGhnService ghnService,
+        IOptions<GhnOptions> ghnOptions)
     {
         _settingsService = settingsService;
         _logger = logger;
+        _ghnService = ghnService;
+        _ghnOptions = ghnOptions.Value;
     }
 
     /// <inheritdoc/>
@@ -69,11 +78,36 @@ public class ShippingService : IShippingService
     /// Requirements 4.2, 4.3, 4.4: Tính phí theo zone và ngưỡng miễn phí
     /// Requirements 5.1, 5.2, 5.3, 5.4: Hiển thị message phù hợp
     /// </summary>
-    public async Task<ShippingInfo> CalculateShippingAsync(decimal subtotal, string district)
+    public async Task<ShippingInfo> CalculateShippingAsync(
+        decimal subtotal,
+        string district,
+        int? ghnDistrictId = null,
+        string? ghnWardCode = null)
     {
+        if (subtotal > 0 && ghnDistrictId.HasValue && !string.IsNullOrWhiteSpace(ghnWardCode))
+        {
+            var ghnFee = await _ghnService.CalculateFeeAsync(
+                ghnDistrictId.Value,
+                ghnWardCode,
+                _ghnOptions.DefaultWeight,
+                _ghnOptions.DefaultLength,
+                _ghnOptions.DefaultWidth,
+                _ghnOptions.DefaultHeight);
+
+            if (ghnFee.HasValue)
+            {
+                return new ShippingInfo
+                {
+                    ShippingFee = ghnFee.Value,
+                    Zone = ShippingZone.Zone3_Remote,
+                    Message = "Phi van chuyen GHN"
+                };
+            }
+        }
+
         var config = await GetShippingConfigAsync();
-        var zone = await GetShippingZoneAsync(district);
-        
+        var zone = DetermineShippingZone(district, config);
+
         return CalculateShippingInternal(subtotal, zone, config);
     }
 
