@@ -220,13 +220,12 @@ public class CheckoutController : Controller
         }
         
         // Gán snapshot vào cart model trước khi tạo order
-        model.Cart = cart;
-        model.Cart.ShippingFee = snapshotShippingFee.Value;
-        if (model.Cart.ShippingInfo != null)
+        ApplyShipping(cart, new ShippingInfo
         {
-            model.Cart.ShippingInfo.ShippingFee = snapshotShippingFee.Value;
-            model.Cart.ShippingInfo.Zone = snapshotZone ?? ShippingZone.Zone3_Remote;
-        }
+            ShippingFee = snapshotShippingFee.Value,
+            Zone = snapshotZone ?? ShippingZone.Zone3_Remote
+        });
+        model.Cart = cart;
 
         try
         {
