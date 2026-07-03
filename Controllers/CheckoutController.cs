@@ -70,6 +70,8 @@ public class CheckoutController : Controller
                 ProvinceName = a.ProvinceName,
                 CommuneCode = a.CommuneCode,
                 CommuneName = a.CommuneName,
+                GhnDistrictId = a.GhnDistrictId,
+                GhnWardCode = a.GhnWardCode,
                 StreetAddress = a.StreetAddress,
                 IsDefault = a.IsDefault
             }).ToList();
@@ -197,6 +199,8 @@ public class CheckoutController : Controller
                     ProvinceName = a.ProvinceName,
                     CommuneCode = a.CommuneCode,
                     CommuneName = a.CommuneName,
+                    GhnDistrictId = a.GhnDistrictId,
+                    GhnWardCode = a.GhnWardCode,
                     StreetAddress = a.StreetAddress,
                     IsDefault = a.IsDefault
                 }).ToList();

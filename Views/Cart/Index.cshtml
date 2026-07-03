@@ -265,7 +265,7 @@
                                     <span class="text-slate-500 font-medium">Tạm tính:</span>
                                     <span class="font-bold text-slate-700" id="cart-subtotal">@Model.Subtotal.ToString("N0")đ</span>
                                 </div>
-                                <div class="flex justify-between items-center text-[13px]">
+                                <div id="shipping-row" class="flex justify-between items-center text-[13px]" style="@(Model.ShippingInfo != null ? "" : "display:none;")">
                                     <span class="text-slate-500 font-medium">Phí vận chuyển:</span>
                                     @if (Model.ShippingInfo != null)
                                     {
@@ -404,13 +404,21 @@
             document.getElementById('cart-subtotal').textContent = formatCurrency(data.subtotal);
             
             // Update shipping display
+            var shippingRow = document.getElementById('shipping-row');
             var shippingEl = document.getElementById('cart-shipping');
-            if (data.shippingInfo && data.shippingInfo.isFreeShipping) {
-                shippingEl.innerHTML = '<span class="material-icons-outlined text-sm text-green-500">check_circle</span> 0đ';
-                shippingEl.className = 'font-bold text-slate-700 flex items-center gap-1';
-            } else {
-                shippingEl.textContent = formatCurrency(data.shippingFee || 0);
-                shippingEl.className = 'font-bold text-slate-700';
+            if (shippingRow && shippingEl) {
+                if (data.shippingInfo) {
+                    shippingRow.style.display = '';
+                    if (data.shippingInfo.isFreeShipping) {
+                        shippingEl.innerHTML = '<span class="material-icons-outlined text-sm text-green-500">check_circle</span> 0đ';
+                        shippingEl.className = 'font-bold text-slate-700 flex items-center gap-1';
+                    } else {
+                        shippingEl.textContent = formatCurrency(data.shippingInfo.shippingFee || 0);
+                        shippingEl.className = 'font-bold text-slate-700';
+                    }
+                } else {
+                    shippingRow.style.display = 'none';
+                }
             }
             
             // Update shipping message

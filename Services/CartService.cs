@@ -48,12 +48,11 @@ public class CartService : ICartService
         var totalKg = cartViewModel.Items.Sum(i => i.Quantity);
         cartViewModel.PackageSize = ShippingPackageCalculator.Calculate(totalKg);
 
-        var shippingInfo = await _shippingService.CalculateShippingAsync(
-            cartViewModel.Subtotal,
-            district ?? string.Empty,
-            packageSize: cartViewModel.PackageSize);
-        cartViewModel.ShippingInfo = shippingInfo;
-        cartViewModel.ShippingFee  = shippingInfo.ShippingFee;
+        // Cart page loads without GHN address codes, so we cannot calculate a real
+        // shipping fee here. Leave ShippingInfo null and ShippingFee at zero;
+        // checkout (or AJAX callers) will compute shipping when GHN codes are known.
+        cartViewModel.ShippingInfo = null;
+        cartViewModel.ShippingFee  = 0m;
 
         cartViewModel.CouponCode = cart.CouponCode;
         cartViewModel.Discount   = cart.CouponDiscount;

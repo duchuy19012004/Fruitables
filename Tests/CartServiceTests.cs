@@ -80,16 +80,16 @@ public class CartServiceTests
         Assert.Equal(expectedLength, result.PackageSize.Length);
         Assert.Equal(expectedWidth, result.PackageSize.Width);
         Assert.Equal(expectedHeight, result.PackageSize.Height);
+        Assert.Null(result.ShippingInfo);
+        Assert.Equal(0m, result.ShippingFee);
 
         shippingServiceMock.Verify(service => service.CalculateShippingAsync(
             It.IsAny<decimal>(),
             It.IsAny<string>(),
             It.IsAny<int?>(),
             It.IsAny<string?>(),
-            It.Is<PackageSize?>(packageSize =>
-                packageSize != null &&
-                packageSize.WeightGrams == expectedWeightGrams)),
-            Times.Once);
+            It.IsAny<PackageSize?>()),
+            Times.Never);
     }
 
     [Fact]
@@ -122,6 +122,16 @@ public class CartServiceTests
         Assert.Equal(20, result.PackageSize.Length);
         Assert.Equal(15, result.PackageSize.Width);
         Assert.Equal(10, result.PackageSize.Height);
+        Assert.Null(result.ShippingInfo);
+        Assert.Equal(0m, result.ShippingFee);
+
+        shippingServiceMock.Verify(service => service.CalculateShippingAsync(
+            It.IsAny<decimal>(),
+            It.IsAny<string>(),
+            It.IsAny<int?>(),
+            It.IsAny<string?>(),
+            It.IsAny<PackageSize?>()),
+            Times.Never);
     }
 
     [Fact]
@@ -181,12 +191,15 @@ public class CartServiceTests
         var result = await cartService.GetCartAsync("multi-session");
 
         Assert.Equal(5000, result.PackageSize?.WeightGrams);
+        Assert.Null(result.ShippingInfo);
+        Assert.Equal(0m, result.ShippingFee);
+
         shippingServiceMock.Verify(service => service.CalculateShippingAsync(
             It.IsAny<decimal>(),
             It.IsAny<string>(),
             It.IsAny<int?>(),
             It.IsAny<string?>(),
-            It.Is<PackageSize?>(packageSize => packageSize != null && packageSize.WeightGrams == 5000)),
-            Times.Once);
+            It.IsAny<PackageSize?>()),
+            Times.Never);
     }
 }

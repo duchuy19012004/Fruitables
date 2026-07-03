@@ -125,6 +125,8 @@
                                             data-provincename="@addr.ProvinceName"
                                             data-communecode="@addr.CommuneCode"
                                             data-communename="@addr.CommuneName"
+                                            data-ghn-district-id="@addr.GhnDistrictId"
+                                            data-ghn-ward-code="@addr.GhnWardCode"
                                             data-streetaddress="@addr.StreetAddress"
                                             selected="@addr.IsDefault">
                                         @addr.DisplayText @(addr.IsDefault ? "(Mặc định)" : "")
@@ -476,6 +478,11 @@
                         $(this).next('.field-validation-error').removeClass('field-validation-error').addClass('field-validation-valid').text('');
                     });
                     
+                    // Recalculate shipping with the selected address's GHN codes
+                    var ghnDistrictId = selectedOption.data('ghn-district-id');
+                    var ghnWardCode = selectedOption.data('ghn-ward-code');
+                    recalculateShipping(ghnDistrictId, ghnWardCode, communeName);
+                    
                     console.log('Filled address fields:', {
                         fullName: fullName,
                         phone: phone,
@@ -818,6 +825,69 @@
                 summaryHtml += '</ul></div>';
                 
                 $('#addressFormSection').prepend(summaryHtml);
+            }
+
+            /**
+             * Recalculate shipping fee via AJAX using GHN district/ward codes.
+             */
+            function recalculateShipping(ghnDistrictId, ghnWardCode, districtName) {
+                if (!ghnDistrictId || !ghnWardCode) {
+                    updateCheckoutShippingUI({ shippingFee: 0, message: 'Không thể tính phí vận chuyển GHN', zone: 2 });
+                    return;
+                }
+
+                fetch('/Cart/CalculateShippingAjax', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'RequestVerificationToken': $('input[name="__RequestVerificationToken"]').val()
+                    },
+                    body: JSON.stringify({
+                        district: districtName || '',
+                        ghnDistrictId: ghnDistrictId,
+                        ghnWardCode: ghnWardCode
+                    })
+                })
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
+                    if (data.success && data.shippingInfo) {
+                        updateCheckoutShippingUI(data.shippingInfo);
+                    } else {
+                        updateCheckoutShippingUI({ shippingFee: 0, message: 'Không thể tính phí vận chuyển GHN', zone: 2 });
+                    }
+                })
+                .catch(function(error) {
+                    console.error('Shipping recalculation error:', error);
+                    updateCheckoutShippingUI({ shippingFee: 0, message: 'Không thể tính phí vận chuyển GHN', zone: 2 });
+                });
+            }
+
+            /**
+             * Update checkout shipping fee, message, and total display.
+             */
+            function updateCheckoutShippingUI(shippingInfo) {
+                var subtotalText = $('#checkout-subtotal-row span:last-child').text().replace(/[^\d]/g, '');
+                var subtotal = parseInt(subtotalText) || 0;
+                var shippingFee = shippingInfo.shippingFee || 0;
+                var discountText = $('#checkout-discount-amount').text().replace(/[^\d]/g, '');
+                var discount = parseInt(discountText) || 0;
+                var total = subtotal + shippingFee - discount;
+
+                var shippingContainer = $('#checkout-shipping-info');
+                var feeHtml = '';
+                if (shippingInfo.isFreeShipping) {
+                    feeHtml = '<span class="text-success fw-semibold" id="checkout-shipping-fee"><i class="fas fa-check-circle me-1"></i>Miễn phí</span>';
+                } else {
+                    feeHtml = '<span id="checkout-shipping-fee">' + shippingFee.toLocaleString('vi-VN') + 'đ</span>';
+                }
+
+                if (shippingInfo.message) {
+                    var messageClass = shippingInfo.isFreeShipping || shippingInfo.isReducedShipping ? 'text-success' : 'text-info';
+                    feeHtml += '<br /><small class="' + messageClass + '" id="checkout-shipping-message">' + shippingInfo.message + '</small>';
+                }
+
+                shippingContainer.html(feeHtml);
+                $('#totalAmount').text(total.toLocaleString('vi-VN') + 'đ');
             }
 
         });

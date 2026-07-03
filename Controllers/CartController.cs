@@ -122,7 +122,7 @@ public class CartController : Controller
         });
     }
     
-    // POST: Tính phí vận chuyển bằng AJAX — dùng ShippingService tính theo subtotal + quận/huyện
+    // POST: Tính phí vận chuyển bằng AJAX — dùng ShippingService tính theo mã GHN
     // và kích thước gói hàng được suy ra từ giỏ hàng trong session.
     [HttpPost]
     public async Task<IActionResult> CalculateShippingAjax([FromBody] CalculateShippingRequest request)
@@ -133,7 +133,9 @@ public class CartController : Controller
         var shippingInfo = await _shippingService.CalculateShippingAsync(
             cart.Subtotal,
             request.District ?? string.Empty,
-            packageSize: cart.PackageSize);
+            request.GhnDistrictId,
+            request.GhnWardCode,
+            cart.PackageSize);
 
         return Json(new
         {
@@ -166,8 +168,9 @@ public class CartController : Controller
     // Request DTO cho tính phí ship
     public class CalculateShippingRequest
     {
-        public decimal Subtotal { get; set; }
         public string? District { get; set; }
+        public int? GhnDistrictId { get; set; }
+        public string? GhnWardCode { get; set; }
     }
 
     // POST: Áp dụng mã giảm giá bằng AJAX — gọi cart service apply coupon, trả về giỏ hàng mới

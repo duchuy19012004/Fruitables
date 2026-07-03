@@ -153,6 +153,8 @@ public class UserManagementService : IUserManagementService
                 ProvinceName = a.ProvinceName,
                 CommuneCode = a.CommuneCode,
                 CommuneName = a.CommuneName,
+                GhnDistrictId = a.GhnDistrictId,
+                GhnWardCode = a.GhnWardCode,
                 StreetAddress = a.StreetAddress,
                 IsDefault = a.IsDefault
             }).ToList()
