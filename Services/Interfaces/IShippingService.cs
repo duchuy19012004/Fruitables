@@ -21,14 +21,14 @@ public interface IShippingService
     /// <param name="district">Tên quận/huyện giao hàng</param>
     /// <param name="ghnDistrictId">Mã quận/huyện GHN</param>
     /// <param name="ghnWardCode">Mã phường/xã GHN</param>
-    /// <param name="packageSize">Kích thước gói hàng dùng cho GHN</param>
+    /// <param name="package">Kích thước gói hàng dùng cho GHN</param>
     /// <returns>Thông tin phí vận chuyển đầy đủ</returns>
     Task<ShippingInfo> CalculateShippingAsync(
         decimal subtotal,
         string district,
         int? ghnDistrictId = null,
         string? ghnWardCode = null,
-        PackageSize? packageSize = null);
+        ShippingPackage? package = null);
 
     /// <summary>
     /// Lấy cấu hình phí vận chuyển hiện tại

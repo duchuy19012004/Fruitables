@@ -9,14 +9,12 @@ namespace Fruitables.Services;
 public class CartService : ICartService
 {
     private readonly IUnitOfWork _unitOfWork;
-    private readonly IShippingService _shippingService;
     private readonly ICouponService _couponService;
 
-    public CartService(IUnitOfWork unitOfWork, IShippingService shippingService, ICouponService couponService)
+    public CartService(IUnitOfWork unitOfWork, ICouponService couponService)
     {
-        _unitOfWork      = unitOfWork;
-        _shippingService = shippingService;
-        _couponService   = couponService;
+        _unitOfWork    = unitOfWork;
+        _couponService = couponService;
     }
 
     public async Task<CartViewModel> GetCartAsync(string sessionId, string? district = null)
@@ -44,9 +42,6 @@ public class CartService : ICartService
         };
 
         cartViewModel.Subtotal = cartViewModel.Items.Sum(i => i.Total);
-
-        var totalKg = cartViewModel.Items.Sum(i => i.Quantity);
-        cartViewModel.PackageSize = ShippingPackageCalculator.Calculate(totalKg);
 
         // Cart page loads without GHN address codes, so we cannot calculate a real
         // shipping fee here. Leave ShippingInfo null and ShippingFee at zero;

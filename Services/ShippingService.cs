@@ -1,6 +1,5 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Fruitables.Constants;
 using Fruitables.Models;
 using Fruitables.Services.Interfaces;
@@ -15,18 +14,15 @@ public class ShippingService : IShippingService
     private readonly ISettingsService _settingsService;
     private readonly ILogger<ShippingService> _logger;
     private readonly IGhnService _ghnService;
-    private readonly GhnOptions _ghnOptions;
 
     public ShippingService(
         ISettingsService settingsService,
         ILogger<ShippingService> logger,
-        IGhnService ghnService,
-        IOptions<GhnOptions> ghnOptions)
+        IGhnService ghnService)
     {
         _settingsService = settingsService;
         _logger = logger;
         _ghnService = ghnService;
-        _ghnOptions = ghnOptions.Value;
     }
 
     /// <inheritdoc/>
@@ -74,31 +70,31 @@ public class ShippingService : IShippingService
 
     /// <inheritdoc/>
     /// <summary>
-    /// Tính toán phí vận chuyển dựa trên tổng tiền hàng và quận/huyện.
-    /// Khi có mã GHN và kích thước gói hàng, gọi GHN để tính phí.
-    /// Nếu GHN thất bại hoặc thiếu thông tin, trả về 0 với thông báo lỗi
-    /// thay vì tính phí theo zone thủ công.
+    /// Tính toán phí vận chuyển GHN dựa trên tổng tiền hàng, mã địa chỉ GHN và gói hàng.
+    /// Khi có đủ thông tin (subtotal > 0, package hợp lệ, districtId và wardCode không rỗng),
+    /// gọi <see cref="IGhnService.CalculateFeeAsync"/> để tính phí và trả về phí GHN.
+    /// Nếu thiếu thông tin hoặc GHN trả về null, trả về phí 0 cùng thông báo lỗi GHN.
     /// </summary>
     public async Task<ShippingInfo> CalculateShippingAsync(
         decimal subtotal,
         string district,
         int? ghnDistrictId = null,
         string? ghnWardCode = null,
-        PackageSize? packageSize = null)
+        ShippingPackage? package = null)
     {
         if (subtotal > 0
-            && packageSize != null
-            && packageSize.WeightGrams > 0
+            && package != null
+            && package.Weight > 0
             && ghnDistrictId.HasValue
             && !string.IsNullOrWhiteSpace(ghnWardCode))
         {
             var ghnFee = await _ghnService.CalculateFeeAsync(
                 ghnDistrictId.Value,
                 ghnWardCode,
-                packageSize.WeightGrams,
-                packageSize.Length,
-                packageSize.Width,
-                packageSize.Height);
+                package.Weight,
+                package.Length,
+                package.Width,
+                package.Height);
 
             if (ghnFee.HasValue)
             {
@@ -106,7 +102,7 @@ public class ShippingService : IShippingService
                 {
                     ShippingFee = ghnFee.Value,
                     Zone = ShippingZone.Zone3_Remote,
-                    Message = "Phi van chuyen GHN"
+                    Message = "Phí vận chuyển GHN"
                 };
             }
         }
@@ -116,7 +112,7 @@ public class ShippingService : IShippingService
             ShippingFee = 0m,
             Zone = ShippingZone.Zone3_Remote,
             Message = subtotal > 0
-                ? "Không thể tính phí vận chuyển GHN"
+                ? "Không tính được phí vận chuyển GHN"
                 : string.Empty
         };
     }
@@ -218,5 +214,4 @@ public class ShippingService : IShippingService
 
         return ValidateShippingFee(fee);
     }
-
 }

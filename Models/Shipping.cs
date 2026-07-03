@@ -108,4 +108,20 @@ namespace Fruitables.Models
         /// </summary>
         public string Message { get; set; } = string.Empty;
     }
+
+    public sealed record ShippingPackage(int Weight, int Length, int Width, int Height)
+    {
+        public static ShippingPackage FromTotalKg(int totalKg)
+        {
+            var kg = Math.Max(0, totalKg);
+            var weight = kg * 1000;
+
+            return kg switch
+            {
+                <= 2 => new ShippingPackage(weight, 20, 15, 10),
+                <= 5 => new ShippingPackage(weight, 30, 20, 15),
+                _ => new ShippingPackage(weight, 40, 30, 20)
+            };
+        }
+    }
 }

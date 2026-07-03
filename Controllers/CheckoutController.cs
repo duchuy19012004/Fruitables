@@ -75,7 +75,7 @@ public class CheckoutController : Controller
                 StreetAddress = a.StreetAddress,
                 IsDefault = a.IsDefault
             }).ToList();
-            
+
             var defaultAddress = addresses.FirstOrDefault(a => a.IsDefault);
             if (defaultAddress != null)
             {
@@ -95,7 +95,7 @@ public class CheckoutController : Controller
                 defaultCommune ?? string.Empty,
                 defaultGhnDistrictId,
                 defaultGhnWardCode,
-                cart.PackageSize);
+                cart.ShippingPackage);
 
             ApplyShipping(cart, shippingInfo);
         }
@@ -209,7 +209,7 @@ public class CheckoutController : Controller
             {
                 ViewBag.SavedAddresses = new List<AddressViewModel>();
             }
-            
+
             ViewBag.CartCount = cart.Items.Sum(i => i.Quantity);
             ViewBag.Cart = cart;
             return View("Index", model);
@@ -221,7 +221,7 @@ public class CheckoutController : Controller
             district ?? string.Empty,
             ghnDistrictId,
             ghnWardCode,
-            cart.PackageSize);
+            cart.ShippingPackage);
         ApplyShipping(cart, shippingInfo);
         model.Cart = cart;
 
