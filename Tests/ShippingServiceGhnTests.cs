@@ -81,6 +81,59 @@ public class ShippingServiceGhnTests
     }
 
     [Fact]
+    public async Task CalculateShippingAsync_PassesDerivedPackageSize_InsteadOfDefaultGhnOptions()
+    {
+        var settings = CreateSettingsService();
+        var ghn = new Mock<IGhnService>();
+        // Deliberately choose a cart weight that produces dimensions different from
+        // the GHN default options (1000g, 20x15x10) to prove derived values are used.
+        var packageSize = ShippingPackageCalculator.Calculate(6);
+
+        ghn.Setup(service => service.CalculateFeeAsync(
+                1442,
+                "20101",
+                packageSize.WeightGrams,
+                packageSize.Length,
+                packageSize.Width,
+                packageSize.Height,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(45000m);
+
+        var service = new ShippingService(
+            settings.Object,
+            NullLogger<ShippingService>.Instance,
+            ghn.Object,
+            CreateOptions());
+
+        var result = await service.CalculateShippingAsync(
+            100000m,
+            "Phuong Ben Nghe",
+            1442,
+            "20101",
+            packageSize);
+
+        Assert.Equal(45000m, result.ShippingFee);
+        Assert.Equal(ShippingZone.Zone3_Remote, result.Zone);
+        Assert.Equal("Phi van chuyen GHN", result.Message);
+
+        ghn.Verify(service => service.CalculateFeeAsync(
+                1442,
+                "20101",
+                6000,
+                40,
+                30,
+                20,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        // Sanity check: the values passed to GHN are not the default option values.
+        Assert.NotEqual(1000, packageSize.WeightGrams);
+        Assert.NotEqual(20, packageSize.Length);
+        Assert.NotEqual(15, packageSize.Width);
+        Assert.NotEqual(10, packageSize.Height);
+    }
+
+    [Fact]
     public async Task CalculateShippingAsync_DoesNotCallGhn_WhenPackageMissing()
     {
         var settings = CreateSettingsService();
