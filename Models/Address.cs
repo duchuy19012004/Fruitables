@@ -29,6 +29,11 @@ public class Address
     [Required(ErrorMessage = "Vui lòng chọn Phường/Xã"), MaxLength(100)]
     public string CommuneName { get; set; } = string.Empty;
 
+    public int? GhnDistrictId { get; set; }
+
+    [MaxLength(20)]
+    public string? GhnWardCode { get; set; }
+
     [Required(ErrorMessage = "Vui lòng nhập số nhà, tên đường"), MaxLength(200)]
     public string StreetAddress { get; set; } = string.Empty;
 

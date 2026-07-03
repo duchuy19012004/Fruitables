@@ -74,6 +74,13 @@ public class ApplicationDbContext : DbContext
             .WithMany(t => t.Products)
             .UsingEntity(j => j.ToTable("ProductTagMapping"));
 
+        // Address
+        modelBuilder.Entity<Address>(entity =>
+        {
+            entity.Property(a => a.GhnWardCode)
+                  .HasMaxLength(20);
+        });
+
         // Cart - User (One-to-One)
         modelBuilder.Entity<Cart>(entity =>
         {
