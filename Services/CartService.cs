@@ -45,7 +45,13 @@ public class CartService : ICartService
 
         cartViewModel.Subtotal = cartViewModel.Items.Sum(i => i.Total);
 
-        var shippingInfo = await _shippingService.CalculateShippingAsync(cartViewModel.Subtotal, district ?? string.Empty);
+        var totalKg = cartViewModel.Items.Sum(i => i.Quantity);
+        cartViewModel.PackageSize = ShippingPackageCalculator.Calculate(totalKg);
+
+        var shippingInfo = await _shippingService.CalculateShippingAsync(
+            cartViewModel.Subtotal,
+            district ?? string.Empty,
+            packageSize: cartViewModel.PackageSize);
         cartViewModel.ShippingInfo = shippingInfo;
         cartViewModel.ShippingFee  = shippingInfo.ShippingFee;
 

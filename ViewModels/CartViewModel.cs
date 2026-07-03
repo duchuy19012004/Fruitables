@@ -13,6 +13,7 @@ public class CartViewModel
     public string? CouponMessage { get; set; }
     
     public ShippingInfo? ShippingInfo { get; set; }
+    public PackageSize? PackageSize { get; set; }
 }
 
 public class CartItemViewModel
