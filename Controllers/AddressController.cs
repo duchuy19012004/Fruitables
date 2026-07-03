@@ -14,16 +14,19 @@ public class AddressController : Controller
     private readonly IAddressService _addressService;
     private readonly IProfileService _profileService;
     private readonly IVietnamAddressService _vietnamAddressService;
+    private readonly IGhnService _ghnService;
 
-    // Inject 3 service: address CRUD, profile (lấy tên/điện thoại), address VN (sanitize + tra cứu)
+    // Inject 4 service: address CRUD, profile, address VN, GHN code lookup
     public AddressController(
         IAddressService addressService, 
         IProfileService profileService,
-        IVietnamAddressService vietnamAddressService)
+        IVietnamAddressService vietnamAddressService,
+        IGhnService ghnService)
     {
         _addressService = addressService;
         _profileService = profileService;
         _vietnamAddressService = vietnamAddressService;
+        _ghnService = ghnService;
     }
 
     // GET: Danh sách địa chỉ của user
@@ -81,6 +84,7 @@ public class AddressController : Controller
         {
             // Sanitize địa chỉ để chống XSS
             address.StreetAddress = _vietnamAddressService.SanitizeStreetAddress(address.StreetAddress);
+            await FillGhnCodesAsync(address);
             
             var setAsDefault = address.IsDefault;
             address.UserId = userId.Value;
@@ -160,6 +164,7 @@ public class AddressController : Controller
         {
             // Sanitize địa chỉ chống XSS
             address.StreetAddress = _vietnamAddressService.SanitizeStreetAddress(address.StreetAddress);
+            await FillGhnCodesAsync(address);
             
             var setAsDefault = address.IsDefault;
             address.UserId = userId.Value;
@@ -307,5 +312,12 @@ public class AddressController : Controller
             return userId;
         }
         return null;
+    }
+
+    private async Task FillGhnCodesAsync(Address address)
+    {
+        var code = await _ghnService.ResolveAddressAsync(address.ProvinceName, address.CommuneName);
+        address.GhnDistrictId = code?.DistrictId;
+        address.GhnWardCode = code?.WardCode;
     }
 }
