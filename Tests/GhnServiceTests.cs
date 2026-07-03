@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using Fruitables.Services;
+using Fruitables.Services.Interfaces;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -25,8 +26,8 @@ public class GhnServiceTests
         var fee = await service.CalculateFeeAsync(1454, "21211", 1000, 20, 15, 10);
 
         Assert.Equal(32000, fee);
-        Assert.Equal("Token", handler.LastRequest!.Headers.First(h => h.Key == "Token").Key);
-        Assert.Equal("ShopId", handler.LastRequest!.Headers.First(h => h.Key == "ShopId").Key);
+        Assert.Equal("test-token", handler.LastRequest!.Headers.GetValues("Token").Single());
+        Assert.Equal("885", handler.LastRequest!.Headers.GetValues("ShopId").Single());
     }
 
     [Fact]
@@ -54,6 +55,35 @@ public class GhnServiceTests
             handler.LastRequest!.RequestUri!.ToString());
     }
 
+    [Fact]
+    public async Task ResolveAddressAsync_ReturnsAddressCode_WhenGhnMasterDataMatches()
+    {
+        var handler = new StubHttpMessageHandler(
+            ("""{"code":200,"data":[{"ProvinceID":201,"ProvinceName":"Ha Noi"}]}""", HttpStatusCode.OK),
+            ("""{"code":200,"data":[{"DistrictID":1442,"DistrictName":"Quan Ba Dinh"}]}""", HttpStatusCode.OK),
+            ("""{"code":200,"data":[{"WardCode":"20101","WardName":"Phuong Phuc Xa"}]}""", HttpStatusCode.OK));
+        var service = CreateService(handler);
+
+        var addressCode = await service.ResolveAddressAsync("Ha Noi", "Phuc Xa");
+
+        Assert.Equal(new GhnAddressCode(1442, "20101"), addressCode);
+        Assert.Contains(handler.Requests, request => request.RequestUri!.ToString().Contains("district_id=1442"));
+    }
+
+    [Fact]
+    public async Task ResolveAddressAsync_ReturnsNull_WhenGhnMasterDataCodeFails()
+    {
+        var handler = new StubHttpMessageHandler(
+            ("""{"code":400,"data":[{"ProvinceID":201,"ProvinceName":"Ha Noi"}]}""", HttpStatusCode.OK),
+            ("""{"code":200,"data":[{"DistrictID":1442,"DistrictName":"Quan Ba Dinh"}]}""", HttpStatusCode.OK),
+            ("""{"code":200,"data":[{"WardCode":"20101","WardName":"Phuong Phuc Xa"}]}""", HttpStatusCode.OK));
+        var service = CreateService(handler);
+
+        var addressCode = await service.ResolveAddressAsync("Ha Noi", "Phuc Xa");
+
+        Assert.Null(addressCode);
+    }
+
     private static GhnService CreateService(HttpMessageHandler handler, bool setBaseAddress = true)
     {
         var httpClient = new HttpClient(handler);
@@ -79,23 +109,29 @@ public class GhnServiceTests
 
     private sealed class StubHttpMessageHandler : HttpMessageHandler
     {
-        private readonly string _json;
-        private readonly HttpStatusCode _statusCode;
+        private readonly Queue<(string Json, HttpStatusCode StatusCode)> _responses;
 
         public HttpRequestMessage? LastRequest { get; private set; }
+        public List<HttpRequestMessage> Requests { get; } = new();
 
         public StubHttpMessageHandler(string json, HttpStatusCode statusCode)
+            : this((json, statusCode))
         {
-            _json = json;
-            _statusCode = statusCode;
+        }
+
+        public StubHttpMessageHandler(params (string Json, HttpStatusCode StatusCode)[] responses)
+        {
+            _responses = new Queue<(string Json, HttpStatusCode StatusCode)>(responses);
         }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             LastRequest = request;
-            return Task.FromResult(new HttpResponseMessage(_statusCode)
+            Requests.Add(request);
+            var response = _responses.Dequeue();
+            return Task.FromResult(new HttpResponseMessage(response.StatusCode)
             {
-                Content = new StringContent(_json, Encoding.UTF8, "application/json")
+                Content = new StringContent(response.Json, Encoding.UTF8, "application/json")
             });
         }
     }

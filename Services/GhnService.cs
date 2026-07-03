@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Fruitables.Services.Interfaces;
 using Microsoft.Extensions.Options;
 
@@ -87,14 +88,23 @@ public class GhnService : IGhnService
             return null;
 
         var provinces = await GetAsync<GhnListResponse<GhnProvince>>("master-data/province", cancellationToken);
+        if (provinces?.Code != 200)
+            return null;
+
         var province = provinces?.Data.FirstOrDefault(p => SameName(p.ProvinceName, provinceName));
         if (province == null)
             return null;
 
         var districts = await PostAsync<GhnListResponse<GhnDistrict>>("master-data/district", new { province_id = province.ProvinceId }, cancellationToken);
+        if (districts?.Code != 200)
+            return null;
+
         foreach (var district in districts?.Data ?? Enumerable.Empty<GhnDistrict>())
         {
             var wards = await PostAsync<GhnListResponse<GhnWard>>($"master-data/ward?district_id={district.DistrictId}", new { district_id = district.DistrictId }, cancellationToken);
+            if (wards?.Code != 200)
+                continue;
+
             var ward = wards?.Data.FirstOrDefault(w => SameName(w.WardName, wardOrCommuneName));
             if (ward != null)
                 return new GhnAddressCode(district.DistrictId, ward.WardCode);
@@ -189,19 +199,28 @@ public class GhnService : IGhnService
 
     private sealed class GhnProvince
     {
+        [JsonPropertyName("ProvinceID")]
         public int ProvinceId { get; set; }
+
+        [JsonPropertyName("ProvinceName")]
         public string ProvinceName { get; set; } = string.Empty;
     }
 
     private sealed class GhnDistrict
     {
+        [JsonPropertyName("DistrictID")]
         public int DistrictId { get; set; }
+
+        [JsonPropertyName("DistrictName")]
         public string DistrictName { get; set; } = string.Empty;
     }
 
     private sealed class GhnWard
     {
+        [JsonPropertyName("WardCode")]
         public string WardCode { get; set; } = string.Empty;
+
+        [JsonPropertyName("WardName")]
         public string WardName { get; set; } = string.Empty;
     }
 }
