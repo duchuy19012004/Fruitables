@@ -82,17 +82,22 @@ public class ShippingService : IShippingService
         decimal subtotal,
         string district,
         int? ghnDistrictId = null,
-        string? ghnWardCode = null)
+        string? ghnWardCode = null,
+        ShippingPackage? package = null)
     {
-        if (subtotal > 0 && ghnDistrictId.HasValue && !string.IsNullOrWhiteSpace(ghnWardCode))
+        if (subtotal > 0
+            && package != null
+            && package.Weight > 0
+            && ghnDistrictId.HasValue
+            && !string.IsNullOrWhiteSpace(ghnWardCode))
         {
             var ghnFee = await _ghnService.CalculateFeeAsync(
                 ghnDistrictId.Value,
                 ghnWardCode,
-                _ghnOptions.DefaultWeight,
-                _ghnOptions.DefaultLength,
-                _ghnOptions.DefaultWidth,
-                _ghnOptions.DefaultHeight);
+                package.Weight,
+                package.Length,
+                package.Width,
+                package.Height);
 
             if (ghnFee.HasValue)
             {
@@ -105,10 +110,14 @@ public class ShippingService : IShippingService
             }
         }
 
-        var config = await GetShippingConfigAsync();
-        var zone = DetermineShippingZone(district, config);
-
-        return CalculateShippingInternal(subtotal, zone, config);
+        return new ShippingInfo
+        {
+            ShippingFee = 0m,
+            Zone = ShippingZone.Zone3_Remote,
+            Message = subtotal > 0
+                ? "Khong tinh duoc phi van chuyen GHN"
+                : string.Empty
+        };
     }
 
     /// <summary>

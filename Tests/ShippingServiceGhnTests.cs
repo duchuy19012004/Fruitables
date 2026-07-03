@@ -19,10 +19,10 @@ public class ShippingServiceGhnTests
         ghn.Setup(service => service.CalculateFeeAsync(
                 1442,
                 "20101",
-                1000,
+                3000,
+                30,
                 20,
                 15,
-                10,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(32000m);
 
@@ -32,10 +32,41 @@ public class ShippingServiceGhnTests
             ghn.Object,
             CreateOptions());
 
-        var result = await service.CalculateShippingAsync(100000m, "Phuong Ben Nghe", 1442, "20101");
+        var result = await service.CalculateShippingAsync(
+            100000m,
+            "Phuong Ben Nghe",
+            1442,
+            "20101",
+            ShippingPackage.FromTotalKg(3));
 
         Assert.Equal(32000m, result.ShippingFee);
         Assert.Equal("Phi van chuyen GHN", result.Message);
+    }
+
+    [Fact]
+    public async Task CalculateShippingAsync_DoesNotCallGhn_WhenPackageMissing()
+    {
+        var settings = CreateSettingsService();
+        var ghn = new Mock<IGhnService>();
+        var service = new ShippingService(
+            settings.Object,
+            NullLogger<ShippingService>.Instance,
+            ghn.Object,
+            CreateOptions());
+
+        var result = await service.CalculateShippingAsync(100000m, "Phuong Ben Nghe", 1442, "20101");
+
+        Assert.Equal(0m, result.ShippingFee);
+        Assert.Equal("Khong tinh duoc phi van chuyen GHN", result.Message);
+        ghn.Verify(service => service.CalculateFeeAsync(
+                It.IsAny<int>(),
+                It.IsAny<string>(),
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
@@ -47,10 +78,10 @@ public class ShippingServiceGhnTests
         ghn.Setup(service => service.CalculateFeeAsync(
                 1442,
                 "20101",
-                1000,
+                3000,
+                30,
                 20,
                 15,
-                10,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync((decimal?)null);
 
@@ -60,9 +91,15 @@ public class ShippingServiceGhnTests
             ghn.Object,
             CreateOptions());
 
-        var result = await service.CalculateShippingAsync(100000m, "Unknown", 1442, "20101");
+        var result = await service.CalculateShippingAsync(
+            100000m,
+            "Unknown",
+            1442,
+            "20101",
+            ShippingPackage.FromTotalKg(3));
 
-        Assert.Equal(50000m, result.ShippingFee);
+        Assert.Equal(0m, result.ShippingFee);
+        Assert.Equal("Khong tinh duoc phi van chuyen GHN", result.Message);
         Assert.Equal(ShippingZone.Zone3_Remote, result.Zone);
     }
 
