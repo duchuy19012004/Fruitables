@@ -41,6 +41,7 @@ public class ShippingServiceGhnTests
 
         Assert.Equal(32000m, result.ShippingFee);
         Assert.Equal("Phi van chuyen GHN", result.Message);
+        Assert.Equal(ShippingZone.Zone3_Remote, result.Zone);
     }
 
     [Fact]
@@ -58,6 +59,7 @@ public class ShippingServiceGhnTests
 
         Assert.Equal(0m, result.ShippingFee);
         Assert.Equal("Khong tinh duoc phi van chuyen GHN", result.Message);
+        Assert.Equal(ShippingZone.Zone3_Remote, result.Zone);
         ghn.Verify(service => service.CalculateFeeAsync(
                 It.IsAny<int>(),
                 It.IsAny<string>(),

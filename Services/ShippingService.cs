@@ -74,9 +74,10 @@ public class ShippingService : IShippingService
 
     /// <inheritdoc/>
     /// <summary>
-    /// Tính toán phí vận chuyển dựa trên tổng tiền hàng và quận/huyện.
-    /// Requirements 4.2, 4.3, 4.4: Tính phí theo zone và ngưỡng miễn phí
-    /// Requirements 5.1, 5.2, 5.3, 5.4: Hiển thị message phù hợp
+    /// Tính toán phí vận chuyển GHN dựa trên tổng tiền hàng, mã địa chỉ GHN và gói hàng.
+    /// Khi có đủ thông tin (subtotal > 0, package hợp lệ, districtId và wardCode không rỗng),
+    /// gọi <see cref="IGhnService.CalculateFeeAsync"/> để tính phí và trả về phí GHN.
+    /// Nếu thiếu thông tin hoặc GHN trả về null, trả về phí 0 cùng thông báo lỗi GHN.
     /// </summary>
     public async Task<ShippingInfo> CalculateShippingAsync(
         decimal subtotal,
