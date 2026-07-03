@@ -82,6 +82,20 @@ public class GhnServiceTests
     }
 
     [Fact]
+    public async Task ResolveAddressAsync_MatchesProvinceWithAdministrativePrefix()
+    {
+        var handler = new StubHttpMessageHandler(
+            ("""{"code":200,"data":[{"ProvinceID":203,"ProvinceName":"Da Nang"}]}""", HttpStatusCode.OK),
+            ("""{"code":200,"data":[{"DistrictID":1527,"DistrictName":"Quan Thanh Khe"}]}""", HttpStatusCode.OK),
+            ("""{"code":200,"data":[{"WardCode":"40201","WardName":"Phuong An Khe"}]}""", HttpStatusCode.OK));
+        var service = CreateService(handler);
+
+        var addressCode = await service.ResolveAddressAsync("Thanh pho Da Nang", "Phuong An Khe");
+
+        Assert.Equal(new GhnAddressCode(1527, "40201"), addressCode);
+    }
+
+    [Fact]
     public async Task ResolveAddressAsync_ReturnsNull_WhenGhnMasterDataCodeFails()
     {
         var handler = new StubHttpMessageHandler(
