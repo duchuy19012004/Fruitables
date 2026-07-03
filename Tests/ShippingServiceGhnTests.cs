@@ -38,7 +38,7 @@ public class ShippingServiceGhnTests
             ShippingPackage.FromTotalKg(3));
 
         Assert.Equal(32000m, result.ShippingFee);
-        Assert.Equal("Phi van chuyen GHN", result.Message);
+        Assert.Equal("Phí vận chuyển GHN", result.Message);
         Assert.Equal(ShippingZone.Zone3_Remote, result.Zone);
     }
 

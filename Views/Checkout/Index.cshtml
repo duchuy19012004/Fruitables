@@ -834,15 +834,12 @@
                     return;
                 }
 
-                var subtotal = @cart.Subtotal;
-
                 // Call API to recalculate shipping
                 $.ajax({
                     url: '/Cart/CalculateShippingAjax',
                     method: 'POST',
                     contentType: 'application/json',
                     data: JSON.stringify({
-                        subtotal: subtotal,
                         district: districtName,
                         ghnDistrictId: ghnDistrictId,
                         ghnWardCode: ghnWardCode
@@ -850,7 +847,9 @@
                     success: function(data) {
                         if (data.success) {
                             updateCheckoutShippingDisplay(data.shippingInfo);
-                            // Update total
+                            // Update total from displayed subtotal
+                            var subtotalText = $('#checkout-subtotal-row span:nth-child(2)').text();
+                            var subtotal = parseInt(subtotalText.replace(/\D/g, ''), 10) || 0;
                             var total = subtotal + data.shippingInfo.shippingFee;
                             $('#totalAmount').text(total.toLocaleString('vi-VN') + 'đ');
                         }

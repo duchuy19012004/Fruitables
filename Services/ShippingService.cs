@@ -102,7 +102,7 @@ public class ShippingService : IShippingService
                 {
                     ShippingFee = ghnFee.Value,
                     Zone = ShippingZone.Zone3_Remote,
-                    Message = "Phi van chuyen GHN"
+                    Message = "Phí vận chuyển GHN"
                 };
             }
         }

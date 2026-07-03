@@ -70,10 +70,12 @@ public class CheckoutController : Controller
                 ProvinceName = a.ProvinceName,
                 CommuneCode = a.CommuneCode,
                 CommuneName = a.CommuneName,
+                GhnDistrictId = a.GhnDistrictId,
+                GhnWardCode = a.GhnWardCode,
                 StreetAddress = a.StreetAddress,
                 IsDefault = a.IsDefault
             }).ToList();
-            
+
             var defaultAddress = addresses.FirstOrDefault(a => a.IsDefault);
             if (defaultAddress != null)
             {
@@ -197,6 +199,8 @@ public class CheckoutController : Controller
                     ProvinceName = a.ProvinceName,
                     CommuneCode = a.CommuneCode,
                     CommuneName = a.CommuneName,
+                    GhnDistrictId = a.GhnDistrictId,
+                    GhnWardCode = a.GhnWardCode,
                     StreetAddress = a.StreetAddress,
                     IsDefault = a.IsDefault
                 }).ToList();
@@ -205,7 +209,7 @@ public class CheckoutController : Controller
             {
                 ViewBag.SavedAddresses = new List<AddressViewModel>();
             }
-            
+
             ViewBag.CartCount = cart.Items.Sum(i => i.Quantity);
             ViewBag.Cart = cart;
             return View("Index", model);
@@ -247,6 +251,8 @@ public class CheckoutController : Controller
                     ProvinceName = a.ProvinceName,
                     CommuneCode = a.CommuneCode,
                     CommuneName = a.CommuneName,
+                    GhnDistrictId = a.GhnDistrictId,
+                    GhnWardCode = a.GhnWardCode,
                     StreetAddress = a.StreetAddress,
                     IsDefault = a.IsDefault
                 }).ToList();

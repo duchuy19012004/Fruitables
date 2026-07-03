@@ -26,7 +26,7 @@ public class CartControllerShippingTests
             {
                 ShippingFee = 53900m,
                 Zone = ShippingZone.Zone3_Remote,
-                Message = "Phi van chuyen GHN"
+                Message = "Phí vận chuyển GHN"
             });
 
         var cartService = new Mock<ICartService>();
