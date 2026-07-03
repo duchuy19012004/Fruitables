@@ -36,4 +36,24 @@ public class ShippingPackageTests
         Assert.Equal(15, package.Width);
         Assert.Equal(10, package.Height);
     }
+
+    [Fact]
+    public void CartViewModel_ShippingPackage_UsesSumOfItemQuantitiesAsKilograms()
+    {
+        var cart = new Fruitables.ViewModels.CartViewModel
+        {
+            Items =
+            {
+                new Fruitables.ViewModels.CartItemViewModel { Quantity = 2 },
+                new Fruitables.ViewModels.CartItemViewModel { Quantity = 3 }
+            }
+        };
+
+        var package = cart.ShippingPackage;
+
+        Assert.Equal(5000, package.Weight);
+        Assert.Equal(30, package.Length);
+        Assert.Equal(20, package.Width);
+        Assert.Equal(15, package.Height);
+    }
 }

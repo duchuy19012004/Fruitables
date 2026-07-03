@@ -13,6 +13,9 @@ public class CartViewModel
     public string? CouponMessage { get; set; }
     
     public ShippingInfo? ShippingInfo { get; set; }
+
+    public ShippingPackage ShippingPackage =>
+        ShippingPackage.FromTotalKg(Items.Sum(i => i.Quantity));
 }
 
 public class CartItemViewModel
