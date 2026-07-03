@@ -92,7 +92,8 @@ public class CheckoutController : Controller
                 cart.Subtotal,
                 defaultCommune ?? string.Empty,
                 defaultGhnDistrictId,
-                defaultGhnWardCode);
+                defaultGhnWardCode,
+                cart.ShippingPackage);
 
             ApplyShipping(cart, shippingInfo);
         }
@@ -215,7 +216,8 @@ public class CheckoutController : Controller
             cart.Subtotal,
             district ?? string.Empty,
             ghnDistrictId,
-            ghnWardCode);
+            ghnWardCode,
+            cart.ShippingPackage);
         ApplyShipping(cart, shippingInfo);
         model.Cart = cart;
 
