@@ -9,14 +9,12 @@ namespace Fruitables.Services;
 public class CartService : ICartService
 {
     private readonly IUnitOfWork _unitOfWork;
-    private readonly IShippingService _shippingService;
     private readonly ICouponService _couponService;
 
-    public CartService(IUnitOfWork unitOfWork, IShippingService shippingService, ICouponService couponService)
+    public CartService(IUnitOfWork unitOfWork, ICouponService couponService)
     {
-        _unitOfWork      = unitOfWork;
-        _shippingService = shippingService;
-        _couponService   = couponService;
+        _unitOfWork    = unitOfWork;
+        _couponService = couponService;
     }
 
     public async Task<CartViewModel> GetCartAsync(string sessionId, string? district = null)
@@ -45,9 +43,11 @@ public class CartService : ICartService
 
         cartViewModel.Subtotal = cartViewModel.Items.Sum(i => i.Total);
 
-        var shippingInfo = await _shippingService.CalculateShippingAsync(cartViewModel.Subtotal, district ?? string.Empty);
-        cartViewModel.ShippingInfo = shippingInfo;
-        cartViewModel.ShippingFee  = shippingInfo.ShippingFee;
+        // Cart page loads without GHN address codes, so we cannot calculate a real
+        // shipping fee here. Leave ShippingInfo null and ShippingFee at zero;
+        // checkout (or AJAX callers) will compute shipping when GHN codes are known.
+        cartViewModel.ShippingInfo = null;
+        cartViewModel.ShippingFee  = 0m;
 
         cartViewModel.CouponCode = cart.CouponCode;
         cartViewModel.Discount   = cart.CouponDiscount;

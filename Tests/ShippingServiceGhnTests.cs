@@ -2,7 +2,6 @@ using Fruitables.Models;
 using Fruitables.Services;
 using Fruitables.Services.Interfaces;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
 
@@ -29,8 +28,7 @@ public class ShippingServiceGhnTests
         var service = new ShippingService(
             settings.Object,
             NullLogger<ShippingService>.Instance,
-            ghn.Object,
-            CreateOptions());
+            ghn.Object);
 
         var result = await service.CalculateShippingAsync(
             100000m,
@@ -52,13 +50,12 @@ public class ShippingServiceGhnTests
         var service = new ShippingService(
             settings.Object,
             NullLogger<ShippingService>.Instance,
-            ghn.Object,
-            CreateOptions());
+            ghn.Object);
 
         var result = await service.CalculateShippingAsync(100000m, "Phuong Ben Nghe", 1442, "20101");
 
         Assert.Equal(0m, result.ShippingFee);
-        Assert.Equal("Khong tinh duoc phi van chuyen GHN", result.Message);
+        Assert.Equal("Không tính được phí vận chuyển GHN", result.Message);
         Assert.Equal(ShippingZone.Zone3_Remote, result.Zone);
         ghn.Verify(service => service.CalculateFeeAsync(
                 It.IsAny<int>(),
@@ -90,8 +87,7 @@ public class ShippingServiceGhnTests
         var service = new ShippingService(
             settings.Object,
             NullLogger<ShippingService>.Instance,
-            ghn.Object,
-            CreateOptions());
+            ghn.Object);
 
         var result = await service.CalculateShippingAsync(
             100000m,
@@ -101,7 +97,7 @@ public class ShippingServiceGhnTests
             ShippingPackage.FromTotalKg(3));
 
         Assert.Equal(0m, result.ShippingFee);
-        Assert.Equal("Khong tinh duoc phi van chuyen GHN", result.Message);
+        Assert.Equal("Không tính được phí vận chuyển GHN", result.Message);
         Assert.Equal(ShippingZone.Zone3_Remote, result.Zone);
     }
 
@@ -115,16 +111,5 @@ public class ShippingServiceGhnTests
             .ReturnsAsync((string?)null);
 
         return settings;
-    }
-
-    private static IOptions<GhnOptions> CreateOptions()
-    {
-        return Options.Create(new GhnOptions
-        {
-            DefaultWeight = 1000,
-            DefaultLength = 20,
-            DefaultWidth = 15,
-            DefaultHeight = 10
-        });
     }
 }

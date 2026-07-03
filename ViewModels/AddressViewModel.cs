@@ -14,6 +14,8 @@ public class AddressViewModel
     public string ProvinceName { get; set; } = string.Empty;
     public string CommuneCode { get; set; } = string.Empty;
     public string CommuneName { get; set; } = string.Empty;
+    public int? GhnDistrictId { get; set; }
+    public string? GhnWardCode { get; set; }
     public string StreetAddress { get; set; } = string.Empty;
     
     public bool IsDefault { get; set; }

@@ -15,7 +15,7 @@ public class CartViewModel
     public ShippingInfo? ShippingInfo { get; set; }
 
     public ShippingPackage ShippingPackage =>
-        ShippingPackage.FromTotalKg(Items.Sum(i => i.Quantity));
+        ShippingPackage.FromTotalKg(Items?.Sum(i => i.Quantity) ?? 0);
 }
 
 public class CartItemViewModel

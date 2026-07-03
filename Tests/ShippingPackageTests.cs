@@ -26,15 +26,22 @@ public class ShippingPackageTests
         Assert.Equal(expectedHeight, package.Height);
     }
 
-    [Fact]
-    public void FromTotalKg_ClampsZeroAndNegativeWeightToZero()
+    [Theory]
+    [InlineData(0, 0, 20, 15, 10)]
+    [InlineData(-1, 0, 20, 15, 10)]
+    public void FromTotalKg_ClampsZeroAndNegativeWeightToZero(
+        int totalKg,
+        int expectedWeight,
+        int expectedLength,
+        int expectedWidth,
+        int expectedHeight)
     {
-        var package = ShippingPackage.FromTotalKg(0);
+        var package = ShippingPackage.FromTotalKg(totalKg);
 
-        Assert.Equal(0, package.Weight);
-        Assert.Equal(20, package.Length);
-        Assert.Equal(15, package.Width);
-        Assert.Equal(10, package.Height);
+        Assert.Equal(expectedWeight, package.Weight);
+        Assert.Equal(expectedLength, package.Length);
+        Assert.Equal(expectedWidth, package.Width);
+        Assert.Equal(expectedHeight, package.Height);
     }
 
     [Fact]

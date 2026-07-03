@@ -1,6 +1,5 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Fruitables.Constants;
 using Fruitables.Models;
 using Fruitables.Services.Interfaces;
@@ -15,18 +14,15 @@ public class ShippingService : IShippingService
     private readonly ISettingsService _settingsService;
     private readonly ILogger<ShippingService> _logger;
     private readonly IGhnService _ghnService;
-    private readonly GhnOptions _ghnOptions;
 
     public ShippingService(
         ISettingsService settingsService,
         ILogger<ShippingService> logger,
-        IGhnService ghnService,
-        IOptions<GhnOptions> ghnOptions)
+        IGhnService ghnService)
     {
         _settingsService = settingsService;
         _logger = logger;
         _ghnService = ghnService;
-        _ghnOptions = ghnOptions.Value;
     }
 
     /// <inheritdoc/>
@@ -116,66 +112,9 @@ public class ShippingService : IShippingService
             ShippingFee = 0m,
             Zone = ShippingZone.Zone3_Remote,
             Message = subtotal > 0
-                ? "Khong tinh duoc phi van chuyen GHN"
+                ? "Không tính được phí vận chuyển GHN"
                 : string.Empty
         };
-    }
-
-    /// <summary>
-    /// Internal method to calculate shipping based on subtotal, zone, and config.
-    /// Implements Property 4, 5, and 6 from design document.
-    /// </summary>
-    private static ShippingInfo CalculateShippingInternal(decimal subtotal, ShippingZone zone, ShippingConfig config)
-    {
-        var result = new ShippingInfo
-        {
-            Zone = zone,
-            IsFreeShipping = false,
-            IsReducedShipping = false,
-            AmountToFreeShipping = 0m,
-            Message = string.Empty
-        };
-
-        // Rule 1: If subtotal = 0, shipping = 0 (Requirements 4.4)
-        if (subtotal == 0)
-        {
-            result.ShippingFee = 0m;
-            return result;
-        }
-
-        // Rule 2: If threshold > 0 and subtotal >= threshold (Requirements 4.2, 4.3)
-        if (config.FreeShippingThreshold > 0 && subtotal >= config.FreeShippingThreshold)
-        {
-            if (zone == ShippingZone.Zone1_InnerCity || zone == ShippingZone.Zone2_OuterCity)
-            {
-                // Zone1 or Zone2: free shipping (Requirements 4.2)
-                result.ShippingFee = 0m;
-                result.IsFreeShipping = true;
-                result.Message = "Miễn phí vận chuyển"; // Requirements 5.2
-            }
-            else
-            {
-                // Zone3: reduced shipping (Requirements 4.2)
-                result.ShippingFee = config.ReducedFeeZone3;
-                result.IsReducedShipping = true;
-                result.Message = $"Phí vận chuyển giảm còn {config.ReducedFeeZone3:N0} đ (đơn hàng đạt ngưỡng)"; // Requirements 5.3
-            }
-        }
-        else
-        {
-            // Rule 3: Otherwise, shipping = feeByZone (Requirements 4.3)
-            result.ShippingFee = GetFeeForZone(config, zone);
-            
-            // Calculate amount to free shipping and set message (Requirements 5.1)
-            if (config.FreeShippingThreshold > 0)
-            {
-                result.AmountToFreeShipping = config.FreeShippingThreshold - subtotal;
-                result.Message = $"Mua thêm {result.AmountToFreeShipping:N0} đ để được miễn phí vận chuyển";
-            }
-            // If threshold = 0, no message about free shipping (Requirements 5.4)
-        }
-
-        return result;
     }
 
     /// <inheritdoc/>
@@ -274,19 +213,5 @@ public class ShippingService : IShippingService
         }
 
         return ValidateShippingFee(fee);
-    }
-
-    /// <summary>
-    /// Gets the shipping fee for a specific zone from config
-    /// </summary>
-    private static decimal GetFeeForZone(ShippingConfig config, ShippingZone zone)
-    {
-        return zone switch
-        {
-            ShippingZone.Zone1_InnerCity => config.FeeZone1,
-            ShippingZone.Zone2_OuterCity => config.FeeZone2,
-            ShippingZone.Zone3_Remote => config.FeeZone3,
-            _ => config.FeeZone3 // Default to Zone3 fee
-        };
     }
 }

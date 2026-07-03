@@ -117,7 +117,7 @@
                                 <option value="">-- Chọn địa chỉ giao hàng --</option>
                                 @foreach (var addr in savedAddresses)
                                 {
-                                    <option value="@addr.Id" 
+                                    <option value="@addr.Id"
                                             data-fullname="@addr.FullName"
                                             data-phone="@addr.Phone"
                                             data-address="@addr.FullAddress"
@@ -125,6 +125,8 @@
                                             data-provincename="@addr.ProvinceName"
                                             data-communecode="@addr.CommuneCode"
                                             data-communename="@addr.CommuneName"
+                                            data-ghn-district-id="@addr.GhnDistrictId"
+                                            data-ghn-ward-code="@addr.GhnWardCode"
                                             data-streetaddress="@addr.StreetAddress"
                                             selected="@addr.IsDefault">
                                         @addr.DisplayText @(addr.IsDefault ? "(Mặc định)" : "")
@@ -485,7 +487,9 @@
                     });
                     
                     if (communeName) {
-                        updateShippingForDistrict(communeName);
+                        var ghnDistrictId = selectedOption.data('ghn-district-id');
+                        var ghnWardCode = selectedOption.data('ghn-ward-code');
+                        updateShippingForDistrict(communeName, ghnDistrictId, ghnWardCode);
                     }
                 } else {
                     // No selection - show empty form
@@ -825,21 +829,23 @@
 
             // Update shipping when district changes (Requirements 4.1, 6.1)
             // This function is called when user selects a saved address or changes district
-            function updateShippingForDistrict(districtName) {
-                if (!districtName) {
+            function updateShippingForDistrict(districtName, ghnDistrictId, ghnWardCode) {
+                if (!districtName || !ghnDistrictId || !ghnWardCode) {
                     return;
                 }
-                
+
                 var subtotal = @cart.Subtotal;
-                
+
                 // Call API to recalculate shipping
                 $.ajax({
                     url: '/Cart/CalculateShippingAjax',
                     method: 'POST',
                     contentType: 'application/json',
-                    data: JSON.stringify({ 
-                        subtotal: subtotal, 
-                        district: districtName 
+                    data: JSON.stringify({
+                        subtotal: subtotal,
+                        district: districtName,
+                        ghnDistrictId: ghnDistrictId,
+                        ghnWardCode: ghnWardCode
                     }),
                     success: function(data) {
                         if (data.success) {
