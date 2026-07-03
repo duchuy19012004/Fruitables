@@ -93,11 +93,15 @@ public class OrderService : IOrderService
 
         if (model.SelectedAddressId.HasValue)
         {
-            shippingAddress = await _unitOfWork.Addresses.GetByIdAsync(model.SelectedAddressId.Value);
-            if (shippingAddress != null)
-            {
-                order.AddressId = shippingAddress.Id;
-            }
+            shippingAddress = await _unitOfWork.Addresses.Query()
+                .FirstOrDefaultAsync(a =>
+                    a.Id == model.SelectedAddressId.Value
+                    && userId.HasValue
+                    && a.UserId == userId.Value);
+            if (shippingAddress == null)
+                throw new InvalidOperationException("Dia chi giao hang khong hop le.");
+
+            order.AddressId = shippingAddress.Id;
         }
         else if (!string.IsNullOrEmpty(model.StreetAddress))
         {

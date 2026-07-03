@@ -158,9 +158,15 @@ public class CheckoutController : Controller
         string? district = null;
         int? ghnDistrictId = null;
         string? ghnWardCode = null;
-        if (model.SelectedAddressId.HasValue)
+        if (model.SelectedAddressId.HasValue && userId.HasValue)
         {
-            var selectedAddress = await _unitOfWork.Addresses.GetByIdAsync(model.SelectedAddressId.Value);
+            var selectedAddress = await _unitOfWork.Addresses.Query()
+                .FirstOrDefaultAsync(a => a.Id == model.SelectedAddressId.Value && a.UserId == userId.Value);
+            if (selectedAddress == null)
+            {
+                ModelState.AddModelError(nameof(model.SelectedAddressId), "Dia chi giao hang khong hop le.");
+            }
+
             district = selectedAddress?.CommuneName;
             ghnDistrictId = selectedAddress?.GhnDistrictId;
             ghnWardCode = selectedAddress?.GhnWardCode;
