@@ -123,11 +123,18 @@ public class CartController : Controller
     }
     
     // POST: Tính phí vận chuyển bằng AJAX — dùng ShippingService tính theo subtotal + quận/huyện
+    // và kích thước gói hàng được suy ra từ giỏ hàng trong session.
     [HttpPost]
     public async Task<IActionResult> CalculateShippingAjax([FromBody] CalculateShippingRequest request)
     {
-        var shippingInfo = await _shippingService.CalculateShippingAsync(request.Subtotal, request.District ?? string.Empty);
-        
+        var sessionId = GetSessionId();
+        var cart = await _cartService.GetCartAsync(sessionId, request.District ?? string.Empty);
+
+        var shippingInfo = await _shippingService.CalculateShippingAsync(
+            cart.Subtotal,
+            request.District ?? string.Empty,
+            packageSize: cart.PackageSize);
+
         return Json(new
         {
             success = true,

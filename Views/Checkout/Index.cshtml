@@ -484,9 +484,6 @@
                         streetAddress: streetAddress
                     });
                     
-                    if (communeName) {
-                        updateShippingForDistrict(communeName);
-                    }
                 } else {
                     // No selection - show empty form
                     $('#selectedAddressDisplay').hide();
@@ -823,88 +820,6 @@
                 $('#addressFormSection').prepend(summaryHtml);
             }
 
-            // Update shipping when district changes (Requirements 4.1, 6.1)
-            // This function is called when user selects a saved address or changes district
-            function updateShippingForDistrict(districtName) {
-                if (!districtName) {
-                    return;
-                }
-                
-                var subtotal = @cart.Subtotal;
-                
-                // Call API to recalculate shipping
-                $.ajax({
-                    url: '/Cart/CalculateShippingAjax',
-                    method: 'POST',
-                    contentType: 'application/json',
-                    data: JSON.stringify({ 
-                        subtotal: subtotal, 
-                        district: districtName 
-                    }),
-                    success: function(data) {
-                        if (data.success) {
-                            updateCheckoutShippingDisplay(data.shippingInfo);
-                            // Update total
-                            var total = subtotal + data.shippingInfo.shippingFee;
-                            $('#totalAmount').text(total.toLocaleString('vi-VN') + 'đ');
-                        }
-                    },
-                    error: function(err) {
-                        console.error('Error calculating shipping:', err);
-                    }
-                });
-            }
-            
-            // Update checkout shipping display (Requirements 5.1, 5.2, 5.3, 5.4)
-            function updateCheckoutShippingDisplay(shippingInfo) {
-                var zoneNames = {
-                    1: 'Nội thành',
-                    2: 'Ngoại thành',
-                    3: 'Vùng xa'
-                };
-                
-                var zoneName = zoneNames[shippingInfo.zone] || 'Vùng xa';
-                $('#checkout-zone-name').text(zoneName);
-                
-                var feeEl = $('#checkout-shipping-fee');
-                if (shippingInfo.isFreeShipping) {
-                    feeEl.html('<i class="fas fa-check-circle me-1"></i>Miễn phí vận chuyển');
-                    feeEl.removeClass('mb-1').addClass('mb-1 text-success');
-                } else {
-                    feeEl.html('<strong>Phí ship:</strong> ' + shippingInfo.shippingFee.toLocaleString('vi-VN') + 'đ');
-                    feeEl.removeClass('text-success').addClass('mb-1');
-                }
-                
-                var messageEl = $('#checkout-shipping-message');
-                if (shippingInfo.message) {
-                    if (!messageEl.length) {
-                        messageEl = $('<small id="checkout-shipping-message"></small>');
-                        $('#checkout-shipping-fee').after(messageEl);
-                    }
-                    
-                    if (shippingInfo.isFreeShipping || shippingInfo.isReducedShipping) {
-                        messageEl.html('<i class="fas fa-gift me-1"></i>' + shippingInfo.message);
-                        messageEl.removeClass('text-info').addClass('text-success');
-                    } else if (shippingInfo.amountToFreeShipping > 0) {
-                        messageEl.html('<i class="fas fa-info-circle me-1"></i>' + shippingInfo.message);
-                        messageEl.removeClass('text-success').addClass('text-info');
-                    }
-                    messageEl.show();
-                } else if (messageEl.length) {
-                    messageEl.hide();
-                }
-            }
-            
-            // Hook into commune change from AddressHandler
-            var originalOnCommuneChange = addressHandler.options.onCommuneChange;
-            addressHandler.options.onCommuneChange = function(code, name) {
-                if (originalOnCommuneChange) {
-                    originalOnCommuneChange(code, name);
-                }
-                if (name) {
-                    updateShippingForDistrict(name);
-                }
-            };
         });
 
         // Coupon modal logic
