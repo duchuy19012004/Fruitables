@@ -62,6 +62,15 @@ builder.Services.AddScoped<ICancelledOrdersStatisticsService, CancelledOrdersSta
 builder.Services.AddScoped<IUserManagementService, UserManagementService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IShippingService, ShippingService>();
+builder.Services.Configure<GhnOptions>(builder.Configuration.GetSection("Ghn"));
+builder.Services.AddHttpClient<IGhnService, GhnService>((serviceProvider, client) =>
+{
+    var options = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<GhnOptions>>().Value;
+    if (Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out var baseUri))
+        client.BaseAddress = baseUri;
+    client.Timeout = TimeSpan.FromSeconds(10);
+    client.DefaultRequestHeaders.Add("User-Agent", "Fruitables/1.0");
+});
 builder.Services.AddScoped<IWordMaskingService, WordMaskingService>();
 builder.Services.AddScoped<ICouponService, CouponService>();
 builder.Services.AddScoped<IRealtimeNotifier, SignalRRealtimeNotifier>();
