@@ -440,5 +440,107 @@ namespace Fruitables.Tests
                 .ToList();
             Assert.All(stocks, s => Assert.Equal(99, s));
         }
+
+        [Fact]
+        public async Task CreateOrderAsync_BankTransfer_GeneratesPaymentCode()
+        {
+            var options = CreateInMemoryOptions();
+            using var context = new ApplicationDbContext(options);
+
+            context.Products.Add(new Product
+            {
+                Id = 1,
+                Name = "Apple",
+                Slug = "apple",
+                Price = 10,
+                StockQuantity = 10,
+                MinOrderQuantity = 1,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
+            await context.SaveChangesAsync();
+
+            var unitOfWork = new UnitOfWork(context);
+            var cartServiceMock = new Mock<ICartService>();
+            const string sessionId = "sepay-bank-transfer";
+            cartServiceMock.Setup(c => c.GetCartAsync(sessionId, null)).ReturnsAsync(new CartViewModel
+            {
+                Items = new List<CartItemViewModel>
+                {
+                    new() { ProductId = 1, ProductName = "Apple", Price = 10, Quantity = 1 }
+                },
+                Subtotal = 10,
+                ShippingFee = 15,
+                Total = 25
+            });
+
+            var notifierMock = new Mock<IRealtimeNotifier>();
+            var service = new OrderService(unitOfWork, cartServiceMock.Object, notifierMock.Object);
+
+            var order = await service.CreateOrderAsync(new CheckoutViewModel
+            {
+                FirstName = "Test",
+                StreetAddress = "123 Main",
+                Mobile = "0123456789",
+                ProvinceCode = "1",
+                CommuneCode = "1",
+                PaymentMethod = PaymentMethod.BankTransfer,
+                ShippingMethod = ShippingMethod.FlatRate
+            }, sessionId);
+
+            Assert.Matches("^FTB[A-Z0-9]{8}$", order.PaymentCode);
+        }
+
+        [Fact]
+        public async Task CreateOrderAsync_Cod_DoesNotGeneratePaymentCode()
+        {
+            var options = CreateInMemoryOptions();
+            using var context = new ApplicationDbContext(options);
+
+            context.Products.Add(new Product
+            {
+                Id = 1,
+                Name = "Apple",
+                Slug = "apple",
+                Price = 10,
+                StockQuantity = 10,
+                MinOrderQuantity = 1,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
+            await context.SaveChangesAsync();
+
+            var unitOfWork = new UnitOfWork(context);
+            var cartServiceMock = new Mock<ICartService>();
+            const string sessionId = "sepay-cod";
+            cartServiceMock.Setup(c => c.GetCartAsync(sessionId, null)).ReturnsAsync(new CartViewModel
+            {
+                Items = new List<CartItemViewModel>
+                {
+                    new() { ProductId = 1, ProductName = "Apple", Price = 10, Quantity = 1 }
+                },
+                Subtotal = 10,
+                ShippingFee = 15,
+                Total = 25
+            });
+
+            var notifierMock = new Mock<IRealtimeNotifier>();
+            var service = new OrderService(unitOfWork, cartServiceMock.Object, notifierMock.Object);
+
+            var order = await service.CreateOrderAsync(new CheckoutViewModel
+            {
+                FirstName = "Test",
+                StreetAddress = "123 Main",
+                Mobile = "0123456789",
+                ProvinceCode = "1",
+                CommuneCode = "1",
+                PaymentMethod = PaymentMethod.COD,
+                ShippingMethod = ShippingMethod.FlatRate
+            }, sessionId);
+
+            Assert.Null(order.PaymentCode);
+        }
     }
 }

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Security.Cryptography;
 using Fruitables.Models;
 using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Interfaces;
@@ -9,6 +10,9 @@ namespace Fruitables.Services;
 
 public class OrderService : IOrderService
 {
+    private const string PaymentCodePrefix = "FTB";
+    private const string PaymentCodeAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICartService _cartService;
     private readonly IRealtimeNotifier _notifier;
@@ -72,6 +76,9 @@ public class OrderService : IOrderService
             PaymentMethod = model.PaymentMethod,
             PaymentStatus = PaymentStatus.Pending,
             ShippingMethod = model.ShippingMethod,
+            PaymentCode = model.PaymentMethod == PaymentMethod.BankTransfer
+                ? await GenerateUniquePaymentCodeAsync()
+                : null,
             Notes = model.Notes
         };
 
@@ -249,6 +256,19 @@ public class OrderService : IOrderService
             return null;
 
         return AddressSnapshotHelper.FromSnapshot(order.ShippingSnapshot);
+    }
+
+    private async Task<string> GenerateUniquePaymentCodeAsync()
+    {
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            var code = PaymentCodePrefix + RandomNumberGenerator.GetString(PaymentCodeAlphabet, 8);
+            var exists = await _unitOfWork.Orders.Query().AnyAsync(o => o.PaymentCode == code);
+            if (!exists)
+                return code;
+        }
+
+        throw new InvalidOperationException("Không thể tạo mã thanh toán. Vui lòng thử lại.");
     }
 
     private static string GenerateOrderNumber()
