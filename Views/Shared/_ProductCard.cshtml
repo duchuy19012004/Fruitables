@@ -42,7 +42,7 @@
                     @Model.Name
                 </a>
             </h4>
-            <p>@(Model.ShortDescription ?? Model.Description?.Substring(0, Math.Min(Model.Description?.Length ?? 0, 60)) ?? "")</p>
+            <p>@(Model.ShortDescription ?? Model.Description?.Substring(0, Math.Min(Model.Description?.Length ?? 0, 60)) ?? "Tươi ngon, phù hợp cho bữa ăn gia đình.")</p>
             <div class="d-flex justify-content-between flex-lg-wrap">
                 @if (isSale)
                 {

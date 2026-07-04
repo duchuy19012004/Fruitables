@@ -41,15 +41,6 @@ public class HomeController : Controller
         return View();
     }
 
-    // GET: /404 — trang not found tùy chỉnh
-    [Route("404")]
-    public new async Task<IActionResult> NotFound()
-    {
-        var sessionId = GetSessionId();
-        ViewBag.CartCount = await _cartService.GetCartCountAsync(sessionId);
-        return View("NotFound");
-    }
-
     // GET: Trang lỗi chung (không cache)
     [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
     public IActionResult Error()

@@ -74,8 +74,8 @@
                             <div class="market-hero-banner market-hero-banner-green">
                                 <div class="market-hero-content">
                                     <span class="market-label">Tươi mỗi ngày</span>
-                                    <h1>Rau củ sạch cho bữa ăn gia đình</h1>
-                                    <p>Chọn nhanh sản phẩm tươi, giá tốt và giao tận nhà từ Fruitables.</p>
+                                    <h1>Rau củ sạch cho bữa cơm hàng ngày</h1>
+                                    <p>Chọn rau củ tươi, giá hợp lý. Fruitables giao đến tận nhà.</p>
                                     <form asp-controller="Shop" asp-action="Index" method="get" class="market-search">
                                         <input name="search" type="search" class="form-control" placeholder="Tìm rau củ, trái cây, combo..." />
                                         <button type="submit" class="btn btn-secondary text-white">Tìm kiếm</button>
@@ -93,7 +93,7 @@
                                 <div class="market-hero-content">
                                     <span class="market-label">Trái cây chọn lọc</span>
                                     <h1>Trái cây tươi cho cả tuần</h1>
-                                    <p>Mua theo mùa, dễ chọn, dễ thêm vào giỏ hàng cho mọi bữa phụ trong ngày.</p>
+                                    <p>Mua trái cây đúng mùa, chọn nhanh và thêm vào giỏ cho bữa phụ hàng ngày.</p>
                                     <form asp-controller="Shop" asp-action="Index" method="get" class="market-search">
                                         <input name="search" type="search" class="form-control" placeholder="Tìm táo, cam, nho, dâu..." />
                                         <button type="submit" class="btn btn-secondary text-white">Tìm kiếm</button>
@@ -110,8 +110,8 @@
                             <div class="market-hero-banner market-hero-banner-deep">
                                 <div class="market-hero-content">
                                     <span class="market-label">Combo tiết kiệm</span>
-                                    <h1>Đi chợ nhanh với combo gia đình</h1>
-                                    <p>Gợi ý sản phẩm theo nhu cầu, giúp bạn tiết kiệm thời gian chọn hàng.</p>
+                                    <h1>Đi chợ nhanh với combo hàng ngày</h1>
+                                    <p>Gợi ý theo nhu cầu, để bạn chọn hàng nhanh hơn.</p>
                                     <form asp-controller="Shop" asp-action="Index" method="get" class="market-search">
                                         <input name="search" type="search" class="form-control" placeholder="Tìm combo bữa ăn, rau, củ..." />
                                         <button type="submit" class="btn btn-secondary text-white">Tìm kiếm</button>
@@ -210,7 +210,7 @@
                             </a>
                             <div class="market-product-body">
                                 <a asp-controller="Shop" asp-action="Detail" asp-route-slug="@product.Slug" class="market-product-name">@product.Name</a>
-                                <p>@(product.ShortDescription ?? product.Description?.Substring(0, Math.Min(product.Description.Length, 70)) ?? "Sản phẩm tươi ngon cho gia đình.")</p>
+                                <p>@(product.ShortDescription ?? product.Description?.Substring(0, Math.Min(product.Description.Length, 70)) ?? "Tươi ngon, phù hợp cho bữa ăn gia đình.")</p>
                                 <div class="market-product-footer">
                                     <div>
                                         <strong>@DisplayPrice(product).ToString("N0")đ</strong>
@@ -288,7 +288,7 @@
                             </a>
                             <div class="market-product-body">
                                 <a asp-controller="Shop" asp-action="Detail" asp-route-slug="@product.Slug" class="market-product-name">@product.Name</a>
-                                <p>@(product.ShortDescription ?? product.Description?.Substring(0, Math.Min(product.Description.Length, 70)) ?? "Sản phẩm tươi ngon cho gia đình.")</p>
+                                <p>@(product.ShortDescription ?? product.Description?.Substring(0, Math.Min(product.Description.Length, 70)) ?? "Tươi ngon, phù hợp cho bữa ăn gia đình.")</p>
                                 <div class="market-product-footer">
                                     <div>
                                         <strong>@DisplayPrice(product).ToString("N0")đ</strong>
