@@ -45,9 +45,9 @@
                         @foreach (var image in Model.Images.OrderBy(i => i.SortOrder).Take(5))
                         {
                             var isActive = image.ImageUrl == primaryImage ? "active" : "";
-                            <div class="pd-thumb @isActive" onclick="changeImage(this, '@image.ImageUrl')">
+                            <button type="button" class="pd-thumb @isActive" onclick="changeImage(this, '@image.ImageUrl')">
                                 <img src="@image.ImageUrl" alt="@Model.Name">
-                            </div>
+                            </button>
                         }
                     </div>
                 }
@@ -185,7 +185,14 @@
             <div class="tab-content pd-tab-content" id="pdTabContent">
                 <div class="tab-pane fade show active" id="pd-desc" role="tabpanel">
                     <div class="pd-description">
-                        @Html.Raw(Model.Description?.Replace("\n", "<br />") ?? "<p>Chưa có mô tả chi tiết.</p>")
+                        @if (string.IsNullOrWhiteSpace(Model.Description))
+                        {
+                            <p>Chưa có mô tả chi tiết.</p>
+                        }
+                        else
+                        {
+                            @Html.Raw(Model.Description.Replace("\n", "<br />"))
+                        }
                     </div>
                 </div>
                 <div class="tab-pane fade" id="pd-review" role="tabpanel">
@@ -224,7 +231,7 @@
                                 <div class="pd-related-body">
                                     <a asp-controller="Shop" asp-action="Detail" asp-route-slug="@product.Slug" class="pd-related-title">@product.Name</a>
                                     <p class="pd-related-desc">
-                                        @(product.ShortDescription ?? product.Description?.Substring(0, Math.Min(product.Description?.Length ?? 0, 60)) ?? "Tươi ngon, phù hợp cho bữa ăn gia đình.")
+                                        @(product.ShortDescription ?? "Tươi ngon, phù hợp cho bữa ăn gia đình.")
                                     </p>
                                     <div class="pd-related-bottom">
                                         <div class="pd-related-price">
@@ -311,7 +318,7 @@
                     ];
 
                     if (maxQty > 0) {
-                        stockStatus.innerHTML = '<i class="fa fa-check-circle"></i><span>Còn hàng — giao hôm nay nếu đặt trước 16:00</span>';
+                        stockStatus.innerHTML = `<i class="fa fa-check-circle"></i><span>Còn ${maxQty} @Model.Unit — giao hôm nay nếu đặt trước 16:00</span>`;
                         btns.forEach(b => b && b.removeAttribute('disabled'));
                     } else {
                         stockStatus.innerHTML = '<i class="fa fa-times-circle"></i><span>Hết hàng</span>';
