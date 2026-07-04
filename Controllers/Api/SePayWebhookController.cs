@@ -71,7 +71,8 @@ public class SePayWebhookController : ControllerBase
             transaction.Status = SePayTransactionStatus.Ignored;
             transaction.Message = message;
             _context.SePayTransactions.Add(transaction);
-            await _context.SaveChangesAsync();
+            if (!await TrySaveChangesAsync(payload))
+                return Ok(new { success = true });
             _logger.LogWarning("Ignored SePay transaction {TransactionId}: {Message}", payload.Id, message);
             return Ok(new { success = true });
         }
@@ -80,9 +81,46 @@ public class SePayWebhookController : ControllerBase
         transaction.Status = SePayTransactionStatus.Paid;
         transaction.Message = "Matched";
         _context.SePayTransactions.Add(transaction);
-        await _context.SaveChangesAsync();
+        if (!await TrySaveChangesAsync(payload))
+            return Ok(new { success = true });
 
         return Ok(new { success = true });
+    }
+
+    private async Task<bool> TrySaveChangesAsync(SePayWebhookPayload payload)
+    {
+        try
+        {
+            await _context.SaveChangesAsync();
+            return true;
+        }
+        catch (DbUpdateException ex) when (IsDuplicateSePayTransactionId(ex))
+        {
+            _logger.LogInformation("Duplicate SePay transaction {TransactionId} received concurrently; returning success.", payload.Id);
+            return false;
+        }
+    }
+
+    private static bool IsDuplicateSePayTransactionId(DbUpdateException ex)
+    {
+        const int uniqueIndexViolation = 2601;
+        const int uniqueConstraintViolation = 2627;
+
+        if (ex.InnerException is null || !ex.Entries.Any(e => e.Entity is SePayTransaction))
+            return false;
+
+        var innerType = ex.InnerException.GetType();
+        if (innerType.FullName is "Microsoft.Data.SqlClient.SqlException" or "System.Data.SqlClient.SqlException")
+        {
+            var numberProperty = innerType.GetProperty("Number");
+            if (numberProperty is not null)
+            {
+                var number = (int)numberProperty.GetValue(ex.InnerException)!;
+                return number is uniqueIndexViolation or uniqueConstraintViolation;
+            }
+        }
+
+        return false;
     }
 
     private bool IsValidSignature(string rawBody)

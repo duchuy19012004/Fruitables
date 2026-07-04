@@ -150,4 +150,60 @@ public class SePayWebhookControllerTests
 
         Assert.IsType<UnauthorizedObjectResult>(result);
     }
+
+    [Fact]
+    public async Task Webhook_ExpiredTimestamp_ReturnsUnauthorized()
+    {
+        var options = CreateOptions();
+        await using var context = new ApplicationDbContext(options);
+        const string body = """{"id":92704,"code":"FTB7K3P9Q2"}""";
+        var controller = CreateController(context, body);
+        controller.Request.Headers["X-SePay-Timestamp"] = "0";
+
+        var result = await controller.Receive();
+
+        Assert.IsType<UnauthorizedObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task Webhook_MissingSignature_ReturnsUnauthorized()
+    {
+        var options = CreateOptions();
+        await using var context = new ApplicationDbContext(options);
+        const string body = """{"id":92704,"code":"FTB7K3P9Q2"}""";
+        var controller = CreateController(context, body);
+        controller.Request.Headers.Remove("X-SePay-Signature");
+
+        var result = await controller.Receive();
+
+        Assert.IsType<UnauthorizedObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task Webhook_OutgoingTransfer_MarksIgnored()
+    {
+        var options = CreateOptions();
+        await using var context = new ApplicationDbContext(options);
+        context.Orders.Add(new Order
+        {
+            Id = 1,
+            OrderNumber = "ORD-1",
+            PaymentMethod = PaymentMethod.BankTransfer,
+            PaymentStatus = PaymentStatus.Pending,
+            PaymentCode = "FTB7K3P9Q2",
+            Total = 45000
+        });
+        await context.SaveChangesAsync();
+
+        const string body = """
+        {"id":92706,"code":"FTB7K3P9Q2","transferType":"out","transferAmount":45000,"referenceCode":"FT24012345678"}
+        """;
+
+        var result = await CreateController(context, body).Receive();
+
+        Assert.IsType<OkObjectResult>(result);
+        var order = await context.Orders.SingleAsync(o => o.Id == 1);
+        Assert.Equal(PaymentStatus.Pending, order.PaymentStatus);
+        Assert.True(await context.SePayTransactions.AnyAsync(t => t.SePayTransactionId == 92706 && t.Status == SePayTransactionStatus.Ignored));
+    }
 }
