@@ -15,38 +15,36 @@
 <!-- Review Statistics Section -->
 @if (statistics != null && statistics.TotalReviews > 0)
 {
-    <div class="review-statistics mb-4 p-4 bg-light rounded">
-        <div class="row">
-            <div class="col-md-4 text-center border-end">
-                <h2 class="display-4 mb-0">@statistics.AverageRating.ToString("F1")</h2>
-                <div class="mb-2">
-                    @for (int i = 0; i < 5; i++)
-                    {
-                        <i class="fa fa-star @(i < Math.Round(statistics.AverageRating) ? "text-warning" : "text-muted")"></i>
-                    }
-                </div>
-                <p class="text-muted mb-0">@statistics.TotalReviews đánh giá</p>
-            </div>
-            <div class="col-md-8">
-                <h6 class="mb-3">Phân bố đánh giá</h6>
-                @for (int star = 5; star >= 1; star--)
+    <div class="pd-review-summary">
+        <div class="pd-review-average">
+            <div class="big">@statistics.AverageRating.ToString("F1")</div>
+            <div class="stars">
+                @for (int i = 0; i < 5; i++)
                 {
-                    var count = star == 5 ? statistics.FiveStarCount :
-                                star == 4 ? statistics.FourStarCount :
-                                star == 3 ? statistics.ThreeStarCount :
-                                star == 2 ? statistics.TwoStarCount :
-                                statistics.OneStarCount;
-                    var percentage = statistics.TotalReviews > 0 ? (count * 100.0 / statistics.TotalReviews) : 0;
-                    
-                    <div class="d-flex align-items-center mb-2">
-                        <span class="me-2" style="width: 60px;">@star <i class="fa fa-star text-warning"></i></span>
-                        <div class="progress flex-grow-1 me-2" style="height: 8px;">
-                            <div class="progress-bar bg-warning" role="progressbar" style="width: @percentage%" aria-valuenow="@percentage" aria-valuemin="0" aria-valuemax="100"></div>
-                        </div>
-                        <span class="text-muted" style="width: 50px;">@count</span>
-                    </div>
+                    <i class="fa fa-star @(i < Math.Round(statistics.AverageRating) ? "" : "text-muted")"></i>
                 }
             </div>
+            <p class="text-muted mb-0">@statistics.TotalReviews đánh giá</p>
+        </div>
+        <div class="pd-review-bars">
+            <h6 class="mb-3">Phân bố đánh giá</h6>
+            @for (int star = 5; star >= 1; star--)
+            {
+                var count = star == 5 ? statistics.FiveStarCount :
+                            star == 4 ? statistics.FourStarCount :
+                            star == 3 ? statistics.ThreeStarCount :
+                            star == 2 ? statistics.TwoStarCount :
+                            statistics.OneStarCount;
+                var percentage = statistics.TotalReviews > 0 ? (count * 100.0 / statistics.TotalReviews) : 0;
+
+                <div class="bar">
+                    <span>@star <i class="fa fa-star text-warning"></i></span>
+                    <div class="progress-line">
+                        <div class="progress-fill" style="width: @percentage%"></div>
+                    </div>
+                    <span class="text-muted" style="width: 50px;">@count</span>
+                </div>
+            }
         </div>
     </div>
 }
