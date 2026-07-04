@@ -43,6 +43,23 @@
         .tab-inactive:hover { color: #374151; }
         .social-btn { transition: all .2s; }
         .social-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+        .auth-illustration {
+            position: absolute;
+            right: 0;
+            bottom: 0;
+            z-index: 5;
+            width: min(52%, 520px);
+            height: auto;
+            max-height: 78vh;
+            object-fit: contain;
+            object-position: right bottom;
+            pointer-events: none;
+            user-select: none;
+            filter: drop-shadow(0 24px 40px rgba(26,46,5,.2));
+        }
+        @@media (max-width: 1023px) {
+            .auth-illustration { display: none; }
+        }
     </style>
 </head>
 <body class="bg-brand-50 text-gray-800 font-sans antialiased">
@@ -82,6 +99,7 @@
             <div class="absolute inset-0 bg-gradient-to-br from-brand-500 via-brand-600 to-brand-800"></div>
             <div class="absolute -top-20 -left-20 w-80 h-80 bg-white/10 rounded-full blur-3xl"></div>
             <div class="absolute bottom-10 right-10 w-64 h-64 bg-accent-500/20 rounded-full blur-3xl"></div>
+            <img src="~/img/auth-fruit-person.png" alt="" class="auth-illustration" aria-hidden="true">
 
             <div class="relative z-10">
                 <a href="/" class="flex items-center gap-2 text-2xl font-extrabold tracking-tight">
@@ -90,7 +108,7 @@
                 </a>
             </div>
 
-            <div class="relative z-10 max-w-md">
+            <div class="relative z-10 max-w-md pr-4 md:pr-8 lg:pr-12">
                 <h2 class="text-3xl lg:text-4xl font-bold leading-tight mb-4">
                     Thực phẩm sạch,<br>giao tận nhà
                 </h2>
