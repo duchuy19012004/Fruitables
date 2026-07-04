@@ -63,6 +63,7 @@ builder.Services.AddScoped<IUserManagementService, UserManagementService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IShippingService, ShippingService>();
 builder.Services.Configure<GhnOptions>(builder.Configuration.GetSection("Ghn"));
+builder.Services.Configure<SePayOptions>(builder.Configuration.GetSection("SePay"));
 builder.Services.AddHttpClient<IGhnService, GhnService>((serviceProvider, client) =>
 {
     var options = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<GhnOptions>>().Value;
