@@ -117,3 +117,13 @@ public class ResetPasswordRequest
     [Display(Name = "Xác nhận mật khẩu mới")]
     public string ConfirmPassword { get; set; } = string.Empty;
 }
+
+/// <summary>
+/// ViewModel cho trang Auth tab duy nhất (Login/Register)
+/// </summary>
+public class AuthPageViewModel
+{
+    public LoginRequest Login { get; set; } = new();
+    public RegisterRequest Register { get; set; } = new();
+    public string ActiveTab { get; set; } = "login";
+}
