@@ -40,7 +40,7 @@
                 <div class="bar">
                     <span>@star <i class="fa fa-star text-warning"></i></span>
                     <div class="progress-line">
-                        <div class="progress-fill" style="width: @percentage%"></div>
+                        <div class="progress-fill" role="progressbar" aria-valuenow="@percentage.ToString("F0")" aria-valuemin="0" aria-valuemax="100" style="width: @percentage%"></div>
                     </div>
                     <span class="text-muted">@count</span>
                 </div>

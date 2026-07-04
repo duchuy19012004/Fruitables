@@ -42,11 +42,13 @@
                 @if (Model.Images?.Count > 1)
                 {
                     <div class="pd-gallery-thumbs">
+                        @{ var thumbIndex = 0; }
                         @foreach (var image in Model.Images.OrderBy(i => i.SortOrder).Take(5))
                         {
+                            thumbIndex++;
                             var isActive = image.ImageUrl == primaryImage ? "active" : "";
                             <button type="button" class="pd-thumb @isActive" onclick="changeImage(this, '@image.ImageUrl')">
-                                <img src="@image.ImageUrl" alt="@Model.Name">
+                                <img src="@image.ImageUrl" alt="@Model.Name - ảnh @thumbIndex">
                             </button>
                         }
                     </div>
@@ -78,9 +80,9 @@
                 <h1 class="pd-title">@Model.Name</h1>
 
                 <div class="pd-trust-row">
-                    <span><i class="fa fa-truck-fast"></i> Giao nhanh 2 giờ</span>
+                    <span><i class="fa fa-shipping-fast"></i> Giao nhanh 2 giờ</span>
                     <span><i class="fa fa-seedling"></i> Tươi mỗi ngày</span>
-                    <span><i class="fa fa-rotate-left"></i> Đổi trả trong 24 giờ</span>
+                    <span><i class="fa fa-undo"></i> Đổi trả trong 24 giờ</span>
                 </div>
 
                 <div class="pd-price-block">
@@ -156,11 +158,11 @@
                         </button>
                         <button type="button" class="pd-btn-wishlist" title="Yêu thích"><i class="fa fa-heart"></i></button>
                     </div>
-                    <div class="pd-stock" id="stockStatus">
+                    <div class="pd-stock @(Model.StockQuantity <= 0 ? "out" : "")" id="stockStatus">
                         @if (Model.StockQuantity > 0)
                         {
                             <i class="fa fa-check-circle"></i>
-                            <span>Còn hàng — giao hôm nay nếu đặt trước 16:00</span>
+                            <span>Còn @Model.StockQuantity @Model.Unit — giao hôm nay nếu đặt trước 16:00</span>
                         }
                         else
                         {
@@ -319,9 +321,11 @@
 
                     if (maxQty > 0) {
                         stockStatus.innerHTML = `<i class="fa fa-check-circle"></i><span>Còn ${maxQty} @Model.Unit — giao hôm nay nếu đặt trước 16:00</span>`;
+                        stockStatus.classList.remove('out');
                         btns.forEach(b => b && b.removeAttribute('disabled'));
                     } else {
                         stockStatus.innerHTML = '<i class="fa fa-times-circle"></i><span>Hết hàng</span>';
+                        stockStatus.classList.add('out');
                         btns.forEach(b => b && b.setAttribute('disabled', 'disabled'));
                     }
 
