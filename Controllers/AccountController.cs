@@ -30,7 +30,9 @@ public class AccountController : Controller
         {
             return RedirectToHome();
         }
-        return View(new RegisterRequest());
+
+        ViewBag.ActiveTab = "register";
+        return View("Auth", new AuthPageViewModel { Register = new RegisterRequest() });
     }
 
     // POST: Xử lý đăng ký
@@ -47,7 +49,8 @@ public class AccountController : Controller
         // Validate form
         if (!ModelState.IsValid)
         {
-            return View(model);
+            ViewBag.ActiveTab = "register";
+            return View("Auth", new AuthPageViewModel { Register = model });
         }
 
         // Gọi service đăng ký
@@ -57,7 +60,8 @@ public class AccountController : Controller
         if (!result.Success)
         {
             ModelState.AddModelError(string.Empty, result.ErrorMessage ?? "Đăng ký thất bại");
-            return View(model);
+            ViewBag.ActiveTab = "register";
+            return View("Auth", new AuthPageViewModel { Register = model });
         }
 
         // Thành công → hiện thông báo, chuyển sang trang login
@@ -77,7 +81,8 @@ public class AccountController : Controller
 
         // Lưu returnUrl để redirect sau khi login thành công
         ViewBag.ReturnUrl = returnUrl;
-        return View(new LoginRequest());
+        ViewBag.ActiveTab = "login";
+        return View("Auth", new AuthPageViewModel { Login = new LoginRequest() });
     }
 
     // POST: Xử lý đăng nhập
@@ -95,7 +100,8 @@ public class AccountController : Controller
         if (!ModelState.IsValid)
         {
             ViewBag.ReturnUrl = returnUrl;
-            return View(model);
+            ViewBag.ActiveTab = "login";
+            return View("Auth", new AuthPageViewModel { Login = model });
         }
 
         // Gọi service kiểm tra email + password
@@ -106,7 +112,8 @@ public class AccountController : Controller
         {
             ModelState.AddModelError(string.Empty, result.ErrorMessage ?? "Đăng nhập thất bại");
             ViewBag.ReturnUrl = returnUrl;
-            return View(model);
+            ViewBag.ActiveTab = "login";
+            return View("Auth", new AuthPageViewModel { Login = model });
         }
 
         // Login thành công → tạo claims cho cookie
