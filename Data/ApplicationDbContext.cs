@@ -26,6 +26,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<CartItem> CartItems => Set<CartItem>();
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
+    public DbSet<SePayTransaction> SePayTransactions => Set<SePayTransaction>();
     public DbSet<Coupon> Coupons => Set<Coupon>();
     public DbSet<Wishlist> Wishlists => Set<Wishlist>();
     public DbSet<Testimonial> Testimonials => Set<Testimonial>();
@@ -97,9 +98,23 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(e => new { e.UserId, e.CreatedAt }); // Index cho lịch sử đơn hàng
             entity.HasIndex(e => e.Status); // Index cho lọc theo trạng thái
             entity.HasIndex(e => e.AddressId);
+            entity.HasIndex(e => e.PaymentCode)
+                  .IsUnique()
+                  .HasFilter("[PaymentCode] IS NOT NULL");
             entity.HasOne(o => o.Address)
                   .WithMany(a => a.Orders)
                   .HasForeignKey(o => o.AddressId)
+                  .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<SePayTransaction>(entity =>
+        {
+            entity.HasIndex(e => e.SePayTransactionId).IsUnique();
+            entity.HasIndex(e => e.PaymentCode);
+            entity.HasIndex(e => e.OrderId);
+            entity.HasOne(e => e.Order)
+                  .WithMany()
+                  .HasForeignKey(e => e.OrderId)
                   .OnDelete(DeleteBehavior.SetNull);
         });
 

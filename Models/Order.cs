@@ -69,6 +69,9 @@ public class Order
 
     public PaymentStatus PaymentStatus { get; set; } = PaymentStatus.Pending;
 
+    [MaxLength(16)]
+    public string? PaymentCode { get; set; }
+
     public ShippingMethod ShippingMethod { get; set; } = ShippingMethod.FlatRate;
 
     public string? Notes { get; set; }
