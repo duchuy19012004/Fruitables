@@ -37,15 +37,14 @@ public class CheckoutControllerTests
         var shippingService = new Mock<IShippingService>();
         var logger = new Mock<ILogger<CheckoutController>>();
 
-        var packageSize = ShippingPackageCalculator.Calculate(3);
+        var expectedPackage = ShippingPackage.FromTotalKg(3);
         var cart = new CartViewModel
         {
             Items = new List<CartItemViewModel>
             {
                 new CartItemViewModel { ProductId = 1, ProductName = "Apple", Price = 10000, Quantity = 3 }
             },
-            Subtotal = 30000,
-            PackageSize = packageSize
+            Subtotal = 30000
         };
 
         cartService.Setup(service => service.GetCartAsync(It.IsAny<string>(), It.IsAny<string?>()))
@@ -75,7 +74,7 @@ public class CheckoutControllerTests
                 It.Is<string>(d => d == "Phuong Ben Nghe"),
                 It.Is<int?>(id => id == 1442),
                 It.Is<string?>(w => w == "20101"),
-                It.Is<PackageSize?>(ps => ps != null && ps.WeightGrams == packageSize.WeightGrams)))
+                It.Is<ShippingPackage?>(ps => ps != null && ps.Weight == expectedPackage.Weight)))
             .ReturnsAsync(new ShippingInfo { ShippingFee = 32000m, Zone = ShippingZone.Zone3_Remote });
 
         var httpContext = TestControllerContext.WithUserId(1).HttpContext;
@@ -103,7 +102,7 @@ public class CheckoutControllerTests
                 "Phuong Ben Nghe",
                 1442,
                 "20101",
-                packageSize),
+                expectedPackage),
             Times.Once);
     }
 
@@ -138,15 +137,14 @@ public class CheckoutControllerTests
         var shippingService = new Mock<IShippingService>();
         var logger = new Mock<ILogger<CheckoutController>>();
 
-        var packageSize = ShippingPackageCalculator.Calculate(4);
+        var expectedPackage = ShippingPackage.FromTotalKg(4);
         var cart = new CartViewModel
         {
             Items = new List<CartItemViewModel>
             {
                 new CartItemViewModel { ProductId = 1, ProductName = "Apple", Price = 10000, Quantity = 4 }
             },
-            Subtotal = 40000,
-            PackageSize = packageSize
+            Subtotal = 40000
         };
 
         cartService.Setup(service => service.GetCartAsync(It.IsAny<string>(), It.IsAny<string?>()))
@@ -160,7 +158,7 @@ public class CheckoutControllerTests
                 It.Is<string>(d => d == "Phuong Ben Nghe"),
                 It.Is<int?>(id => id == 1442),
                 It.Is<string?>(w => w == "20101"),
-                It.Is<PackageSize?>(ps => ps != null && ps.WeightGrams == packageSize.WeightGrams)))
+                It.Is<ShippingPackage?>(ps => ps != null && ps.Weight == expectedPackage.Weight)))
             .ReturnsAsync(new ShippingInfo { ShippingFee = 32000m, Zone = ShippingZone.Zone3_Remote });
 
         orderService.Setup(service => service.CreateOrderAsync(It.IsAny<CheckoutViewModel>(), "session-2", 1))
@@ -197,7 +195,7 @@ public class CheckoutControllerTests
                 "Phuong Ben Nghe",
                 1442,
                 "20101",
-                packageSize),
+                expectedPackage),
             Times.Once);
     }
 
@@ -232,15 +230,14 @@ public class CheckoutControllerTests
         var shippingService = new Mock<IShippingService>();
         var logger = new Mock<ILogger<CheckoutController>>();
 
-        var packageSize = ShippingPackageCalculator.Calculate(4);
+        var expectedPackage = ShippingPackage.FromTotalKg(4);
         var cart = new CartViewModel
         {
             Items = new List<CartItemViewModel>
             {
                 new CartItemViewModel { ProductId = 1, ProductName = "Apple", Price = 10000, Quantity = 4 }
             },
-            Subtotal = 40000,
-            PackageSize = packageSize
+            Subtotal = 40000
         };
 
         cartService.Setup(service => service.GetCartAsync(It.IsAny<string>(), It.IsAny<string?>()))
@@ -271,7 +268,7 @@ public class CheckoutControllerTests
                 It.Is<string>(d => d == "Phuong Ben Nghe"),
                 It.Is<int?>(id => id == 1442),
                 It.Is<string?>(w => w == "20101"),
-                It.Is<PackageSize?>(ps => ps != null && ps.WeightGrams == packageSize.WeightGrams)))
+                It.Is<ShippingPackage?>(ps => ps != null && ps.Weight == expectedPackage.Weight)))
             .ReturnsAsync(new ShippingInfo { ShippingFee = 32000m, Zone = ShippingZone.Zone3_Remote });
 
         orderService.Setup(service => service.CreateOrderAsync(It.IsAny<CheckoutViewModel>(), "session-3", 1))

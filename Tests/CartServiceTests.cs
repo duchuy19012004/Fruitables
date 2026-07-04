@@ -25,7 +25,7 @@ public class CartServiceTests
     [InlineData(6, 6000, 40, 30, 20)]
     public async Task GetCartAsync_ComputesPackageSize_FromItemQuantities(
         int quantity,
-        int expectedWeightGrams,
+        int expectedWeight,
         int expectedLength,
         int expectedWidth,
         int expectedHeight)
@@ -59,37 +59,18 @@ public class CartServiceTests
         });
         await context.SaveChangesAsync();
 
-        var shippingServiceMock = new Mock<IShippingService>();
-        shippingServiceMock
-            .Setup(service => service.CalculateShippingAsync(
-                It.IsAny<decimal>(),
-                It.IsAny<string>(),
-                It.IsAny<int?>(),
-                It.IsAny<string?>(),
-                It.IsAny<PackageSize?>()))
-            .ReturnsAsync(new ShippingInfo { ShippingFee = 0m });
-
         var couponServiceMock = new Mock<ICouponService>();
         var unitOfWork = new UnitOfWork(context);
-        var cartService = new CartService(unitOfWork, shippingServiceMock.Object, couponServiceMock.Object);
+        var cartService = new CartService(unitOfWork, couponServiceMock.Object);
 
         var result = await cartService.GetCartAsync("test-session");
 
-        Assert.NotNull(result.PackageSize);
-        Assert.Equal(expectedWeightGrams, result.PackageSize.WeightGrams);
-        Assert.Equal(expectedLength, result.PackageSize.Length);
-        Assert.Equal(expectedWidth, result.PackageSize.Width);
-        Assert.Equal(expectedHeight, result.PackageSize.Height);
+        Assert.Equal(expectedWeight, result.ShippingPackage.Weight);
+        Assert.Equal(expectedLength, result.ShippingPackage.Length);
+        Assert.Equal(expectedWidth, result.ShippingPackage.Width);
+        Assert.Equal(expectedHeight, result.ShippingPackage.Height);
         Assert.Null(result.ShippingInfo);
         Assert.Equal(0m, result.ShippingFee);
-
-        shippingServiceMock.Verify(service => service.CalculateShippingAsync(
-            It.IsAny<decimal>(),
-            It.IsAny<string>(),
-            It.IsAny<int?>(),
-            It.IsAny<string?>(),
-            It.IsAny<PackageSize?>()),
-            Times.Never);
     }
 
     [Fact]
@@ -101,37 +82,18 @@ public class CartServiceTests
         context.Carts.Add(new Cart { SessionId = "empty-session" });
         await context.SaveChangesAsync();
 
-        var shippingServiceMock = new Mock<IShippingService>();
-        shippingServiceMock
-            .Setup(service => service.CalculateShippingAsync(
-                It.IsAny<decimal>(),
-                It.IsAny<string>(),
-                It.IsAny<int?>(),
-                It.IsAny<string?>(),
-                It.IsAny<PackageSize?>()))
-            .ReturnsAsync(new ShippingInfo { ShippingFee = 0m });
-
         var couponServiceMock = new Mock<ICouponService>();
         var unitOfWork = new UnitOfWork(context);
-        var cartService = new CartService(unitOfWork, shippingServiceMock.Object, couponServiceMock.Object);
+        var cartService = new CartService(unitOfWork, couponServiceMock.Object);
 
         var result = await cartService.GetCartAsync("empty-session");
 
-        Assert.NotNull(result.PackageSize);
-        Assert.Equal(0, result.PackageSize.WeightGrams);
-        Assert.Equal(20, result.PackageSize.Length);
-        Assert.Equal(15, result.PackageSize.Width);
-        Assert.Equal(10, result.PackageSize.Height);
+        Assert.Equal(0, result.ShippingPackage.Weight);
+        Assert.Equal(20, result.ShippingPackage.Length);
+        Assert.Equal(15, result.ShippingPackage.Width);
+        Assert.Equal(10, result.ShippingPackage.Height);
         Assert.Null(result.ShippingInfo);
         Assert.Equal(0m, result.ShippingFee);
-
-        shippingServiceMock.Verify(service => service.CalculateShippingAsync(
-            It.IsAny<decimal>(),
-            It.IsAny<string>(),
-            It.IsAny<int?>(),
-            It.IsAny<string?>(),
-            It.IsAny<PackageSize?>()),
-            Times.Never);
     }
 
     [Fact]
@@ -174,32 +136,17 @@ public class CartServiceTests
             new CartItem { CartId = cart.Id, ProductId = product2.Id, Quantity = 3, Price = product2.Price });
         await context.SaveChangesAsync();
 
-        var shippingServiceMock = new Mock<IShippingService>();
-        shippingServiceMock
-            .Setup(service => service.CalculateShippingAsync(
-                It.IsAny<decimal>(),
-                It.IsAny<string>(),
-                It.IsAny<int?>(),
-                It.IsAny<string?>(),
-                It.IsAny<PackageSize?>()))
-            .ReturnsAsync(new ShippingInfo { ShippingFee = 0m });
-
         var couponServiceMock = new Mock<ICouponService>();
         var unitOfWork = new UnitOfWork(context);
-        var cartService = new CartService(unitOfWork, shippingServiceMock.Object, couponServiceMock.Object);
+        var cartService = new CartService(unitOfWork, couponServiceMock.Object);
 
         var result = await cartService.GetCartAsync("multi-session");
 
-        Assert.Equal(5000, result.PackageSize?.WeightGrams);
+        Assert.Equal(5000, result.ShippingPackage.Weight);
+        Assert.Equal(30, result.ShippingPackage.Length);
+        Assert.Equal(20, result.ShippingPackage.Width);
+        Assert.Equal(15, result.ShippingPackage.Height);
         Assert.Null(result.ShippingInfo);
         Assert.Equal(0m, result.ShippingFee);
-
-        shippingServiceMock.Verify(service => service.CalculateShippingAsync(
-            It.IsAny<decimal>(),
-            It.IsAny<string>(),
-            It.IsAny<int?>(),
-            It.IsAny<string?>(),
-            It.IsAny<PackageSize?>()),
-            Times.Never);
     }
 }

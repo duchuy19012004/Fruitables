@@ -19,15 +19,14 @@ public class CartControllerTests
         var cartService = new Mock<ICartService>();
         var couponService = new Mock<ICouponService>();
 
-        var packageSize = ShippingPackageCalculator.Calculate(3);
+        var expectedPackage = ShippingPackage.FromTotalKg(3);
         var cart = new CartViewModel
         {
             Items =
             {
                 new CartItemViewModel { ProductId = 1, ProductName = "Apple", Price = 10000m, Quantity = 3 }
             },
-            Subtotal = 30000m,
-            PackageSize = packageSize
+            Subtotal = 30000m
         };
 
         cartService
@@ -40,7 +39,7 @@ public class CartControllerTests
                 It.Is<string>(d => d == "Phuong Ben Nghe"),
                 It.Is<int?>(id => id == 1442),
                 It.Is<string?>(w => w == "20101"),
-                It.Is<PackageSize?>(ps => ps != null && ps.WeightGrams == packageSize.WeightGrams)))
+                It.Is<ShippingPackage?>(ps => ps != null && ps.Weight == expectedPackage.Weight)))
             .ReturnsAsync(new ShippingInfo
             {
                 ShippingFee = 32000m,
@@ -77,7 +76,7 @@ public class CartControllerTests
                 "Phuong Ben Nghe",
                 1442,
                 "20101",
-                It.Is<PackageSize?>(ps => ps != null && ps.WeightGrams == packageSize.WeightGrams)),
+                It.Is<ShippingPackage?>(ps => ps != null && ps.Weight == expectedPackage.Weight)),
             Times.Once);
     }
 
@@ -88,12 +87,11 @@ public class CartControllerTests
         var cartService = new Mock<ICartService>();
         var couponService = new Mock<ICouponService>();
 
-        var packageSize = ShippingPackageCalculator.Calculate(0);
+        var expectedPackage = ShippingPackage.FromTotalKg(0);
         var cart = new CartViewModel
         {
             Items = new List<CartItemViewModel>(),
-            Subtotal = 0m,
-            PackageSize = packageSize
+            Subtotal = 0m
         };
 
         cartService
@@ -106,7 +104,7 @@ public class CartControllerTests
                 It.Is<string>(d => d == "Phuong Ben Nghe"),
                 It.Is<int?>(id => id == 1442),
                 It.Is<string?>(w => w == "20101"),
-                It.Is<PackageSize?>(ps => ps != null && ps.WeightGrams == 0)))
+                It.Is<ShippingPackage?>(ps => ps != null && ps.Weight == expectedPackage.Weight)))
             .ReturnsAsync(new ShippingInfo
             {
                 ShippingFee = 0m,
@@ -143,7 +141,7 @@ public class CartControllerTests
                 "Phuong Ben Nghe",
                 1442,
                 "20101",
-                It.Is<PackageSize?>(ps => ps != null && ps.WeightGrams == 0)),
+                It.Is<ShippingPackage?>(ps => ps != null && ps.Weight == expectedPackage.Weight)),
             Times.Once);
     }
 
@@ -154,15 +152,14 @@ public class CartControllerTests
         var cartService = new Mock<ICartService>();
         var couponService = new Mock<ICouponService>();
 
-        var packageSize = ShippingPackageCalculator.Calculate(3);
+        var expectedPackage = ShippingPackage.FromTotalKg(3);
         var cart = new CartViewModel
         {
             Items =
             {
                 new CartItemViewModel { ProductId = 1, ProductName = "Apple", Price = 10000m, Quantity = 3 }
             },
-            Subtotal = 30000m,
-            PackageSize = packageSize
+            Subtotal = 30000m
         };
 
         cartService
@@ -175,7 +172,7 @@ public class CartControllerTests
                 It.Is<string>(d => d == "Phuong Ben Nghe"),
                 It.Is<int?>(id => id == null),
                 It.Is<string?>(w => w == null),
-                It.Is<PackageSize?>(ps => ps != null && ps.WeightGrams == packageSize.WeightGrams)))
+                It.Is<ShippingPackage?>(ps => ps != null && ps.Weight == expectedPackage.Weight)))
             .ReturnsAsync(new ShippingInfo
             {
                 ShippingFee = 0m,
@@ -210,7 +207,7 @@ public class CartControllerTests
                 "Phuong Ben Nghe",
                 null,
                 null,
-                It.Is<PackageSize?>(ps => ps != null && ps.WeightGrams == packageSize.WeightGrams)),
+                It.Is<ShippingPackage?>(ps => ps != null && ps.Weight == expectedPackage.Weight)),
             Times.Once);
     }
 
