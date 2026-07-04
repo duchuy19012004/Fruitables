@@ -162,7 +162,7 @@
                         @if (Model.StockQuantity > 0)
                         {
                             <i class="fa fa-check-circle"></i>
-                            <span>Còn @Model.StockQuantity @Model.Unit — giao hôm nay nếu đặt trước 16:00</span>
+                            <span>Còn @Model.StockQuantity @Model.Unit - giao hôm nay nếu đặt trước 16:00</span>
                         }
                         else
                         {
@@ -320,7 +320,7 @@
                     ];
 
                     if (maxQty > 0) {
-                        stockStatus.innerHTML = `<i class="fa fa-check-circle"></i><span>Còn ${maxQty} @Model.Unit — giao hôm nay nếu đặt trước 16:00</span>`;
+                        stockStatus.innerHTML = `<i class="fa fa-check-circle"></i><span>Còn ${maxQty} @Model.Unit - giao hôm nay nếu đặt trước 16:00</span>`;
                         stockStatus.classList.remove('out');
                         btns.forEach(b => b && b.removeAttribute('disabled'));
                     } else {
