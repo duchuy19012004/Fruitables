@@ -38,7 +38,7 @@ public class AccountController : Controller
     // POST: Xử lý đăng ký
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Register(RegisterRequest model)
+    public async Task<IActionResult> Register([Bind(Prefix = "Register")] RegisterRequest model)
     {
         // Nếu đã đăng nhập → bỏ qua
         if (User.Identity?.IsAuthenticated == true)
@@ -88,7 +88,7 @@ public class AccountController : Controller
     // POST: Xử lý đăng nhập
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Login(LoginRequest model, string? returnUrl = null)
+    public async Task<IActionResult> Login([Bind(Prefix = "Login")] LoginRequest model, string? returnUrl = null)
     {
         // Nếu đã đăng nhập → bỏ qua
         if (User.Identity?.IsAuthenticated == true)

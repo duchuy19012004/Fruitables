@@ -52,4 +52,22 @@ public class AccountControllerTests
         Assert.Equal("register", controller.ViewBag.ActiveTab);
         Assert.NotNull(model.Register);
     }
+
+    [Fact]
+    public void Login_Post_BindsNestedLoginFormFields()
+    {
+        var method = typeof(AccountController).GetMethod(nameof(AccountController.Login), new[] { typeof(LoginRequest), typeof(string) });
+
+        var bind = Assert.IsType<BindAttribute>(method!.GetParameters()[0].GetCustomAttributes(typeof(BindAttribute), false).Single());
+        Assert.Equal("Login", bind.Prefix);
+    }
+
+    [Fact]
+    public void Register_Post_BindsNestedRegisterFormFields()
+    {
+        var method = typeof(AccountController).GetMethod(nameof(AccountController.Register), new[] { typeof(RegisterRequest) });
+
+        var bind = Assert.IsType<BindAttribute>(method!.GetParameters()[0].GetCustomAttributes(typeof(BindAttribute), false).Single());
+        Assert.Equal("Register", bind.Prefix);
+    }
 }
