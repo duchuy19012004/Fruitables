@@ -1,0 +1,62 @@
+@{
+    ViewData["Title"] = "Hỗ trợ khách hàng";
+}
+
+<!-- Single Page Header start -->
+<div class="container-fluid page-header py-5">
+    <h1 class="text-center text-white display-6">Hỗ trợ khách hàng</h1>
+    <ol class="breadcrumb justify-content-center mb-0">
+        <li class="breadcrumb-item"><a asp-controller="Home" asp-action="Index">Trang chủ</a></li>
+        <li class="breadcrumb-item active text-white">Chat</li>
+    </ol>
+</div>
+<!-- Single Page Header End -->
+
+<div class="container-fluid chat-page-section py-5">
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-lg-8 col-xl-7">
+                <div class="chat-page-card" data-chat-root="page">
+                    <div class="chat-header">
+                        <div class="chat-header-icon">
+                            <i class="fas fa-comments"></i>
+                        </div>
+                        <div>
+                            <h2 class="chat-header-title mb-0">Chat hỗ trợ</h2>
+                            <p class="chat-header-sub mb-0">Hỏi nhanh về giao hàng, thanh toán, sản phẩm…</p>
+                        </div>
+                    </div>
+
+                    <div class="chat-messages" data-chat-messages aria-live="polite">
+                        <div class="chat-bubble chat-bubble-assistant chat-welcome">
+                            Xin chào! Mình là trợ lý Fruitables. Bạn cần hỗ trợ gì hôm nay?
+                        </div>
+                    </div>
+
+                    <div class="chat-chips" data-chat-chips>
+                        <button type="button" class="chat-chip" data-chat-chip="Phí ship?">Phí ship?</button>
+                        <button type="button" class="chat-chip" data-chat-chip="Thanh toán SePay?">Thanh toán SePay?</button>
+                        <button type="button" class="chat-chip" data-chat-chip="Bảo quản rau củ?">Bảo quản rau củ?</button>
+                        <button type="button" class="chat-chip" data-chat-chip="Giờ làm việc?">Giờ làm việc?</button>
+                    </div>
+
+                    <div class="chat-error d-none" data-chat-error role="alert"></div>
+
+                    <form class="chat-input-row" data-chat-form>
+                        <input type="text"
+                               class="chat-input"
+                               data-chat-input
+                               placeholder="Nhập câu hỏi của bạn..."
+                               autocomplete="off"
+                               maxlength="2000"
+                               aria-label="Tin nhắn" />
+                        <button type="submit" class="chat-send-btn" data-chat-send aria-label="Gửi">
+                            <i class="fas fa-paper-plane"></i>
+                            <span class="chat-send-label">Gửi</span>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

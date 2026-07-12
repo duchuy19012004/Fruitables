@@ -104,6 +104,7 @@
                         </div>
                     </div>
                     <a asp-controller="Contact" asp-action="Index" class="nav-item nav-link @(currentController == "Contact" ? "active" : "")">Liên hệ</a>
+                    <a asp-controller="Chat" asp-action="Index" class="nav-item nav-link @(currentController == "Chat" ? "active" : "")">Hỗ trợ</a>
                     
                     @if (User.Identity?.IsAuthenticated != true)
                     {

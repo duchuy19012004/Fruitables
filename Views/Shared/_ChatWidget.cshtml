@@ -1,0 +1,63 @@
+@{
+    var currentController = ViewContext.RouteData.Values["controller"]?.ToString();
+    // Full chat page already has data-chat-root="page" — skip the floating widget there.
+    var hideWidget = string.Equals(currentController, "Chat", StringComparison.OrdinalIgnoreCase);
+}
+
+@if (!hideWidget)
+{
+    <div class="chat-widget" id="chatWidget">
+        <button type="button"
+                class="chat-widget-fab"
+                id="chatWidgetToggle"
+                aria-label="Mở chat hỗ trợ"
+                aria-expanded="false"
+                aria-controls="chatWidgetPanel">
+            <i class="fas fa-comments chat-fab-icon-open"></i>
+            <i class="fas fa-times chat-fab-icon-close"></i>
+        </button>
+
+        <div class="chat-widget-panel" id="chatWidgetPanel" data-chat-root="widget" hidden>
+            <div class="chat-header chat-widget-header">
+                <div class="chat-header-icon">
+                    <i class="fas fa-comments"></i>
+                </div>
+                <div class="chat-widget-header-text">
+                    <h3 class="chat-header-title mb-0">Hỗ trợ</h3>
+                    <p class="chat-header-sub mb-0">Fruitables Assistant</p>
+                </div>
+                <a asp-controller="Chat" asp-action="Index" class="chat-expand-link" title="Mở trang chat đầy đủ">
+                    Mở rộng <i class="fas fa-external-link-alt"></i>
+                </a>
+            </div>
+
+            <div class="chat-messages" data-chat-messages aria-live="polite">
+                <div class="chat-bubble chat-bubble-assistant chat-welcome">
+                    Xin chào! Bạn cần hỗ trợ gì?
+                </div>
+            </div>
+
+            <div class="chat-chips" data-chat-chips>
+                <button type="button" class="chat-chip" data-chat-chip="Phí ship?">Phí ship?</button>
+                <button type="button" class="chat-chip" data-chat-chip="Thanh toán SePay?">Thanh toán SePay?</button>
+                <button type="button" class="chat-chip" data-chat-chip="Bảo quản rau củ?">Bảo quản rau củ?</button>
+                <button type="button" class="chat-chip" data-chat-chip="Giờ làm việc?">Giờ làm việc?</button>
+            </div>
+
+            <div class="chat-error d-none" data-chat-error role="alert"></div>
+
+            <form class="chat-input-row" data-chat-form>
+                <input type="text"
+                       class="chat-input"
+                       data-chat-input
+                       placeholder="Nhập câu hỏi..."
+                       autocomplete="off"
+                       maxlength="2000"
+                       aria-label="Tin nhắn" />
+                <button type="submit" class="chat-send-btn" data-chat-send aria-label="Gửi">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </form>
+        </div>
+    </div>
+}

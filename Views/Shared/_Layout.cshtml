@@ -285,5 +285,10 @@
             }
         });
     </script>
+
+    <!-- Storefront chat (page + floating widget) -->
+    <link rel="stylesheet" href="~/css/chat.css" asp-append-version="true" />
+    @await Html.PartialAsync("_ChatWidget")
+    <script src="~/js/chat.js" asp-append-version="true"></script>
 </body>
 </html>
