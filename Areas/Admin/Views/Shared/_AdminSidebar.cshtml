@@ -126,6 +126,13 @@
                 <span>Liên hệ</span>
             </a>
         </li>
+        <li class="sidebar-nav-item">
+            <a asp-action="Index" asp-controller="Faq" asp-area="Admin"
+               class="sidebar-nav-link @(controller == "Faq" ? "active" : "")">
+                <i class="fas fa-robot"></i>
+                <span>FAQ chatbot</span>
+            </a>
+        </li>
     </ul>
 
     <!-- System -->

@@ -1,0 +1,119 @@
+@model Fruitables.ViewModels.FaqListViewModel
+@{
+    ViewData["Title"] = "Quản lý FAQ chatbot";
+    Layout = "~/Areas/Admin/Views/Shared/_AdminDashboardLayout.cshtml";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="mb-1">Quản lý FAQ chatbot</h4>
+        <p class="text-muted mb-0">Câu hỏi thường gặp dùng cho chatbot RAG</p>
+    </div>
+    <div class="d-flex gap-2">
+        <form asp-action="ReindexAll" method="post" class="d-inline">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="btn btn-outline-warning"
+                    onclick="return confirm('Lập chỉ mục lại toàn bộ FAQ, sản phẩm và cài đặt cho chatbot?');">
+                <i class="fas fa-sync-alt me-2"></i>Lập chỉ mục lại
+            </button>
+        </form>
+        <a asp-action="Create" class="btn btn-primary">
+            <i class="fas fa-plus me-2"></i>Thêm FAQ
+        </a>
+    </div>
+</div>
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1100;">
+    @if (TempData["Success"] != null)
+    {
+        <div class="toast show" role="alert" data-bs-autohide="true" data-bs-delay="5000">
+            <div class="toast-header bg-success text-white">
+                <i class="fas fa-check-circle me-2"></i>
+                <strong class="me-auto">Thành công</strong>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
+            </div>
+            <div class="toast-body">@TempData["Success"]</div>
+        </div>
+    }
+    @if (TempData["Error"] != null)
+    {
+        <div class="toast show" role="alert" data-bs-autohide="true" data-bs-delay="5000">
+            <div class="toast-header bg-danger text-white">
+                <i class="fas fa-exclamation-circle me-2"></i>
+                <strong class="me-auto">Lỗi</strong>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
+            </div>
+            <div class="toast-body">@TempData["Error"]</div>
+        </div>
+    }
+</div>
+
+<div class="admin-card">
+    <div class="card-header">
+        <i class="fas fa-comments me-2"></i>Danh sách FAQ
+    </div>
+    <div class="card-body p-0">
+        @if (Model.Faqs.Any())
+        {
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Tiêu đề</th>
+                            <th>Danh mục</th>
+                            <th class="text-center">Trạng thái</th>
+                            <th class="text-center" style="width: 160px;">Thao tác</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var faq in Model.Faqs)
+                        {
+                            <tr>
+                                <td class="fw-semibold">@faq.Title</td>
+                                <td>
+                                    <span class="badge bg-light text-dark border">@faq.Category</span>
+                                </td>
+                                <td class="text-center">
+                                    @if (faq.IsActive)
+                                    {
+                                        <span class="badge bg-success">Hoạt động</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-secondary">Tắt</span>
+                                    }
+                                </td>
+                                <td class="text-center">
+                                    <div class="d-flex gap-1 justify-content-center">
+                                        <a asp-action="Edit" asp-route-id="@faq.Id"
+                                           class="btn btn-sm btn-outline-primary" title="Chỉnh sửa">
+                                            <i class="fas fa-edit"></i>
+                                        </a>
+                                        <form asp-action="ToggleActive" asp-route-id="@faq.Id" method="post" class="d-inline">
+                                            @Html.AntiForgeryToken()
+                                            <button type="submit"
+                                                    class="btn btn-sm @(faq.IsActive ? "btn-outline-warning" : "btn-outline-success")"
+                                                    title="@(faq.IsActive ? "Tắt" : "Bật")">
+                                                <i class="fas @(faq.IsActive ? "fa-toggle-on" : "fa-toggle-off")"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else
+        {
+            <div class="text-center py-5">
+                <i class="fas fa-comments fa-3x text-muted mb-3"></i>
+                <p class="text-muted">Chưa có FAQ nào</p>
+                <a asp-action="Create" class="btn btn-primary">
+                    <i class="fas fa-plus me-2"></i>Tạo FAQ đầu tiên
+                </a>
+            </div>
+        }
+    </div>
+</div>

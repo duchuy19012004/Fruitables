@@ -1,0 +1,71 @@
+@model Fruitables.ViewModels.CreateFaqViewModel
+@{
+    ViewData["Title"] = "Thêm FAQ";
+    Layout = "~/Areas/Admin/Views/Shared/_AdminDashboardLayout.cshtml";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="mb-1">Thêm FAQ mới</h4>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-0">
+                <li class="breadcrumb-item"><a asp-action="Index">FAQ chatbot</a></li>
+                <li class="breadcrumb-item active">Thêm mới</li>
+            </ol>
+        </nav>
+    </div>
+    <a asp-action="Index" class="btn btn-outline-secondary">
+        <i class="fas fa-arrow-left me-2"></i>Quay lại
+    </a>
+</div>
+
+<div class="admin-card">
+    <div class="card-header">
+        <i class="fas fa-comments me-2"></i>Thông tin FAQ
+    </div>
+    <div class="card-body">
+        <form asp-action="Create" method="post" novalidate>
+            <div asp-validation-summary="ModelOnly" class="alert alert-danger" role="alert"></div>
+
+            <div class="row">
+                <div class="col-md-8 mb-3">
+                    <label asp-for="Title" class="form-label">Tiêu đề <span class="text-danger">*</span></label>
+                    <input asp-for="Title" class="form-control" placeholder="Ví dụ: Phí vận chuyển là bao nhiêu?" />
+                    <span asp-validation-for="Title" class="text-danger"></span>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label asp-for="Category" class="form-label">Danh mục</label>
+                    <input asp-for="Category" class="form-control" placeholder="general, shipping, policy..." />
+                    <div class="form-text">Để trống = general</div>
+                    <span asp-validation-for="Category" class="text-danger"></span>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="Body" class="form-label">Nội dung <span class="text-danger">*</span></label>
+                <textarea asp-for="Body" class="form-control" rows="8"
+                          placeholder="Câu trả lời chi tiết dùng cho chatbot..."></textarea>
+                <span asp-validation-for="Body" class="text-danger"></span>
+            </div>
+
+            <div class="mb-3">
+                <div class="form-check form-switch">
+                    <input asp-for="IsActive" class="form-check-input" type="checkbox" checked />
+                    <label asp-for="IsActive" class="form-check-label">Kích hoạt FAQ (đưa vào chatbot)</label>
+                </div>
+            </div>
+
+            <hr class="my-3" />
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save me-2"></i>Lưu FAQ
+                </button>
+                <a asp-action="Index" class="btn btn-outline-secondary">Hủy</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}
