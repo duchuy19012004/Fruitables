@@ -24,7 +24,7 @@ public class SePayWebhookControllerTests
 
     private static SePayWebhookController CreateController(ApplicationDbContext context, string body, string secret = "test-secret")
     {
-        var options = Options.Create(new SePayOptions
+        var options = Microsoft.Extensions.Options.Options.Create(new SePayOptions
         {
             WebhookSecret = secret,
             PaymentCodePrefix = "FTB"

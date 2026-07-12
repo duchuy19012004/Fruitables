@@ -64,6 +64,8 @@ builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IShippingService, ShippingService>();
 builder.Services.Configure<GhnOptions>(builder.Configuration.GetSection("Ghn"));
 builder.Services.Configure<SePayOptions>(builder.Configuration.GetSection("SePay"));
+builder.Services.Configure<Fruitables.Options.ChatOptions>(
+    builder.Configuration.GetSection(Fruitables.Options.ChatOptions.SectionName));
 builder.Services.AddHttpClient<IGhnService, GhnService>((serviceProvider, client) =>
 {
     var options = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<GhnOptions>>().Value;

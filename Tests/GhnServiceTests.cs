@@ -130,7 +130,7 @@ public class GhnServiceTests
         if (setBaseAddress)
             httpClient.BaseAddress = new Uri("https://dev-online-gateway.ghn.vn/shiip/public-api/");
 
-        var options = Options.Create(new GhnOptions
+        var options = Microsoft.Extensions.Options.Options.Create(new GhnOptions
         {
             BaseUrl = baseUrl ?? "https://dev-online-gateway.ghn.vn/shiip/public-api/",
             Token = "test-token",
