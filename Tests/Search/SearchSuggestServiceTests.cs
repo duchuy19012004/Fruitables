@@ -114,10 +114,23 @@ public class SearchSuggestServiceTests
         await SeedCatalogAsync(db);
         var sut = CreateSut(db);
 
-        // Coarse filter is Name.Contains(raw); use a substring present on the stored name
-        var result = await sut.SuggestAsync("Trái");
+        // Accent-insensitive: query without diacritics still matches "Trái cây"
+        var result = await sut.SuggestAsync("trai");
 
         Assert.Contains(result.Categories, c => c.Slug == "trai-cay" && c.Url == "/Shop?categoryId=1");
+    }
+
+    [Fact]
+    public async Task Suggest_unaccented_query_matches_accented_product_name()
+    {
+        await using var db = CreateContext();
+        await SeedCatalogAsync(db);
+        var sut = CreateSut(db);
+
+        var result = await sut.SuggestAsync("tao");
+
+        Assert.Contains(result.Products, p => p.Slug == "tao-fuji");
+        Assert.Contains(result.Keywords, k => k.Text == "táo fuji");
     }
 
     [Fact]

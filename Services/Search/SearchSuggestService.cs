@@ -40,64 +40,69 @@ public sealed class SearchSuggestService : ISearchSuggestService
         if (qNorm.Length == 0)
             return response;
 
-        // Coarse filter by Name.Contains(raw) so candidates are bounded by user text,
-        // then rank in memory with diacritic-aware normalizer (Score).
-        var products = await _db.Products.AsNoTracking()
-            .Where(p => p.IsActive && !p.IsDeleted && p.Name.Contains(raw))
-            .Include(p => p.Images)
-            .OrderByDescending(p => p.IsFeatured)
-            .ThenBy(p => p.Name)
-            .Take(200)
-            .ToListAsync(ct);
-
-        var categories = await _db.Categories.AsNoTracking()
-            .Where(c => c.IsActive && !c.IsDeleted && c.Name.Contains(raw))
-            .OrderBy(c => c.SortOrder)
-            .ThenBy(c => c.Name)
-            .Take(100)
-            .ToListAsync(ct);
-
-        var keywords = await _db.SearchHotKeywords.AsNoTracking()
-            .Where(k => k.IsActive)
-            .ToListAsync(ct);
-
-        response.Products = products
-            .Select(p =>
+        // Shop-scale: load light rows for all active products/categories (no SQL Contains —
+        // raw query often lacks diacritics; match is normalize + Score in memory).
+        // Images load only for ranked top-N products.
+        var productRows = await _db.Products.AsNoTracking()
+            .Where(p => p.IsActive && !p.IsDeleted)
+            .Select(p => new
             {
-                var n = SearchTextNormalizer.Normalize(p.Name);
-                var score = Score(n, qNorm);
-                return (p, score);
+                p.Id,
+                p.Name,
+                p.Slug,
+                p.Price,
+                p.SalePrice,
+                p.IsFeatured
             })
+            .ToListAsync(ct);
+
+        var rankedProducts = productRows
+            .Select(p => (p, score: Score(SearchTextNormalizer.Normalize(p.Name), qNorm)))
             .Where(x => x.score > 0)
             .OrderByDescending(x => x.score)
             .ThenByDescending(x => x.p.IsFeatured)
             .ThenBy(x => x.p.Name)
             .Take(Math.Max(0, _options.MaxProducts))
-            .Select(x =>
-            {
-                var img = x.p.Images?.FirstOrDefault(i => i.IsPrimary)?.ImageUrl
-                    ?? x.p.Images?.OrderBy(i => i.SortOrder).FirstOrDefault()?.ImageUrl;
-                return new SearchSuggestProductDto
+            .ToList();
+
+        var topIds = rankedProducts.Select(x => x.p.Id).ToList();
+        var imageByProduct = topIds.Count == 0
+            ? new Dictionary<int, string?>()
+            : await _db.ProductImages.AsNoTracking()
+                .Where(i => topIds.Contains(i.ProductId))
+                .GroupBy(i => i.ProductId)
+                .Select(g => new
                 {
-                    Id = x.p.Id,
-                    Name = x.p.Name,
-                    Slug = x.p.Slug,
-                    Price = x.p.Price,
-                    SalePrice = x.p.SalePrice,
-                    ImageUrl = img,
-                    Url = "/Shop/Detail/" + Uri.EscapeDataString(x.p.Slug)
-                };
+                    ProductId = g.Key,
+                    Url = g.OrderByDescending(i => i.IsPrimary).ThenBy(i => i.SortOrder)
+                        .Select(i => i.ImageUrl)
+                        .FirstOrDefault()
+                })
+                .ToDictionaryAsync(x => x.ProductId, x => (string?)x.Url, ct);
+
+        response.Products = rankedProducts
+            .Select(x => new SearchSuggestProductDto
+            {
+                Id = x.p.Id,
+                Name = x.p.Name,
+                Slug = x.p.Slug,
+                Price = x.p.Price,
+                SalePrice = x.p.SalePrice,
+                ImageUrl = imageByProduct.TryGetValue(x.p.Id, out var url) ? url : null,
+                Url = "/Shop/Detail/" + Uri.EscapeDataString(x.p.Slug)
             })
             .ToList();
 
-        response.Categories = categories
-            .Select(c =>
-            {
-                var n = SearchTextNormalizer.Normalize(c.Name);
-                return (c, score: Score(n, qNorm));
-            })
+        var categoryRows = await _db.Categories.AsNoTracking()
+            .Where(c => c.IsActive && !c.IsDeleted)
+            .Select(c => new { c.Id, c.Name, c.Slug, c.SortOrder })
+            .ToListAsync(ct);
+
+        response.Categories = categoryRows
+            .Select(c => (c, score: Score(SearchTextNormalizer.Normalize(c.Name), qNorm)))
             .Where(x => x.score > 0)
             .OrderByDescending(x => x.score)
+            .ThenBy(x => x.c.SortOrder)
             .ThenBy(x => x.c.Name)
             .Take(Math.Max(0, _options.MaxCategories))
             .Select(x => new SearchSuggestCategoryDto
@@ -108,6 +113,10 @@ public sealed class SearchSuggestService : ISearchSuggestService
                 Url = "/Shop?categoryId=" + x.c.Id
             })
             .ToList();
+
+        var keywords = await _db.SearchHotKeywords.AsNoTracking()
+            .Where(k => k.IsActive)
+            .ToListAsync(ct);
 
         response.Keywords = keywords
             .Select(k =>
