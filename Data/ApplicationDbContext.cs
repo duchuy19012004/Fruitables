@@ -51,6 +51,9 @@ public class ApplicationDbContext : DbContext
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
     public DbSet<KnowledgeChunk> KnowledgeChunks => Set<KnowledgeChunk>();
 
+    // Search suggest
+    public DbSet<SearchHotKeyword> SearchHotKeywords => Set<SearchHotKeyword>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -397,6 +400,29 @@ public class ApplicationDbContext : DbContext
         {
             entity.HasIndex(e => e.IsActive);
             entity.HasIndex(e => e.Category);
+        });
+
+        // SearchHotKeyword — curated typeahead keywords
+        modelBuilder.Entity<SearchHotKeyword>(entity =>
+        {
+            entity.HasIndex(e => e.NormalizedText);
+            entity.HasIndex(e => e.IsActive);
+
+            var seedAt = new DateTime(2026, 7, 12, 0, 0, 0, DateTimeKind.Utc);
+            entity.HasData(
+                new SearchHotKeyword { Id = 1, Text = "táo", NormalizedText = "tao", Weight = 100, IsActive = true, CreatedAt = seedAt },
+                new SearchHotKeyword { Id = 2, Text = "cam", NormalizedText = "cam", Weight = 90, IsActive = true, CreatedAt = seedAt },
+                new SearchHotKeyword { Id = 3, Text = "nho", NormalizedText = "nho", Weight = 80, IsActive = true, CreatedAt = seedAt },
+                new SearchHotKeyword { Id = 4, Text = "dâu", NormalizedText = "dau", Weight = 80, IsActive = true, CreatedAt = seedAt },
+                new SearchHotKeyword { Id = 5, Text = "rau củ", NormalizedText = "rau cu", Weight = 95, IsActive = true, CreatedAt = seedAt },
+                new SearchHotKeyword { Id = 6, Text = "trái cây", NormalizedText = "trai cay", Weight = 95, IsActive = true, CreatedAt = seedAt },
+                new SearchHotKeyword { Id = 7, Text = "combo", NormalizedText = "combo", Weight = 85, IsActive = true, CreatedAt = seedAt },
+                new SearchHotKeyword { Id = 8, Text = "táo fuji", NormalizedText = "tao fuji", Weight = 70, IsActive = true, CreatedAt = seedAt },
+                new SearchHotKeyword { Id = 9, Text = "chuối", NormalizedText = "chuoi", Weight = 70, IsActive = true, CreatedAt = seedAt },
+                new SearchHotKeyword { Id = 10, Text = "bơ", NormalizedText = "bo", Weight = 70, IsActive = true, CreatedAt = seedAt },
+                new SearchHotKeyword { Id = 11, Text = "xoài", NormalizedText = "xoai", Weight = 70, IsActive = true, CreatedAt = seedAt },
+                new SearchHotKeyword { Id = 12, Text = "nước ép", NormalizedText = "nuoc ep", Weight = 60, IsActive = true, CreatedAt = seedAt }
+            );
         });
 
         // Seed starter FAQs for chat RAG (fixed IDs for HasData)
