@@ -45,6 +45,12 @@ public class ApplicationDbContext : DbContext
     public DbSet<RolePermission> RolePermissions => Set<RolePermission>();
     public DbSet<RbacAuditLog> RbacAuditLogs => Set<RbacAuditLog>();
 
+    // Chat / RAG
+    public DbSet<Faq> Faqs => Set<Faq>();
+    public DbSet<ChatSession> ChatSessions => Set<ChatSession>();
+    public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
+    public DbSet<KnowledgeChunk> KnowledgeChunks => Set<KnowledgeChunk>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -355,6 +361,42 @@ public class ApplicationDbContext : DbContext
                   .WithMany()
                   .HasForeignKey(h => h.UserId)
                   .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ChatSession
+        modelBuilder.Entity<ChatSession>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasOne(e => e.User)
+                  .WithMany()
+                  .HasForeignKey(e => e.UserId)
+                  .OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(e => e.UserId);
+            entity.HasIndex(e => e.LastMessageAt);
+        });
+
+        // ChatMessage
+        modelBuilder.Entity<ChatMessage>(entity =>
+        {
+            entity.HasOne(e => e.Session)
+                  .WithMany(s => s.Messages)
+                  .HasForeignKey(e => e.SessionId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(e => e.SessionId);
+        });
+
+        // KnowledgeChunk
+        modelBuilder.Entity<KnowledgeChunk>(entity =>
+        {
+            entity.HasIndex(e => new { e.SourceType, e.SourceId });
+            entity.HasIndex(e => e.IsActive);
+        });
+
+        // Faq
+        modelBuilder.Entity<Faq>(entity =>
+        {
+            entity.HasIndex(e => e.IsActive);
+            entity.HasIndex(e => e.Category);
         });
 
         // Seed Admin User
