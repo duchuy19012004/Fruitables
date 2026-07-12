@@ -91,6 +91,7 @@ builder.Services.AddHttpClient<ILlmClient, SpaceXaiLlmClient>(ConfigureSpaceXaiH
 builder.Services.AddHttpClient<IEmbeddingClient, SpaceXaiEmbeddingClient>(ConfigureSpaceXaiHttpClient);
 builder.Services.AddScoped<IIndexingService, IndexingService>();
 builder.Services.AddScoped<IRagService, RagService>();
+builder.Services.AddScoped<IChatService, ChatService>();
 
 builder.Services.AddHttpClient<IGhnService, GhnService>((serviceProvider, client) =>
 {
