@@ -4,10 +4,12 @@ using Fruitables.Data;
 using Fruitables.Repositories;
 using Fruitables.Repositories.Interfaces;
 using Fruitables.Services;
+using Fruitables.Services.Chat;
 using Fruitables.Services.Interfaces;
 using Fruitables.Filters;
 using Microsoft.AspNetCore.DataProtection;
 using System.IO;
+using System.Net.Http.Headers;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -66,6 +68,28 @@ builder.Services.Configure<GhnOptions>(builder.Configuration.GetSection("Ghn"));
 builder.Services.Configure<SePayOptions>(builder.Configuration.GetSection("SePay"));
 builder.Services.Configure<Fruitables.Options.ChatOptions>(
     builder.Configuration.GetSection(Fruitables.Options.ChatOptions.SectionName));
+
+static void ConfigureSpaceXaiHttpClient(IServiceProvider sp, HttpClient client)
+{
+    var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<Fruitables.Options.ChatOptions>>().Value;
+    var configuration = sp.GetRequiredService<IConfiguration>();
+
+    var baseUrl = options.BaseUrl?.TrimEnd('/') + "/";
+    if (Uri.TryCreate(baseUrl, UriKind.Absolute, out var baseUri))
+        client.BaseAddress = baseUri;
+
+    client.Timeout = TimeSpan.FromSeconds(60);
+
+    var apiKey = Environment.GetEnvironmentVariable("XAI_API_KEY")
+        ?? configuration["Chat:ApiKey"]
+        ?? configuration["XAI_API_KEY"];
+    if (!string.IsNullOrWhiteSpace(apiKey))
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+}
+
+builder.Services.AddHttpClient<ILlmClient, SpaceXaiLlmClient>(ConfigureSpaceXaiHttpClient);
+builder.Services.AddHttpClient<IEmbeddingClient, SpaceXaiEmbeddingClient>(ConfigureSpaceXaiHttpClient);
+
 builder.Services.AddHttpClient<IGhnService, GhnService>((serviceProvider, client) =>
 {
     var options = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<GhnOptions>>().Value;
