@@ -7,6 +7,11 @@ public class RagAnswer
     public List<long> SourceChunkIds { get; set; } = new();
 }
 
+public class CreateChatSessionRequest
+{
+    public string? Source { get; set; }
+}
+
 public class SendChatMessageRequest
 {
     public Guid? SessionId { get; set; }
