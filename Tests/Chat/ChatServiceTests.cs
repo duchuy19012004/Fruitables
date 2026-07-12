@@ -115,7 +115,12 @@ public class ChatServiceTests
         await Assert.ThrowsAsync<ChatRateLimitException>(() =>
             sut.SendAsync(sessionId, "msg 3", null, ip));
 
-        // Only two user + two assistant messages persisted (third blocked before save)
+        // Same IP is still rate-limited across sessions (key is IP-scoped, not session-scoped)
+        var otherSessionId = await sut.CreateSessionAsync(null, "widget");
+        await Assert.ThrowsAsync<ChatRateLimitException>(() =>
+            sut.SendAsync(otherSessionId, "msg via other session", null, ip));
+
+        // Only two user + two assistant messages persisted (third/fourth blocked before save)
         Assert.Equal(4, await db.ChatMessages.CountAsync());
     }
 }

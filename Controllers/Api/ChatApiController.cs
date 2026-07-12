@@ -65,7 +65,7 @@ public class ChatApiController : ControllerBase
                     sessionId, request.Message, userId, clientIp, ct);
                 return Ok(response);
             }
-            catch (InvalidOperationException)
+            catch (ChatSessionNotFoundException)
             {
                 // Missing/stale session: create a new one and retry once
                 sessionId = await _chatService.CreateSessionAsync(userId, request.Source, ct);

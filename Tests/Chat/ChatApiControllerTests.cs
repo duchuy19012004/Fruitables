@@ -196,7 +196,7 @@ public class ChatApiControllerTests
         var chat = new Mock<IChatService>();
 
         chat.Setup(s => s.SendAsync(staleId, "hi", null, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new InvalidOperationException($"Chat session '{staleId}' was not found."));
+            .ThrowsAsync(new ChatSessionNotFoundException($"Chat session '{staleId}' was not found."));
         chat.Setup(s => s.CreateSessionAsync(null, "widget", It.IsAny<CancellationToken>()))
             .ReturnsAsync(newId);
         chat.Setup(s => s.SendAsync(newId, "hi", null, It.IsAny<string?>(), It.IsAny<CancellationToken>()))

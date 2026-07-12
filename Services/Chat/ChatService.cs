@@ -58,7 +58,7 @@ public sealed class ChatService : IChatService
         CancellationToken ct = default)
     {
         var session = await _db.ChatSessions.FirstOrDefaultAsync(s => s.Id == sessionId, ct)
-            ?? throw new InvalidOperationException($"Chat session '{sessionId}' was not found.");
+            ?? throw new ChatSessionNotFoundException($"Chat session '{sessionId}' was not found.");
 
         if (userId.HasValue && session.UserId is null)
         {
@@ -193,7 +193,7 @@ public sealed class ChatService : IChatService
     {
         var ip = string.IsNullOrWhiteSpace(clientIp) ? "unknown" : clientIp.Trim();
         var bucket = DateTime.UtcNow.ToString("yyyyMMddHHmm");
-        var key = $"chat-rl:{ip}:{sessionId}:{bucket}";
+        var key = $"chat-rl:{ip}:{bucket}";
 
         var count = _cache.GetOrCreate(key, entry =>
         {
