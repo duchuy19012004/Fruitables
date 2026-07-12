@@ -40,9 +40,10 @@ public sealed class SearchSuggestService : ISearchSuggestService
         if (qNorm.Length == 0)
             return response;
 
-        // Coarse candidates: load a bounded set (shop-scale) then rank in memory
+        // Coarse filter by Name.Contains(raw) so candidates are bounded by user text,
+        // then rank in memory with diacritic-aware normalizer (Score).
         var products = await _db.Products.AsNoTracking()
-            .Where(p => p.IsActive && !p.IsDeleted)
+            .Where(p => p.IsActive && !p.IsDeleted && p.Name.Contains(raw))
             .Include(p => p.Images)
             .OrderByDescending(p => p.IsFeatured)
             .ThenBy(p => p.Name)
@@ -50,7 +51,7 @@ public sealed class SearchSuggestService : ISearchSuggestService
             .ToListAsync(ct);
 
         var categories = await _db.Categories.AsNoTracking()
-            .Where(c => c.IsActive && !c.IsDeleted)
+            .Where(c => c.IsActive && !c.IsDeleted && c.Name.Contains(raw))
             .OrderBy(c => c.SortOrder)
             .ThenBy(c => c.Name)
             .Take(100)

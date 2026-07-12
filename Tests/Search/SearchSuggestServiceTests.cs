@@ -114,7 +114,8 @@ public class SearchSuggestServiceTests
         await SeedCatalogAsync(db);
         var sut = CreateSut(db);
 
-        var result = await sut.SuggestAsync("trai");
+        // Coarse filter is Name.Contains(raw); use a substring present on the stored name
+        var result = await sut.SuggestAsync("Trái");
 
         Assert.Contains(result.Categories, c => c.Slug == "trai-cay" && c.Url == "/Shop?categoryId=1");
     }
@@ -136,7 +137,35 @@ public class SearchSuggestServiceTests
         await db.SaveChangesAsync();
 
         var sut = CreateSut(db, new SearchSuggestOptions { MaxProducts = 5, MinQueryLength = 2 });
-        var result = await sut.SuggestAsync("tao");
+        // Query must match Name.Contains (InMemory is case/diacritic-sensitive)
+        var result = await sut.SuggestAsync("Táo");
         Assert.True(result.Products.Count <= 5);
+        Assert.Equal(5, result.Products.Count);
+    }
+
+    [Fact]
+    public async Task Suggest_prefix_product_ranks_above_contains()
+    {
+        await using var db = CreateContext();
+        db.Categories.Add(new Category { Id = 1, Name = "Trái cây", Slug = "trai-cay", IsActive = true });
+        db.Products.AddRange(
+            new Product
+            {
+                Id = 1, CategoryId = 1, Name = "Hộp quà Táo", Slug = "hop-qua-tao",
+                Price = 1000, IsActive = true, IsDeleted = false, IsFeatured = false
+            },
+            new Product
+            {
+                Id = 2, CategoryId = 1, Name = "Táo đỏ", Slug = "tao-do",
+                Price = 1000, IsActive = true, IsDeleted = false, IsFeatured = false
+            });
+        await db.SaveChangesAsync();
+
+        var sut = CreateSut(db);
+        var result = await sut.SuggestAsync("Táo");
+
+        Assert.Equal(2, result.Products.Count);
+        Assert.Equal("tao-do", result.Products[0].Slug);
+        Assert.Equal("hop-qua-tao", result.Products[1].Slug);
     }
 }
