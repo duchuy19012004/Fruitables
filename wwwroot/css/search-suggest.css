@@ -1,0 +1,119 @@
+/* wwwroot/css/search-suggest.css */
+.search-suggest-wrap {
+    position: relative;
+}
+
+.search-suggest-dropdown {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(100% + 4px);
+    z-index: 1080;
+    max-height: min(70vh, 420px);
+    overflow-y: auto;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+    text-align: left;
+}
+
+.search-suggest-group-title {
+    padding: 8px 14px 4px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #64748b;
+}
+
+.search-suggest-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 14px;
+    border: 0;
+    background: transparent;
+    text-decoration: none;
+    color: #0f172a;
+    cursor: pointer;
+}
+
+.search-suggest-item:hover,
+.search-suggest-item.is-active {
+    background: #f0fdf4;
+    color: #0f172a;
+}
+
+.search-suggest-thumb {
+    width: 40px;
+    height: 40px;
+    object-fit: cover;
+    border-radius: 8px;
+    background: #f1f5f9;
+    flex-shrink: 0;
+}
+
+.search-suggest-thumb-placeholder {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    background: #f1f5f9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #94a3b8;
+    flex-shrink: 0;
+}
+
+.search-suggest-meta {
+    min-width: 0;
+    flex: 1;
+}
+
+.search-suggest-name {
+    display: block;
+    font-weight: 600;
+    font-size: 0.92rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.search-suggest-price {
+    font-size: 0.85rem;
+    color: #81c408;
+    font-weight: 600;
+}
+
+.search-suggest-price del {
+    color: #94a3b8;
+    font-weight: 400;
+    margin-right: 6px;
+}
+
+.search-suggest-view-all {
+    display: block;
+    padding: 12px 14px;
+    border-top: 1px solid #e5e7eb;
+    font-weight: 600;
+    color: #81c408;
+    text-decoration: none;
+}
+
+.search-suggest-view-all:hover,
+.search-suggest-view-all.is-active {
+    background: #f8fafc;
+}
+
+.search-suggest-empty {
+    padding: 12px 14px;
+    color: #64748b;
+    font-size: 0.9rem;
+}
+
+/* Fullscreen search modal: keep dropdown usable */
+#searchModal .search-suggest-dropdown {
+    z-index: 1090;
+}
