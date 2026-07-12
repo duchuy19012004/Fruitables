@@ -6,6 +6,8 @@ using Fruitables.Repositories.Interfaces;
 using Fruitables.Services;
 using Fruitables.Services.Chat;
 using Fruitables.Services.Interfaces;
+using Fruitables.Services.Search;
+using Fruitables.Options;
 using Fruitables.Filters;
 using Microsoft.AspNetCore.DataProtection;
 using System.IO;
@@ -68,6 +70,9 @@ builder.Services.Configure<GhnOptions>(builder.Configuration.GetSection("Ghn"));
 builder.Services.Configure<SePayOptions>(builder.Configuration.GetSection("SePay"));
 builder.Services.Configure<Fruitables.Options.ChatOptions>(
     builder.Configuration.GetSection(Fruitables.Options.ChatOptions.SectionName));
+builder.Services.Configure<SearchSuggestOptions>(
+    builder.Configuration.GetSection(SearchSuggestOptions.SectionName));
+builder.Services.AddScoped<ISearchSuggestService, SearchSuggestService>();
 
 static void ConfigureSpaceXaiHttpClient(IServiceProvider sp, HttpClient client)
 {
