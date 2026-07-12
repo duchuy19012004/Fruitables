@@ -133,6 +133,13 @@
                 <span>FAQ chatbot</span>
             </a>
         </li>
+        <li class="sidebar-nav-item">
+            <a asp-action="Index" asp-controller="ChatLog" asp-area="Admin"
+               class="sidebar-nav-link @(controller == "ChatLog" ? "active" : "")">
+                <i class="fas fa-comment-dots"></i>
+                <span>Chat logs</span>
+            </a>
+        </li>
     </ul>
 
     <!-- System -->

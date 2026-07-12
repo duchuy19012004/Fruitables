@@ -150,6 +150,45 @@ public sealed class ChatService : IChatService
         await _db.SaveChangesAsync(ct);
     }
 
+    public async Task<(List<ChatSessionListItem> Items, int TotalCount)> GetSessionsPageAsync(
+        int page,
+        int pageSize,
+        CancellationToken ct = default)
+    {
+        if (page < 1) page = 1;
+        if (pageSize < 1) pageSize = 20;
+
+        var query = _db.ChatSessions.AsNoTracking();
+
+        var totalCount = await query.CountAsync(ct);
+
+        var items = await query
+            .OrderByDescending(s => s.LastMessageAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(s => new ChatSessionListItem
+            {
+                Id = s.Id,
+                UserId = s.UserId,
+                UserEmail = s.User != null ? s.User.Email : null,
+                MessageCount = s.Messages.Count,
+                LastMessageAt = s.LastMessageAt,
+                Source = s.Source
+            })
+            .ToListAsync(ct);
+
+        return (items, totalCount);
+    }
+
+    public async Task<ChatSession?> GetSessionWithMessagesAsync(Guid id, CancellationToken ct = default)
+    {
+        return await _db.ChatSessions
+            .AsNoTracking()
+            .Include(s => s.User)
+            .Include(s => s.Messages.OrderBy(m => m.CreatedAt))
+            .FirstOrDefaultAsync(s => s.Id == id, ct);
+    }
+
     private void EnforceRateLimit(Guid sessionId, string? clientIp)
     {
         var ip = string.IsNullOrWhiteSpace(clientIp) ? "unknown" : clientIp.Trim();

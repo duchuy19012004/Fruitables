@@ -1,0 +1,128 @@
+@model Fruitables.Models.ChatSession
+@using Fruitables.Helpers
+@{
+    ViewData["Title"] = "Chi tiết phiên chat";
+    Layout = "~/Areas/Admin/Views/Shared/_AdminDashboardLayout.cshtml";
+    var shortId = Model.Id.ToString("N")[..8];
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="mb-1">Chi tiết phiên chat</h4>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-0">
+                <li class="breadcrumb-item"><a asp-action="Index">Nhật ký chat</a></li>
+                <li class="breadcrumb-item active">@shortId…</li>
+            </ol>
+        </nav>
+    </div>
+    <a asp-action="Index" class="btn btn-outline-secondary">
+        <i class="fas fa-arrow-left me-2"></i>Quay lại
+    </a>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="admin-card h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1">ID phiên</div>
+                <code class="small" title="@Model.Id">@Model.Id</code>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="admin-card h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1">Người dùng</div>
+                @if (Model.UserId.HasValue)
+                {
+                    <span class="badge bg-primary">Người dùng</span>
+                    <div class="mt-1">@(Model.User?.Email ?? $"#{Model.UserId}")</div>
+                }
+                else
+                {
+                    <span class="badge bg-secondary">Khách</span>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="admin-card h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1">Nguồn</div>
+                @if (!string.IsNullOrEmpty(Model.Source))
+                {
+                    <span class="badge bg-info text-dark">@Model.Source</span>
+                }
+                else
+                {
+                    <span class="text-muted">—</span>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="admin-card h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1">Tạo lúc</div>
+                <div>@Model.CreatedAt.ToVietnamTimeString("dd/MM/yyyy HH:mm")</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="admin-card h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1">Tin nhắn cuối</div>
+                <div>@Model.LastMessageAt.ToVietnamTimeString("dd/MM/yyyy HH:mm")</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="admin-card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="fas fa-stream me-2"></i>Nội dung hội thoại</span>
+        <span class="badge bg-light text-dark border">@Model.Messages.Count tin nhắn</span>
+    </div>
+    <div class="card-body">
+        @if (Model.Messages.Any())
+        {
+            <div class="chat-transcript d-flex flex-column gap-3">
+                @foreach (var msg in Model.Messages.OrderBy(m => m.CreatedAt))
+                {
+                    var isUser = string.Equals(msg.Role, "user", StringComparison.OrdinalIgnoreCase);
+                    var isAssistant = string.Equals(msg.Role, "assistant", StringComparison.OrdinalIgnoreCase);
+                    <div class="d-flex @(isUser ? "justify-content-end" : "justify-content-start")">
+                        <div class="rounded-3 p-3 shadow-sm"
+                             style="max-width: 75%; @(isUser
+                                 ? "background:#e8f5e9;border:1px solid #c8e6c9;"
+                                 : isAssistant
+                                     ? "background:#f5f5f5;border:1px solid #e0e0e0;"
+                                     : "background:#fff8e1;border:1px solid #ffe082;")">
+                            <div class="d-flex justify-content-between align-items-center mb-2 gap-3">
+                                <span class="badge @(isUser ? "bg-success" : isAssistant ? "bg-secondary" : "bg-warning text-dark")">
+                                    @(isUser ? "Người dùng" : isAssistant ? "Trợ lý" : msg.Role)
+                                </span>
+                                <small class="text-muted">@msg.CreatedAt.ToVietnamTimeString("dd/MM/yyyy HH:mm:ss")</small>
+                            </div>
+                            <div class="text-break" style="white-space: pre-wrap;">@msg.Content</div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="text-center py-4 text-muted">
+                <i class="fas fa-comment-slash fa-2x mb-2"></i>
+                <p class="mb-0">Phiên chat chưa có tin nhắn</p>
+            </div>
+        }
+    </div>
+</div>
+
+<div class="mt-3">
+    <a asp-action="Index" class="btn btn-outline-secondary">
+        <i class="fas fa-arrow-left me-2"></i>Quay lại danh sách
+    </a>
+</div>

@@ -33,3 +33,13 @@ public class SendChatMessageResponse
     public Guid SessionId { get; set; }
     public ChatMessageDto AssistantMessage { get; set; } = null!;
 }
+
+public class ChatSessionListItem
+{
+    public Guid Id { get; set; }
+    public int? UserId { get; set; }
+    public string? UserEmail { get; set; }
+    public int MessageCount { get; set; }
+    public DateTime LastMessageAt { get; set; }
+    public string? Source { get; set; }
+}
