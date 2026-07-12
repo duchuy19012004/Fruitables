@@ -2,6 +2,10 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Fruitables.Models;
 
+/// <summary>
+/// Indexed text fragment for RAG retrieval. Multiple rows per (SourceType, SourceId) are expected
+/// when a source is split into several chunks; the composite index is non-unique.
+/// </summary>
 public class KnowledgeChunk
 {
     public long Id { get; set; }
