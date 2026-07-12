@@ -22,6 +22,14 @@
         }
     }
 
+    function thumbPlaceholderHtml(iconClass) {
+        return (
+            '<span class="search-suggest-thumb-placeholder"><i class="fa ' +
+            (iconClass || 'fa-leaf') +
+            '"></i></span>'
+        );
+    }
+
     function ensureWrap(input) {
         var parent = input.parentElement;
         if (!parent) return null;
@@ -34,7 +42,62 @@
         return wrap;
     }
 
+    function listboxId(state) {
+        return 'search-suggest-list-' + state.uid;
+    }
+
+    function unbindPositionListeners(state) {
+        if (state._onReposition) {
+            window.removeEventListener('scroll', state._onReposition, true);
+            window.removeEventListener('resize', state._onReposition);
+            state._onReposition = null;
+        }
+    }
+
+    function positionDropdown(state) {
+        if (!state.dropdown || !state.input) return;
+        var rect = state.input.getBoundingClientRect();
+        var dd = state.dropdown;
+        var gap = 4;
+        var maxH = Math.min(window.innerHeight * 0.7, 420);
+        var spaceBelow = window.innerHeight - rect.bottom - gap;
+        var spaceAbove = rect.top - gap;
+        var openUp = spaceBelow < 160 && spaceAbove > spaceBelow;
+
+        dd.style.position = 'fixed';
+        dd.style.left = Math.max(0, rect.left) + 'px';
+        dd.style.width = Math.max(rect.width, 200) + 'px';
+        dd.style.right = 'auto';
+        dd.style.zIndex = '2000';
+
+        if (openUp) {
+            var heightUp = Math.min(maxH, Math.max(120, spaceAbove));
+            dd.style.top = 'auto';
+            dd.style.bottom = window.innerHeight - rect.top + gap + 'px';
+            dd.style.maxHeight = heightUp + 'px';
+        } else {
+            dd.style.bottom = 'auto';
+            dd.style.top = rect.bottom + gap + 'px';
+            dd.style.maxHeight = Math.min(maxH, Math.max(120, spaceBelow)) + 'px';
+        }
+    }
+
+    function bindPositionListeners(state) {
+        unbindPositionListeners(state);
+        state._onReposition = function () {
+            if (!state.dropdown) {
+                unbindPositionListeners(state);
+                return;
+            }
+            positionDropdown(state);
+        };
+        // capture scroll so nested overflow containers (hero, modal) reposition correctly
+        window.addEventListener('scroll', state._onReposition, true);
+        window.addEventListener('resize', state._onReposition);
+    }
+
     function closeDropdown(state) {
+        unbindPositionListeners(state);
         if (state.dropdown && state.dropdown.parentNode) {
             state.dropdown.remove();
         }
@@ -44,11 +107,15 @@
         inputAria(state.input, false);
     }
 
-    function inputAria(input, expanded) {
+    function inputAria(input, expanded, listId) {
         input.setAttribute('aria-expanded', expanded ? 'true' : 'false');
         input.setAttribute('autocomplete', 'off');
         input.setAttribute('role', 'combobox');
         input.setAttribute('aria-autocomplete', 'list');
+        input.setAttribute('aria-haspopup', 'listbox');
+        if (listId) {
+            input.setAttribute('aria-controls', listId);
+        }
     }
 
     function setActive(state, index) {
@@ -68,13 +135,13 @@
 
     function render(state, data) {
         closeDropdown(state);
-        var wrap = ensureWrap(state.input);
-        if (!wrap) return;
+        // Keep wrap for layout stability of the input (input-group etc.)
+        ensureWrap(state.input);
 
         var dd = document.createElement('div');
-        dd.className = 'search-suggest-dropdown';
+        dd.className = 'search-suggest-dropdown search-suggest-dropdown--portal';
         dd.setAttribute('role', 'listbox');
-        dd.id = 'search-suggest-list-' + state.uid;
+        dd.id = listboxId(state);
 
         var items = [];
         var html = '';
@@ -113,8 +180,10 @@
                 var listPrice = p.price != null ? p.price : p.Price;
                 var sale = p.salePrice != null ? p.salePrice : p.SalePrice;
                 var thumb = img
-                    ? '<img class="search-suggest-thumb" src="' + escapeHtml(img) + '" alt="">'
-                    : '<span class="search-suggest-thumb-placeholder"><i class="fa fa-leaf"></i></span>';
+                    ? '<img class="search-suggest-thumb" src="' +
+                      escapeHtml(img) +
+                      '" alt="">'
+                    : thumbPlaceholderHtml('fa-leaf');
                 var priceHtml = '';
                 if (sale != null && listPrice != null && Number(sale) < Number(listPrice)) {
                     priceHtml =
@@ -149,7 +218,7 @@
                 var url = c.url || c.Url || '#';
                 pushItem(
                     'cat',
-                    '<span class="search-suggest-thumb-placeholder"><i class="fa fa-folder"></i></span>' +
+                    thumbPlaceholderHtml('fa-folder') +
                         '<span class="search-suggest-meta"><span class="search-suggest-name">' +
                         escapeHtml(name) +
                         '</span></span>',
@@ -165,7 +234,7 @@
                 var url = k.url || k.Url || '#';
                 pushItem(
                     'kw',
-                    '<span class="search-suggest-thumb-placeholder"><i class="fa fa-search"></i></span>' +
+                    thumbPlaceholderHtml('fa-search') +
                         '<span class="search-suggest-meta"><span class="search-suggest-name">' +
                         escapeHtml(text) +
                         '</span></span>',
@@ -195,15 +264,28 @@
             '”</a>';
 
         dd.innerHTML = html;
-        wrap.appendChild(dd);
+        // Portal to body so overflow:hidden ancestors (hero carousel, etc.) cannot clip
+        document.body.appendChild(dd);
         state.dropdown = dd;
         state.items = items;
         state.activeIndex = -1;
-        inputAria(state.input, true);
+        inputAria(state.input, true, dd.id);
+        positionDropdown(state);
+        bindPositionListeners(state);
 
         dd.addEventListener('mousedown', function (e) {
             // prevent input blur before navigation
             e.preventDefault();
+        });
+
+        // Broken product images → leaf placeholder (same as no-image state)
+        dd.querySelectorAll('img.search-suggest-thumb').forEach(function (imgEl) {
+            imgEl.addEventListener('error', function () {
+                var s = document.createElement('span');
+                s.className = 'search-suggest-thumb-placeholder';
+                s.innerHTML = '<i class="fa fa-leaf"></i>';
+                if (imgEl.parentNode) imgEl.replaceWith(s);
+            });
         });
     }
 
@@ -276,16 +358,18 @@
     function bindInput(input, index) {
         if (input.dataset.searchSuggestBound === '1') return;
         input.dataset.searchSuggestBound = '1';
-        inputAria(input, false);
+        var uid = String(index) + '-' + Math.random().toString(36).slice(2, 7);
+        inputAria(input, false, 'search-suggest-list-' + uid);
 
         var state = {
             input: input,
-            uid: String(index) + '-' + Math.random().toString(36).slice(2, 7),
+            uid: uid,
             timer: null,
             seq: 0,
             dropdown: null,
             items: [],
-            activeIndex: -1
+            activeIndex: -1,
+            _onReposition: null
         };
 
         input.addEventListener('input', function () {

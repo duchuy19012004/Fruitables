@@ -18,6 +18,15 @@
     text-align: left;
 }
 
+/* Portaled to document.body (fixed; left/top/width set in JS) so overflow:hidden
+   ancestors (e.g. home hero carousel) cannot clip the listbox. */
+.search-suggest-dropdown--portal {
+    position: fixed;
+    right: auto;
+    z-index: 2000;
+    margin: 0;
+}
+
 .search-suggest-group-title {
     padding: 8px 14px 4px;
     font-size: 0.75rem;
