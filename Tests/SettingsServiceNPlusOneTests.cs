@@ -3,10 +3,12 @@ using Moq;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging.Abstractions;
 using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Repositories;
 using Fruitables.Services;
+using Fruitables.Services.Interfaces;
 
 namespace Fruitables.Tests;
 
@@ -30,7 +32,9 @@ public class SettingsServiceNPlusOneTests
         var service = new SettingsService(
             new UnitOfWork(context),
             Mock.Of<IMemoryCache>(),
-            Mock.Of<IWebHostEnvironment>());
+            Mock.Of<IWebHostEnvironment>(),
+            Mock.Of<IIndexingService>(),
+            NullLogger<SettingsService>.Instance);
 
         var result = await service.SaveSettingsAsync(newSettings, group: "general");
 
@@ -53,7 +57,9 @@ public class SettingsServiceNPlusOneTests
         var service = new SettingsService(
             new UnitOfWork(context),
             Mock.Of<IMemoryCache>(),
-            Mock.Of<IWebHostEnvironment>());
+            Mock.Of<IWebHostEnvironment>(),
+            Mock.Of<IIndexingService>(),
+            NullLogger<SettingsService>.Instance);
 
         for (int i = 1; i <= keyCount; i++)
         {

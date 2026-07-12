@@ -399,6 +399,71 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(e => e.Category);
         });
 
+        // Seed starter FAQs for chat RAG (fixed IDs for HasData)
+        var faqSeedTime = new DateTime(2026, 7, 1, 0, 0, 0, DateTimeKind.Utc);
+        modelBuilder.Entity<Faq>().HasData(
+            new Faq
+            {
+                Id = 1,
+                Title = "Phí vận chuyển như thế nào?",
+                Body = "Phí vận chuyển được tính theo khu vực: nội thành (zone 1), các tỉnh lân cận (zone 2) và các tỉnh xa (zone 3). Đơn hàng đạt ngưỡng miễn phí ship sẽ được miễn phí vận chuyển. Chi tiết phí hiển thị khi bạn chọn địa chỉ giao hàng ở bước thanh toán.",
+                Category = "shipping",
+                IsActive = true,
+                CreatedAt = faqSeedTime,
+                UpdatedAt = faqSeedTime
+            },
+            new Faq
+            {
+                Id = 2,
+                Title = "Thanh toán bằng cách nào?",
+                Body = "Fruitables hỗ trợ thanh toán qua SePay QR khi checkout. Sau khi đặt hàng, bạn quét mã QR để chuyển khoản; hệ thống tự xác nhận thanh toán khi nhận được giao dịch.",
+                Category = "payment",
+                IsActive = true,
+                CreatedAt = faqSeedTime,
+                UpdatedAt = faqSeedTime
+            },
+            new Faq
+            {
+                Id = 3,
+                Title = "Bảo quản rau củ tươi như thế nào?",
+                Body = "Rau củ tươi nên bảo quản trong tủ lạnh (ngăn mát), để trong túi hoặc hộp thoáng khí, tránh để gần trái cây chín. Dùng sớm trong vài ngày để giữ độ tươi ngon tốt nhất.",
+                Category = "product-care",
+                IsActive = true,
+                CreatedAt = faqSeedTime,
+                UpdatedAt = faqSeedTime
+            },
+            new Faq
+            {
+                Id = 4,
+                Title = "Giờ làm việc và liên hệ?",
+                Body = "Bạn có thể xem giờ làm việc và thông tin liên hệ (điện thoại, email, địa chỉ) trên trang Liên hệ hoặc phần chân trang website. Chúng tôi sẵn sàng hỗ trợ trong khung giờ làm việc đã công bố.",
+                Category = "hours",
+                IsActive = true,
+                CreatedAt = faqSeedTime,
+                UpdatedAt = faqSeedTime
+            },
+            new Faq
+            {
+                Id = 5,
+                Title = "Làm sao để kiểm tra đơn hàng?",
+                Body = "Đăng nhập tài khoản, vào mục Lịch sử đơn hàng để xem trạng thái, chi tiết và theo dõi đơn. Bạn cần đăng nhập để xem các đơn gắn với tài khoản của mình.",
+                Category = "order",
+                IsActive = true,
+                CreatedAt = faqSeedTime,
+                UpdatedAt = faqSeedTime
+            },
+            new Faq
+            {
+                Id = 6,
+                Title = "Chính sách đổi trả như thế nào?",
+                Body = "Nếu sản phẩm bị lỗi hoặc không đúng mô tả, vui lòng liên hệ CSKH trong vòng 24 giờ kể từ khi nhận hàng để được hỗ trợ đổi trả. Giữ nguyên bao bì và chụp ảnh minh chứng nếu có.",
+                Category = "return",
+                IsActive = true,
+                CreatedAt = faqSeedTime,
+                UpdatedAt = faqSeedTime
+            }
+        );
+
         // Seed Admin User
         modelBuilder.Entity<User>().HasData(
             new User

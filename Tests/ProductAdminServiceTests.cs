@@ -52,7 +52,11 @@ namespace Fruitables.Tests
 
             var unitOfWork = new UnitOfWork(context);
             var imageMock = new Mock<IImageUploadService>();
-            var service = new ProductAdminService(unitOfWork, imageMock.Object);
+            var service = new ProductAdminService(
+                unitOfWork,
+                imageMock.Object,
+                Mock.Of<IIndexingService>(),
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<ProductAdminService>.Instance);
 
             // Act: Update tags to ["Fruit", "Fresh"]
             // "Fruit" is an existing tag (loaded in batch)

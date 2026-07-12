@@ -5,6 +5,7 @@ using Fruitables.Services.Interfaces;
 using Fruitables.ViewModels;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Fruitables.Services;
 
@@ -12,11 +13,31 @@ public class ProductAdminService : IProductAdminService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IImageUploadService _imageUploadService;
+    private readonly IIndexingService _indexing;
+    private readonly ILogger<ProductAdminService> _logger;
 
-    public ProductAdminService(IUnitOfWork unitOfWork, IImageUploadService imageUploadService)
+    public ProductAdminService(
+        IUnitOfWork unitOfWork,
+        IImageUploadService imageUploadService,
+        IIndexingService indexing,
+        ILogger<ProductAdminService> logger)
     {
         _unitOfWork = unitOfWork;
         _imageUploadService = imageUploadService;
+        _indexing = indexing;
+        _logger = logger;
+    }
+
+    private async Task TryIndexProductAsync(int productId)
+    {
+        try
+        {
+            await _indexing.IndexProductAsync(productId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Index product {Id} failed", productId);
+        }
     }
 
     #region Helper Methods
@@ -173,6 +194,8 @@ public class ProductAdminService : IProductAdminService
         await _unitOfWork.Products.AddAsync(product);
         await _unitOfWork.SaveChangesAsync();
 
+        await TryIndexProductAsync(product.Id);
+
         return ProductResult.Ok(product);
     }
 
@@ -227,6 +250,8 @@ public class ProductAdminService : IProductAdminService
 
         await _unitOfWork.SaveChangesAsync();
 
+        await TryIndexProductAsync(product.Id);
+
         return ProductResult.Ok(product);
     }
 
@@ -245,6 +270,8 @@ public class ProductAdminService : IProductAdminService
 
         await _unitOfWork.SaveChangesAsync();
 
+        await TryIndexProductAsync(product.Id);
+
         return ProductResult.Ok(product);
     }
 
@@ -262,6 +289,8 @@ public class ProductAdminService : IProductAdminService
         product.UpdatedAt = DateTime.UtcNow;
 
         await _unitOfWork.SaveChangesAsync();
+
+        await TryIndexProductAsync(product.Id);
 
         return ProductResult.Ok(product);
     }
@@ -303,8 +332,12 @@ public class ProductAdminService : IProductAdminService
             _unitOfWork.ProductVariants.Remove(variant);
         }
 
+        var productId = product.Id;
         _unitOfWork.Products.Remove(product);
         await _unitOfWork.SaveChangesAsync();
+
+        // Missing product deactivates knowledge chunks in IndexingService.
+        await TryIndexProductAsync(productId);
 
         return ProductResult.Ok(product);
     }

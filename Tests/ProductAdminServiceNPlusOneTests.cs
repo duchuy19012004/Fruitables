@@ -31,7 +31,11 @@ public class ProductAdminServiceNPlusOneTests
         using var context = new ApplicationDbContext(options);
         var unitOfWork = new UnitOfWork(context);
         var imageMock = new Mock<IImageUploadService>();
-        var service = new ProductAdminService(unitOfWork, imageMock.Object);
+        var service = new ProductAdminService(
+            unitOfWork,
+            imageMock.Object,
+            Mock.Of<IIndexingService>(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<ProductAdminService>.Instance);
 
         var result = await service.UpdateTagsAsync(10, allTagNames);
 

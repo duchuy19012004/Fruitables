@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 using Fruitables.Constants;
 using Fruitables.Models;
 using Fruitables.Repositories.Interfaces;
@@ -16,6 +17,8 @@ public class SettingsService : ISettingsService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IMemoryCache _cache;
     private readonly IWebHostEnvironment _webHostEnvironment;
+    private readonly IIndexingService _indexing;
+    private readonly ILogger<SettingsService> _logger;
 
     private const string CacheKeyPrefix = "Setting_";
     private const string AllSettingsCacheKey = "AllSettings";
@@ -25,11 +28,33 @@ public class SettingsService : ISettingsService
     private static readonly string[] AllowedImageExtensions = { ".jpg", ".jpeg", ".png", ".gif", ".ico", ".svg" };
     private const string UploadsFolder = "uploads/settings";
 
-    public SettingsService(IUnitOfWork unitOfWork, IMemoryCache cache, IWebHostEnvironment webHostEnvironment)
+    public SettingsService(
+        IUnitOfWork unitOfWork,
+        IMemoryCache cache,
+        IWebHostEnvironment webHostEnvironment,
+        IIndexingService indexing,
+        ILogger<SettingsService> logger)
     {
         _unitOfWork = unitOfWork;
         _cache = cache;
         _webHostEnvironment = webHostEnvironment;
+        _indexing = indexing;
+        _logger = logger;
+    }
+
+    private async Task TryIndexAllowlistedSettingsIfNeededAsync(IEnumerable<string> keys)
+    {
+        if (!keys.Any(k => ChatSettingAllowlist.Keys.Contains(k)))
+            return;
+
+        try
+        {
+            await _indexing.IndexAllowlistedSettingsAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Index allowlisted settings failed");
+        }
     }
 
     public async Task<string?> GetSettingAsync(string key, string? defaultValue = null)
@@ -144,6 +169,8 @@ public class SettingsService : ISettingsService
             await _unitOfWork.SaveChangesAsync();
             InvalidateCache(key);
 
+            await TryIndexAllowlistedSettingsIfNeededAsync(new[] { key });
+
             return SettingResult.Ok(value);
         }
         catch (Exception ex)
@@ -179,6 +206,8 @@ public class SettingsService : ISettingsService
 
             foreach (var key in settings.Keys)
                 InvalidateCache(key);
+
+            await TryIndexAllowlistedSettingsIfNeededAsync(keys);
 
             return SettingResult.Ok();
         }
