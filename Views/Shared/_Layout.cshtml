@@ -39,6 +39,7 @@
 
     <!-- Template Stylesheet -->
     <link href="~/css/style.css?v=14" rel="stylesheet">
+    <link rel="stylesheet" href="~/css/search-suggest.css" asp-append-version="true" />
     @await RenderSectionAsync("Styles", required: false)
     
     @if (!string.IsNullOrEmpty(gaId))
@@ -290,5 +291,6 @@
     <link rel="stylesheet" href="~/css/chat.css" asp-append-version="true" />
     @await Html.PartialAsync("_ChatWidget")
     <script src="~/js/chat.js" asp-append-version="true"></script>
+    <script src="~/js/search-suggest.js" asp-append-version="true"></script>
 </body>
 </html>
