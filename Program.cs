@@ -90,6 +90,7 @@ static void ConfigureSpaceXaiHttpClient(IServiceProvider sp, HttpClient client)
 builder.Services.AddHttpClient<ILlmClient, SpaceXaiLlmClient>(ConfigureSpaceXaiHttpClient);
 builder.Services.AddHttpClient<IEmbeddingClient, SpaceXaiEmbeddingClient>(ConfigureSpaceXaiHttpClient);
 builder.Services.AddScoped<IIndexingService, IndexingService>();
+builder.Services.AddScoped<IRagService, RagService>();
 
 builder.Services.AddHttpClient<IGhnService, GhnService>((serviceProvider, client) =>
 {
