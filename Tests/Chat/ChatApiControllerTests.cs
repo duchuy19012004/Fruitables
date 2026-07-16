@@ -1,4 +1,6 @@
+using System.Runtime.CompilerServices;
 using System.Security.Claims;
+using System.Text;
 using Fruitables.Controllers.Api;
 using Fruitables.Services.Chat;
 using Fruitables.Services.Interfaces;
@@ -17,7 +19,8 @@ public class ChatApiControllerTests
         Mock<IChatService> chatService,
         string? cookieSessionId = null,
         int? authenticatedUserId = null,
-        bool isHttps = false)
+        bool isHttps = false,
+        MemoryStream? responseBody = null)
     {
         var controller = new ChatApiController(
             chatService.Object,
@@ -26,6 +29,7 @@ public class ChatApiControllerTests
         var httpContext = new DefaultHttpContext();
         httpContext.Request.IsHttps = isHttps;
         httpContext.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("203.0.113.10");
+        httpContext.Response.Body = responseBody ?? new MemoryStream();
 
         if (cookieSessionId is not null)
         {
@@ -44,6 +48,22 @@ public class ChatApiControllerTests
 
         controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
         return controller;
+    }
+
+    private static async IAsyncEnumerable<ChatStreamEvent> StreamEvents(
+        params ChatStreamEvent[] events)
+    {
+        foreach (var evt in events)
+            yield return evt;
+        await Task.CompletedTask;
+    }
+
+    private static string ReadResponseBody(ChatApiController controller)
+    {
+        var body = controller.Response.Body;
+        body.Position = 0;
+        using var reader = new StreamReader(body, Encoding.UTF8, leaveOpen: true);
+        return reader.ReadToEnd();
     }
 
     [Fact]
@@ -255,5 +275,120 @@ public class ChatApiControllerTests
         var ok = Assert.IsType<OkObjectResult>(result);
         var messages = Assert.IsAssignableFrom<IReadOnlyList<ChatMessageDto>>(ok.Value);
         Assert.Equal(2, messages.Count);
+    }
+
+    [Fact]
+    public async Task SendMessageStream_writes_sse_meta_token_done()
+    {
+        var sessionId = Guid.NewGuid();
+        var chat = new Mock<IChatService>();
+        chat.Setup(s => s.SendStreamingAsync(
+                sessionId,
+                "Phí ship?",
+                null,
+                "203.0.113.10",
+                It.IsAny<CancellationToken>()))
+            .Returns(StreamEvents(
+                ChatStreamEvent.Meta(sessionId),
+                ChatStreamEvent.Token("30."),
+                ChatStreamEvent.Token("000đ"),
+                ChatStreamEvent.Done(sessionId, "30.000đ", refused: false, messageId: 7)));
+
+        var body = new MemoryStream();
+        var controller = CreateController(chat, cookieSessionId: sessionId.ToString(), responseBody: body);
+
+        await controller.SendMessageStream(
+            new SendChatMessageRequest { Message = "Phí ship?", Source = "widget" },
+            CancellationToken.None);
+
+        Assert.Equal("text/event-stream; charset=utf-8", controller.Response.ContentType);
+        var sse = ReadResponseBody(controller);
+
+        Assert.Contains("event: meta", sse, StringComparison.Ordinal);
+        Assert.Contains($"\"sessionId\":\"{sessionId}\"", sse, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("event: token", sse, StringComparison.Ordinal);
+        Assert.Contains("\"text\":\"30.\"", sse, StringComparison.Ordinal);
+        Assert.Contains("event: done", sse, StringComparison.Ordinal);
+        // JsonSerializer may escape non-ASCII (đ → \u0111)
+        Assert.Contains("30.000", sse, StringComparison.Ordinal);
+        Assert.Contains("\"messageId\":7", sse, StringComparison.Ordinal);
+        Assert.Contains("\"refused\":false", sse, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SendMessageStream_ArgumentException_returns_400_json_before_sse()
+    {
+        var sessionId = Guid.NewGuid();
+        var chat = new Mock<IChatService>();
+        chat.Setup(s => s.SendStreamingAsync(
+                sessionId,
+                It.IsAny<string>(),
+                null,
+                It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(ThrowingStream<ArgumentException>("Message cannot be empty."));
+
+        var controller = CreateController(chat, cookieSessionId: sessionId.ToString());
+        await controller.SendMessageStream(
+            new SendChatMessageRequest { Message = "   " },
+            CancellationToken.None);
+
+        Assert.Equal(400, controller.Response.StatusCode);
+        Assert.DoesNotContain("text/event-stream", controller.Response.ContentType ?? "", StringComparison.OrdinalIgnoreCase);
+        var body = ReadResponseBody(controller);
+        Assert.Contains("Message cannot be empty", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SendMessageStream_missing_session_retries_with_new_session()
+    {
+        var staleId = Guid.NewGuid();
+        var newId = Guid.NewGuid();
+        var chat = new Mock<IChatService>();
+
+        chat.Setup(s => s.SendStreamingAsync(
+                staleId,
+                "hi",
+                null,
+                It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(ThrowingStream<ChatSessionNotFoundException>($"Chat session '{staleId}' was not found."));
+        chat.Setup(s => s.CreateSessionAsync(null, "widget", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(newId);
+        chat.Setup(s => s.SendStreamingAsync(
+                newId,
+                "hi",
+                null,
+                It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(StreamEvents(
+                ChatStreamEvent.Meta(newId),
+                ChatStreamEvent.Token("ok"),
+                ChatStreamEvent.Done(newId, "ok", refused: false, messageId: 1)));
+
+        var controller = CreateController(chat, cookieSessionId: staleId.ToString());
+        await controller.SendMessageStream(
+            new SendChatMessageRequest { Message = "hi", Source = "widget" },
+            CancellationToken.None);
+
+        Assert.Equal("text/event-stream; charset=utf-8", controller.Response.ContentType);
+        var sse = ReadResponseBody(controller);
+        Assert.Contains($"\"sessionId\":\"{newId}\"", sse, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("event: done", sse, StringComparison.Ordinal);
+
+        var setCookie = controller.Response.Headers.SetCookie.ToString();
+        Assert.Contains(newId.ToString(), setCookie, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static async IAsyncEnumerable<ChatStreamEvent> ThrowingStream<TException>(
+        string message,
+        [EnumeratorCancellation] CancellationToken ct = default)
+        where TException : Exception
+    {
+        await Task.Yield();
+        throw (TException)Activator.CreateInstance(typeof(TException), message)!;
+#pragma warning disable CS0162
+        yield break;
+#pragma warning restore CS0162
     }
 }

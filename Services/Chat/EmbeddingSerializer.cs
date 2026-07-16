@@ -2,23 +2,19 @@ using System.Text.Json;
 
 namespace Fruitables.Services.Chat;
 
-/// <summary>
-/// JSON serialization for embedding vectors stored as <c>float[]</c>.
-/// </summary>
+// ============================================================
+// Đổi vector số <-> chuỗi JSON để lưu vào database.
+// Ví dụ: [0.1, 0.2]  <->  "[0.1,0.2]"
+// ============================================================
 public static class EmbeddingSerializer
 {
-    public static string ToJson(float[] vector)
-    {
-        return JsonSerializer.Serialize(vector ?? Array.Empty<float>());
-    }
+    // Vector → chữ JSON lưu DB
+    public static string ToJson(float[] vector) =>
+        JsonSerializer.Serialize(vector ?? Array.Empty<float>());
 
-    public static float[] FromJson(string json)
-    {
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            return Array.Empty<float>();
-        }
-
-        return JsonSerializer.Deserialize<float[]>(json) ?? Array.Empty<float>();
-    }
+    // Chữ JSON trong DB → vector để so sánh
+    public static float[] FromJson(string json) =>
+        string.IsNullOrWhiteSpace(json)
+            ? Array.Empty<float>()
+            : (JsonSerializer.Deserialize<float[]>(json) ?? Array.Empty<float>());
 }

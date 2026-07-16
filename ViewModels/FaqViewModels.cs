@@ -3,11 +3,17 @@ using Fruitables.Models;
 
 namespace Fruitables.ViewModels;
 
+// ============================================================
+// Form / màn hình Admin quản lý FAQ
+// ============================================================
+
+// Trang danh sách
 public class FaqListViewModel
 {
     public List<Faq> Faqs { get; set; } = new();
 }
 
+// Form tạo mới
 public class CreateFaqViewModel
 {
     [Required(ErrorMessage = "Tiêu đề không được trống")]
@@ -27,6 +33,7 @@ public class CreateFaqViewModel
     public bool IsActive { get; set; } = true;
 }
 
+// Form sửa = form tạo + Id
 public class EditFaqViewModel : CreateFaqViewModel
 {
     public int Id { get; set; }

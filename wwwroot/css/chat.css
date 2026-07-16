@@ -76,7 +76,9 @@
     border-radius: 14px;
     font-size: 0.92rem;
     line-height: 1.5;
-    word-wrap: break-word;
+    text-align: left;
+    word-break: normal;
+    overflow-wrap: break-word;
     white-space: pre-wrap;
 }
 
@@ -100,8 +102,24 @@
     text-decoration: underline;
 }
 
+/* Lời chào: căn trái, ôm theo nội dung, xuống dòng gọn */
 .chat-welcome {
     opacity: 0.95;
+    width: fit-content;
+    max-width: min(92%, 280px);
+    align-self: flex-start;
+    text-align: left;
+    white-space: normal;
+    line-height: 1.45;
+    letter-spacing: 0;
+}
+
+.chat-welcome .chat-welcome-line {
+    display: block;
+}
+
+.chat-welcome .chat-welcome-line + .chat-welcome-line {
+    margin-top: 2px;
 }
 
 .chat-bubble-typing {
@@ -110,6 +128,32 @@
     color: #64748b;
     font-style: italic;
     font-size: 0.85rem;
+}
+
+/* Đang stream token từ AI */
+.chat-bubble-streaming {
+    align-self: flex-start;
+}
+
+.chat-stream-cursor {
+    display: inline-block;
+    width: 2px;
+    height: 1em;
+    margin-left: 2px;
+    vertical-align: text-bottom;
+    background: var(--chat-primary, #81c408);
+    animation: chat-cursor-blink 0.9s steps(1) infinite;
+}
+
+@keyframes chat-cursor-blink {
+    0%,
+    50% {
+        opacity: 1;
+    }
+    51%,
+    100% {
+        opacity: 0;
+    }
 }
 
 .chat-refused-note {

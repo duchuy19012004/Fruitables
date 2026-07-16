@@ -68,36 +68,77 @@ builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IShippingService, ShippingService>();
 builder.Services.Configure<GhnOptions>(builder.Configuration.GetSection("Ghn"));
 builder.Services.Configure<SePayOptions>(builder.Configuration.GetSection("SePay"));
+// ----- Chatbot RAG (cấu hình trong appsettings mục "Chat") -----
 builder.Services.Configure<Fruitables.Options.ChatOptions>(
     builder.Configuration.GetSection(Fruitables.Options.ChatOptions.SectionName));
 builder.Services.Configure<SearchSuggestOptions>(
     builder.Configuration.GetSection(SearchSuggestOptions.SectionName));
 builder.Services.AddScoped<ISearchSuggestService, SearchSuggestService>();
 
-static void ConfigureSpaceXaiHttpClient(IServiceProvider sp, HttpClient client)
+// Gắn BaseUrl + API key vào HttpClient khi gọi AI (Kimi...)
+static void ConfigureChatHttpClient(IServiceProvider sp, HttpClient client)
 {
     var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<Fruitables.Options.ChatOptions>>().Value;
     var configuration = sp.GetRequiredService<IConfiguration>();
 
+    // Ví dụ: https://api.moonshot.ai/v1/
     var baseUrl = options.BaseUrl?.TrimEnd('/') + "/";
     if (Uri.TryCreate(baseUrl, UriKind.Absolute, out var baseUri))
         client.BaseAddress = baseUri;
 
-    client.Timeout = TimeSpan.FromSeconds(60);
+    // k2.7 / thinking có thể chậm hơn k2.6 — tránh HttpClient cancel sớm → 503
+    client.Timeout = TimeSpan.FromSeconds(120);
 
-    var apiKey = Environment.GetEnvironmentVariable("XAI_API_KEY")
-        ?? configuration["Chat:ApiKey"]
-        ?? configuration["XAI_API_KEY"];
+    // Ưu tiên key Kimi/Moonshot; vẫn nhận XAI_* nếu ai còn dùng cũ.
+    // Không hard-code key trong source — dùng env / user-secrets.
+    // Lưu ý: launchSettings KIMI_API_KEY="" sẽ che User env → bỏ qua chuỗi rỗng.
+    static string? FirstNonEmpty(params string?[] values)
+    {
+        foreach (var v in values)
+        {
+            if (!string.IsNullOrWhiteSpace(v))
+                return v.Trim();
+        }
+        return null;
+    }
+
+    var apiKey = FirstNonEmpty(
+        Environment.GetEnvironmentVariable("KIMI_API_KEY"),
+        Environment.GetEnvironmentVariable("MOONSHOT_API_KEY"),
+        configuration["Chat:ApiKey"],
+        configuration["KIMI_API_KEY"],
+        configuration["MOONSHOT_API_KEY"],
+        Environment.GetEnvironmentVariable("XAI_API_KEY"),
+        configuration["XAI_API_KEY"]);
+
     if (!string.IsNullOrWhiteSpace(apiKey))
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+    else
+        sp.GetRequiredService<ILoggerFactory>()
+            .CreateLogger("ChatHttpClient")
+            .LogWarning("Chat API key missing — LLM calls will fail with 401. Set KIMI_API_KEY or user-secrets Chat:ApiKey.");
 }
 
-builder.Services.AddHttpClient<ILlmClient, SpaceXaiLlmClient>(ConfigureSpaceXaiHttpClient);
-builder.Services.AddHttpClient<IEmbeddingClient, SpaceXaiEmbeddingClient>(ConfigureSpaceXaiHttpClient);
-builder.Services.AddScoped<IIndexingService, IndexingService>();
-builder.Services.AddScoped<IFaqService, FaqService>();
-builder.Services.AddScoped<IRagService, RagService>();
-builder.Services.AddScoped<IChatService, ChatService>();
+// AI chat (OpenAI-compatible → Kimi)
+builder.Services.AddHttpClient<ILlmClient, SpaceXaiLlmClient>(ConfigureChatHttpClient);
+
+// Mã hóa tri thức: mặc định Local (không cần API embed của Kimi)
+// Đổi Chat:EmbeddingProvider=OpenAICompatible nếu sau này dùng embed qua API
+var embeddingProvider = builder.Configuration["Chat:EmbeddingProvider"] ?? "Local";
+if (string.Equals(embeddingProvider, "OpenAICompatible", StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddHttpClient<IEmbeddingClient, SpaceXaiEmbeddingClient>(ConfigureChatHttpClient);
+}
+else
+{
+    builder.Services.AddScoped<IEmbeddingClient, LocalHashEmbeddingClient>();
+}
+
+// Các "công đoạn" chatbot
+builder.Services.AddScoped<IIndexingService, IndexingService>(); // đưa FAQ/SP vào sổ tri thức
+builder.Services.AddScoped<IFaqService, FaqService>();           // CRUD FAQ Admin
+builder.Services.AddScoped<IRagService, RagService>();           // tìm tri thức + gọi AI
+builder.Services.AddScoped<IChatService, ChatService>();         // session, lưu tin, chống spam
 
 builder.Services.AddHttpClient<IGhnService, GhnService>((serviceProvider, client) =>
 {

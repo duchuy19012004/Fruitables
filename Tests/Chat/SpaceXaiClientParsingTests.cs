@@ -69,6 +69,40 @@ public class SpaceXaiClientParsingTests
     }
 
     [Fact]
+    public void TryParseStreamDeltaContent_extracts_delta_text()
+    {
+        const string json = """
+            {
+              "id": "chatcmpl-1",
+              "object": "chat.completion.chunk",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": { "content": "Xin " },
+                  "finish_reason": null
+                }
+              ]
+            }
+            """;
+
+        var delta = SpaceXaiResponseParser.TryParseStreamDeltaContent(json);
+
+        Assert.Equal("Xin ", delta);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("[DONE]")]
+    [InlineData("""{"choices":[{"delta":{"role":"assistant"}}]}""")]
+    [InlineData("""{"choices":[{"delta":{}}]}""")]
+    [InlineData("{}")]
+    public void TryParseStreamDeltaContent_returns_null_when_no_content(string json)
+    {
+        Assert.Null(SpaceXaiResponseParser.TryParseStreamDeltaContent(json));
+    }
+
+    [Fact]
     public void ParseEmbedding_extracts_float_array()
     {
         const string json = """

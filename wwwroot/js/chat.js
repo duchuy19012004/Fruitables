@@ -1,36 +1,46 @@
-/**
- * Fruitables storefront chat client.
- * Initializes every element with [data-chat-root] once (page | widget).
- */
+// ============================================================
+// GIAO DIỆN CHAT TRÊN TRÌNH DUYỆT (widget + trang /Chat)
+//
+// Việc file này làm (không lộ API key AI):
+// 1) Mở / nhớ cuộc chat (cookie + sessionStorage)
+// 2) Gửi tin lên /api/chat/messages/stream (SSE token khi AI generate)
+// 3) Vẽ bong bóng tin nhắn (cập nhật dần khi stream)
+// 4) Hiện lỗi thân thiện (quá nhanh, hệ thống bận...)
+// ============================================================
 (function () {
     'use strict';
 
+    // Chạy 1 lần thôi, tránh gắn sự kiện 2 lần
     if (window.__fruitablesChatInitialized) {
         return;
     }
     window.__fruitablesChatInitialized = true;
 
+    // Key lưu session id trên trình duyệt (bổ sung cho cookie)
     var SESSION_KEY_PREFIX = 'fruitables_chat_session_';
 
+    // Tìm 1 phần tử con trong khung chat
     function qs(root, sel) {
         return root.querySelector(sel);
     }
 
+    // Chống XSS: đưa chữ thuần vào HTML an toàn
     function escapeHtml(text) {
         var div = document.createElement('div');
         div.textContent = text == null ? '' : String(text);
         return div.innerHTML;
     }
 
+    // Toast góc màn hình (nếu site có sẵn), không thì log console
     function showToast(message, isWarning) {
         if (typeof window.showRealtimeToast === 'function') {
             window.showRealtimeToast(escapeHtml(message), !!isWarning);
             return;
         }
-        // Fallback: brief alert-free console for environments without toast helper
         console.warn('[chat]', message);
     }
 
+    // Hiện / ẩn dòng lỗi trong khung chat
     function setError(root, message) {
         var el = qs(root, '[data-chat-error]');
         if (!el) return;
@@ -43,6 +53,7 @@
         el.classList.remove('d-none');
     }
 
+    // Cuộn xuống tin mới nhất
     function scrollMessages(root) {
         var list = qs(root, '[data-chat-messages]');
         if (list) {
@@ -50,11 +61,12 @@
         }
     }
 
+    // Thêm 1 bong bóng tin
     function appendBubble(root, role, contentHtml, extraClass) {
         var list = qs(root, '[data-chat-messages]');
         if (!list) return null;
 
-        // Remove welcome on first real message
+        // Có tin thật → bỏ dòng chào mừng
         var welcome = list.querySelector('.chat-welcome');
         if (welcome && (role === 'user' || role === 'assistant')) {
             welcome.remove();
@@ -71,6 +83,38 @@
         return bubble;
     }
 
+    // Cập nhật nội dung bong bóng assistant đang stream (plain text → escaped)
+    function updateStreamingBubble(bubble, text, isStreaming) {
+        if (!bubble) return;
+        var html = escapeHtml(text || '');
+        if (isStreaming) {
+            html += '<span class="chat-stream-cursor" aria-hidden="true"></span>';
+            bubble.classList.add('chat-bubble-streaming');
+            bubble.classList.remove('chat-bubble-typing');
+        } else {
+            bubble.classList.remove('chat-bubble-streaming');
+        }
+        bubble.innerHTML = html;
+        var list = bubble.parentElement;
+        if (list) {
+            list.scrollTop = list.scrollHeight;
+        }
+    }
+
+    function finalizeAssistantBubble(bubble, text, refused) {
+        if (!bubble) return;
+        var html = escapeHtml(text || '');
+        if (refused) {
+            html +=
+                '<span class="chat-refused-note">' +
+                'Bạn có thể <a href="/Contact">liên hệ hỗ trợ</a> để được giúp thêm.' +
+                '</span>';
+        }
+        bubble.classList.remove('chat-bubble-streaming', 'chat-bubble-typing');
+        bubble.innerHTML = html;
+    }
+
+    // Vẽ 1 tin từ API (kể cả khi bot "từ chối" → thêm link Liên hệ)
     function renderMessage(root, msg) {
         var role = (msg.role || msg.Role || 'assistant').toLowerCase();
         var content = msg.content || msg.Content || '';
@@ -86,6 +130,7 @@
         appendBubble(root, role === 'user' ? 'user' : 'assistant', html);
     }
 
+    // Khóa ô nhập khi đang chờ bot
     function setBusy(root, busy) {
         var input = qs(root, '[data-chat-input]');
         var send = qs(root, '[data-chat-send]');
@@ -114,10 +159,11 @@
         try {
             if (id) sessionStorage.setItem(storageKey(source), id);
         } catch (e) {
-            /* ignore */
+            /* trình duyệt chặn storage thì bỏ qua */
         }
     }
 
+    // Gọi API nội bộ (kèm cookie)
     async function api(url, options) {
         var opts = options || {};
         opts.credentials = 'same-origin';
@@ -138,6 +184,7 @@
         return { ok: res.ok, status: res.status, data: data };
     }
 
+    // Đổi mã lỗi HTTP → câu tiếng Việt dễ hiểu
     function errorMessageFrom(status, data) {
         var msg =
             (data && (data.error || data.message || data.Message || data.Error)) ||
@@ -154,6 +201,115 @@
         return msg || 'Đã xảy ra lỗi. Vui lòng thử lại.';
     }
 
+    // Parse buffer SSE → mảng { event, data }
+    function parseSseChunk(buffer) {
+        var events = [];
+        // SSE blocks ngăn bởi \n\n
+        var parts = buffer.split('\n\n');
+        // Phần cuối có thể chưa đủ block
+        var rest = parts.pop() || '';
+        for (var i = 0; i < parts.length; i++) {
+            var block = parts[i];
+            if (!block || !block.trim()) continue;
+            var eventName = 'message';
+            var dataLines = [];
+            var lines = block.split('\n');
+            for (var j = 0; j < lines.length; j++) {
+                var line = lines[j];
+                if (line.indexOf('event:') === 0) {
+                    eventName = line.slice(6).trim();
+                } else if (line.indexOf('data:') === 0) {
+                    dataLines.push(line.slice(5).trim());
+                }
+            }
+            if (!dataLines.length) continue;
+            var raw = dataLines.join('\n');
+            var data = null;
+            try {
+                data = JSON.parse(raw);
+            } catch (e) {
+                data = { text: raw };
+            }
+            events.push({ event: eventName, data: data });
+        }
+        return { events: events, rest: rest };
+    }
+
+    // Gửi tin + đọc SSE token
+    async function streamChat(root, sessionId, message, source, onEvent) {
+        var res = await fetch('/api/chat/messages/stream', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'text/event-stream'
+            },
+            body: JSON.stringify({
+                message: message,
+                source: source,
+                sessionId: sessionId
+            })
+        });
+
+        var contentType = (res.headers.get('content-type') || '').toLowerCase();
+        var isSse = contentType.indexOf('text/event-stream') !== -1;
+
+        // Lỗi sớm (400/429/503) có thể là JSON thay vì SSE
+        if (!res.ok && !isSse) {
+            var errData = null;
+            var errText = await res.text();
+            try {
+                errData = errText ? JSON.parse(errText) : null;
+            } catch (e) {
+                errData = { error: errText };
+            }
+            var err = new Error(errorMessageFrom(res.status, errData));
+            err.status = res.status;
+            throw err;
+        }
+
+        if (!res.body || !res.body.getReader) {
+            throw new Error('Trình duyệt không hỗ trợ streaming.');
+        }
+
+        var reader = res.body.getReader();
+        var decoder = new TextDecoder('utf-8');
+        var buffer = '';
+        var sawDone = false;
+
+        while (true) {
+            var chunk = await reader.read();
+            if (chunk.done) break;
+            buffer += decoder.decode(chunk.value, { stream: true });
+            var parsed = parseSseChunk(buffer);
+            buffer = parsed.rest;
+            for (var i = 0; i < parsed.events.length; i++) {
+                var ev = parsed.events[i];
+                if (ev.event === 'done') sawDone = true;
+                onEvent(ev.event, ev.data || {});
+            }
+        }
+
+        // Flush phần còn lại (nếu server không kết bằng \n\n)
+        if (buffer && buffer.trim()) {
+            var tail = parseSseChunk(buffer + '\n\n');
+            for (var k = 0; k < tail.events.length; k++) {
+                var tev = tail.events[k];
+                if (tev.event === 'done') sawDone = true;
+                onEvent(tev.event, tev.data || {});
+            }
+        }
+
+        if (!res.ok && !sawDone) {
+            var e2 = new Error(errorMessageFrom(res.status, null));
+            e2.status = res.status;
+            throw e2;
+        }
+
+        return { ok: res.ok || sawDone, sawDone: sawDone };
+    }
+
+    // Đảm bảo đã có session (tạo mới nếu chưa)
     async function ensureSession(root) {
         if (root._chatSessionId) {
             return root._chatSessionId;
@@ -191,6 +347,7 @@
         return sessionId;
     }
 
+    // Tải tin cũ (nếu server cho phép theo cookie)
     async function loadHistory(root, sessionId) {
         if (!sessionId) return;
         var result = await api(
@@ -199,7 +356,7 @@
         );
 
         if (result.status === 403) {
-            // Cookie/session mismatch — start fresh next send
+            // Cookie lệch → xóa id local, lần gửi sau tạo mới
             root._chatSessionId = null;
             try {
                 sessionStorage.removeItem(storageKey(root.getAttribute('data-chat-root')));
@@ -208,7 +365,7 @@
         }
 
         if (!result.ok) {
-            // History is optional; don't block UI
+            // Lịch sử không bắt buộc
             return;
         }
 
@@ -225,6 +382,7 @@
         scrollMessages(root);
     }
 
+    // Gửi 1 tin của khách (stream token khi AI generate)
     async function sendMessage(root, text) {
         var message = (text || '').trim();
         if (!message) return;
@@ -237,47 +395,91 @@
         if (input) input.value = '';
 
         appendBubble(root, 'user', escapeHtml(message));
-        var typing = appendBubble(root, 'assistant', 'Đang soạn trả lời…', 'chat-bubble-typing');
+        // Placeholder → sẽ chuyển thành bong bóng stream
+        var bubble = appendBubble(
+            root,
+            'assistant',
+            'Đang soạn trả lời…',
+            'chat-bubble-typing'
+        );
 
         var source = root.getAttribute('data-chat-root') || 'widget';
+        var accumulated = '';
+        var streamError = null;
+        var finished = false;
 
         try {
             var sessionId = await ensureSession(root);
-            var result = await api('/api/chat/messages', {
-                method: 'POST',
-                body: JSON.stringify({
-                    message: message,
-                    source: source,
-                    sessionId: sessionId
-                })
+            await streamChat(root, sessionId, message, source, function (eventName, data) {
+                if (eventName === 'meta') {
+                    var sid = data.sessionId || data.SessionId;
+                    if (sid) {
+                        root._chatSessionId = sid;
+                        setStoredSessionId(source, sid);
+                    }
+                    return;
+                }
+
+                if (eventName === 'token') {
+                    var delta = data.text || data.Text || '';
+                    if (!delta) return;
+                    accumulated += delta;
+                    updateStreamingBubble(bubble, accumulated, true);
+                    return;
+                }
+
+                if (eventName === 'done') {
+                    finished = true;
+                    var finalText =
+                        data.text != null
+                            ? data.text
+                            : data.Text != null
+                              ? data.Text
+                              : accumulated;
+                    var refused = !!(data.refused || data.Refused);
+                    var doneSid = data.sessionId || data.SessionId;
+                    if (doneSid) {
+                        root._chatSessionId = doneSid;
+                        setStoredSessionId(source, doneSid);
+                    }
+                    finalizeAssistantBubble(bubble, finalText, refused);
+                    return;
+                }
+
+                if (eventName === 'error') {
+                    streamError =
+                        data.error ||
+                        data.Error ||
+                        'Hệ thống tạm thời không khả dụng. Vui lòng thử lại sau.';
+                }
             });
 
-            if (typing && typing.parentNode) typing.remove();
-
-            if (!result.ok) {
-                var err = errorMessageFrom(result.status, result.data);
-                setError(root, err);
-                showToast(err, true);
+            if (streamError) {
+                if (bubble && bubble.parentNode && !accumulated) {
+                    bubble.remove();
+                } else if (bubble && accumulated) {
+                    finalizeAssistantBubble(bubble, accumulated, false);
+                }
+                setError(root, streamError);
+                showToast(streamError, true);
                 return;
             }
 
-            var data = result.data || {};
-            var newSession =
-                data.sessionId || data.SessionId || sessionId;
-            if (newSession) {
-                root._chatSessionId = newSession;
-                setStoredSessionId(source, newSession);
-            }
-
-            var assistant =
-                data.assistantMessage || data.AssistantMessage || null;
-            if (assistant) {
-                renderMessage(root, assistant);
-            } else if (data.content || data.Content) {
-                renderMessage(root, data);
+            if (!finished && bubble && bubble.parentNode) {
+                if (accumulated) {
+                    finalizeAssistantBubble(bubble, accumulated, false);
+                } else {
+                    bubble.remove();
+                    setError(root, 'Không nhận được phản hồi từ trợ lý.');
+                    showToast('Không nhận được phản hồi từ trợ lý.', true);
+                }
             }
         } catch (e) {
-            if (typing && typing.parentNode) typing.remove();
+            if (bubble && bubble.parentNode && !accumulated) {
+                bubble.remove();
+            } else if (bubble && accumulated) {
+                finalizeAssistantBubble(bubble, accumulated, false);
+            }
             var fallback = (e && e.message) || 'Không thể gửi tin nhắn.';
             setError(root, fallback);
             showToast(fallback, true);
@@ -287,6 +489,7 @@
         }
     }
 
+    // Gắn sự kiện submit + nút gợi ý (chip)
     function bindRoot(root) {
         if (root.dataset.chatBound === '1') return;
         root.dataset.chatBound = '1';
@@ -317,10 +520,11 @@
             var sessionId = await ensureSession(root);
             await loadHistory(root, sessionId);
         } catch (e) {
-            // ensureSession already surfaced the error
+            // Lỗi đã hiện trên UI
         }
     }
 
+    // Nút tròn góc phải: mở / đóng panel widget
     function initWidgetToggle() {
         var widget = document.getElementById('chatWidget');
         var toggle = document.getElementById('chatWidgetToggle');
@@ -343,6 +547,7 @@
         });
     }
 
+    // Khởi động khi trang sẵn sàng
     function boot() {
         initWidgetToggle();
         document.querySelectorAll('[data-chat-root]').forEach(function (root) {

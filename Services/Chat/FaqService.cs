@@ -6,6 +6,12 @@ using Microsoft.Extensions.Logging;
 
 namespace Fruitables.Services.Chat;
 
+// ============================================================
+// QUẢN LÝ FAQ CHO ADMIN
+//
+// Lưu/sửa bài FAQ trong DB, rồi cố gắng "dạy bot" ngay.
+// Nếu bước dạy bot lỗi (mạng AI/embed) → FAQ vẫn được lưu (không làm hỏng thao tác Admin).
+// ============================================================
 public sealed class FaqService : IFaqService
 {
     private readonly ApplicationDbContext _db;
@@ -56,6 +62,7 @@ public sealed class FaqService : IFaqService
         _db.Faqs.Add(faq);
         await _db.SaveChangesAsync(ct);
 
+        // Dạy bot bài mới
         await TryIndexAsync(faq.Id, ct);
         return faq;
     }
@@ -92,6 +99,7 @@ public sealed class FaqService : IFaqService
         faq.IsActive = isActive;
         faq.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
+        // Bật → học lại; Tắt → IndexingService sẽ gỡ khỏi sổ tri thức
         await TryIndexAsync(faq.Id, ct);
     }
 
@@ -100,6 +108,7 @@ public sealed class FaqService : IFaqService
         await _indexingService.ReindexAllAsync(ct);
     }
 
+    // Lỗi index không được làm hỏng thao tác lưu FAQ
     private async Task TryIndexAsync(int faqId, CancellationToken ct)
     {
         try

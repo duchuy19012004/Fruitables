@@ -9,105 +9,508 @@
     var socialYoutube = await SettingsService.GetSettingAsync(Fruitables.Constants.SettingKeys.SocialYoutube);
     var socialLinkedIn = await SettingsService.GetSettingAsync(Fruitables.Constants.SettingKeys.SocialLinkedIn);
     var socialInstagram = await SettingsService.GetSettingAsync(Fruitables.Constants.SettingKeys.SocialInstagram);
+
+    var hasSocial = !string.IsNullOrEmpty(socialTwitter)
+        || !string.IsNullOrEmpty(socialFacebook)
+        || !string.IsNullOrEmpty(socialInstagram)
+        || !string.IsNullOrEmpty(socialYoutube)
+        || !string.IsNullOrEmpty(socialLinkedIn);
 }
-<div class="container-fluid bg-dark text-white-50 footer pt-5 mt-5">
-    <div class="container py-5">
-        <div class="pb-4 mb-4" style="border-bottom: 1px solid rgba(226, 175, 24, 0.5);">
-            <div class="row g-4">
-                <div class="col-lg-3 text-center text-lg-start">
-                    <a href="#">
-                        <h1 class="text-primary mb-0">@siteName</h1>
-                        <p class="text-secondary mb-0">Nông sản tươi mỗi ngày</p>
-                    </a>
+
+<footer class="ft">
+    @* Hàng trên: brand + newsletter + social *@
+    <div class="ft-top">
+        <div class="container">
+            <div class="ft-top-grid">
+                <div class="ft-brand">
+                    <a asp-controller="Home" asp-action="Index" class="ft-logo">@siteName</a>
+                    <p class="ft-tagline">Nông sản tươi mỗi ngày</p>
                 </div>
-                <div class="col-lg-6 my-4 my-lg-0">
-                    <div class="position-relative mx-auto">
-                        <input class="form-control border-0 w-100 py-3 px-4 rounded-pill" type="email" placeholder="Email của bạn">
-                        <button type="submit" class="btn btn-primary border-0 border-secondary py-3 px-4 position-absolute rounded-pill text-white" style="top: 0; right: 0;">Đăng ký nhận tin</button>
+
+                <form class="ft-newsletter" action="#" method="post" onsubmit="return false;">
+                    <label class="visually-hidden" for="ftNewsletterEmail">Email nhận tin</label>
+                    <div class="ft-newsletter-field">
+                        <input id="ftNewsletterEmail"
+                               type="email"
+                               name="email"
+                               class="ft-newsletter-input"
+                               placeholder="Email của bạn"
+                               autocomplete="email" />
+                        <button type="submit" class="ft-newsletter-btn">Đăng ký nhận tin</button>
                     </div>
-                </div>
-                <div class="col-lg-3">
-                    <div class="d-flex justify-content-center justify-content-lg-end pt-3 pt-lg-0">
+                </form>
+
+                @if (hasSocial)
+                {
+                    <div class="ft-social" aria-label="Mạng xã hội">
                         @if (!string.IsNullOrEmpty(socialTwitter))
                         {
-                            <a class="btn btn-outline-secondary me-2 btn-md-square rounded-circle" href="@socialTwitter" target="_blank"><i class="fab fa-twitter"></i></a>
+                            <a class="ft-social-link" href="@socialTwitter" target="_blank" rel="noopener noreferrer" aria-label="Twitter">
+                                <i class="fab fa-twitter" aria-hidden="true"></i>
+                            </a>
                         }
                         @if (!string.IsNullOrEmpty(socialFacebook))
                         {
-                            <a class="btn btn-outline-secondary me-2 btn-md-square rounded-circle" href="@socialFacebook" target="_blank"><i class="fab fa-facebook-f"></i></a>
+                            <a class="ft-social-link" href="@socialFacebook" target="_blank" rel="noopener noreferrer" aria-label="Facebook">
+                                <i class="fab fa-facebook-f" aria-hidden="true"></i>
+                            </a>
                         }
                         @if (!string.IsNullOrEmpty(socialInstagram))
                         {
-                            <a class="btn btn-outline-secondary me-2 btn-md-square rounded-circle" href="@socialInstagram" target="_blank"><i class="fab fa-instagram"></i></a>
+                            <a class="ft-social-link" href="@socialInstagram" target="_blank" rel="noopener noreferrer" aria-label="Instagram">
+                                <i class="fab fa-instagram" aria-hidden="true"></i>
+                            </a>
                         }
                         @if (!string.IsNullOrEmpty(socialYoutube))
                         {
-                            <a class="btn btn-outline-secondary me-2 btn-md-square rounded-circle" href="@socialYoutube" target="_blank"><i class="fab fa-youtube"></i></a>
+                            <a class="ft-social-link" href="@socialYoutube" target="_blank" rel="noopener noreferrer" aria-label="YouTube">
+                                <i class="fab fa-youtube" aria-hidden="true"></i>
+                            </a>
                         }
                         @if (!string.IsNullOrEmpty(socialLinkedIn))
                         {
-                            <a class="btn btn-outline-secondary btn-md-square rounded-circle" href="@socialLinkedIn" target="_blank"><i class="fab fa-linkedin-in"></i></a>
+                            <a class="ft-social-link" href="@socialLinkedIn" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn">
+                                <i class="fab fa-linkedin-in" aria-hidden="true"></i>
+                            </a>
                         }
                     </div>
-                </div>
-            </div>
-        </div>
-        <div class="row g-5">
-            <div class="col-lg-3 col-md-6 col-sm-6">
-                <div class="footer-item">
-                    <h4 class="text-light mb-3">Vì sao chọn Fruitables?</h4>
-                    <p class="mb-4">Chúng tôi ưu tiên sản phẩm tươi, quy trình đặt hàng đơn giản và hỗ trợ khách hàng nhanh chóng.</p>
-                    <a asp-controller="Shop" asp-action="Index" class="btn border-secondary py-2 px-4 rounded-pill text-primary">Mua sắm ngay</a>
-                </div>
-            </div>
-            <div class="col-lg-3 col-md-6 col-sm-6">
-                <div class="d-flex flex-column text-start footer-item">
-                    <h4 class="text-light mb-3">Thông tin cửa hàng</h4>
-                    <a class="btn-link" href="">Giới thiệu</a>
-                    <a class="btn-link" asp-controller="Contact" asp-action="Index">Liên hệ</a>
-                    <a class="btn-link" asp-controller="Chat" asp-action="Index">Hỗ trợ chat</a>
-                    <a class="btn-link" href="">Chính sách bảo mật</a>
-                    <a class="btn-link" href="">Điều khoản sử dụng</a>
-                    <a class="btn-link" href="">Chính sách đổi trả</a>
-                    <a class="btn-link" href="">Câu hỏi thường gặp</a>
-                </div>
-            </div>
-            <div class="col-lg-3 col-md-6 col-sm-6">
-                <div class="d-flex flex-column text-start footer-item">
-                    <h4 class="text-light mb-3">Tài khoản</h4>
-                    <a class="btn-link" asp-controller="Profile" asp-action="Index">Tài khoản của tôi</a>
-                    <a class="btn-link" asp-controller="Shop" asp-action="Index">Cửa hàng</a>
-                    <a class="btn-link" asp-controller="Cart" asp-action="Index">Giỏ hàng</a>
-                    <a class="btn-link" href="">Sản phẩm yêu thích</a>
-                    <a class="btn-link" asp-controller="OrderHistory" asp-action="Index">Lịch sử đơn hàng</a>
-                    <a class="btn-link" href="">Hỗ trợ đặt hàng</a>
-                </div>
-            </div>
-            <div class="col-lg-3 col-md-6 col-sm-6">
-                <div class="footer-item">
-                    <h4 class="text-light mb-3">Liên hệ</h4>
-                    <p>Địa chỉ: @contactAddress</p>
-                    <p>Email: @contactEmail</p>
-                    <p>Điện thoại: @contactPhone</p>
-                    <p>Phương thức thanh toán</p>
-                    <img src="~/img/payment.png" class="img-fluid" alt="Phương thức thanh toán">
-                </div>
+                }
             </div>
         </div>
     </div>
-</div>
 
-<!-- Copyright Start -->
-<div class="container-fluid copyright bg-dark py-4">
-    <div class="container">
-        <div class="row">
-            <div class="col-md-6 text-center text-md-start mb-3 mb-md-0">
-                <span class="text-light"><a href="#"><i class="fas fa-copyright text-light me-2"></i>@siteName</a>, đã đăng ký bản quyền.</span>
-            </div>
-            <div class="col-md-6 my-auto text-center text-md-end text-white">
-                Thiết kế bởi <a class="border-bottom" href="https://htmlcodex.com">HTML Codex</a>
+    @* Cột nội dung *@
+    <div class="ft-main">
+        <div class="container">
+            <div class="ft-cols">
+                <div class="ft-col ft-col-about">
+                    <h3 class="ft-heading">Vì sao chọn Fruitables?</h3>
+                    <p class="ft-about-text">
+                        Ưu tiên nông sản tươi, đặt hàng gọn, giao nhanh và hỗ trợ khi bạn cần.
+                    </p>
+                    <a asp-controller="Shop" asp-action="Index" class="ft-cta">
+                        Mua sắm ngay
+                        <i class="fas fa-arrow-right" aria-hidden="true"></i>
+                    </a>
+                </div>
+
+                <div class="ft-col">
+                    <h3 class="ft-heading">Thông tin cửa hàng</h3>
+                    <nav class="ft-links" aria-label="Thông tin cửa hàng">
+                        <a asp-controller="Home" asp-action="Index">Trang chủ</a>
+                        <a asp-controller="Contact" asp-action="Index">Liên hệ</a>
+                        <a asp-controller="Chat" asp-action="Index">Hỗ trợ chat</a>
+                        <a asp-controller="Home" asp-action="Privacy">Chính sách bảo mật</a>
+                        <a href="#">Điều khoản sử dụng</a>
+                        <a href="#">Chính sách đổi trả</a>
+                        <a href="#">Câu hỏi thường gặp</a>
+                    </nav>
+                </div>
+
+                <div class="ft-col">
+                    <h3 class="ft-heading">Tài khoản</h3>
+                    <nav class="ft-links" aria-label="Tài khoản">
+                        <a asp-controller="Profile" asp-action="Index">Tài khoản của tôi</a>
+                        <a asp-controller="Shop" asp-action="Index">Cửa hàng</a>
+                        <a asp-controller="Cart" asp-action="Index">Giỏ hàng</a>
+                        <a href="#">Sản phẩm yêu thích</a>
+                        <a asp-controller="OrderHistory" asp-action="Index">Lịch sử đơn hàng</a>
+                        <a asp-controller="Contact" asp-action="Index">Hỗ trợ đặt hàng</a>
+                    </nav>
+                </div>
+
+                <div class="ft-col ft-col-contact">
+                    <h3 class="ft-heading">Liên hệ</h3>
+                    <ul class="ft-contact-list">
+                        <li>
+                            <span class="ft-contact-icon" aria-hidden="true"><i class="fas fa-map-marker-alt"></i></span>
+                            <span>@contactAddress</span>
+                        </li>
+                        <li>
+                            <span class="ft-contact-icon" aria-hidden="true"><i class="fas fa-envelope"></i></span>
+                            <a href="mailto:@contactEmail">@contactEmail</a>
+                        </li>
+                        <li>
+                            <span class="ft-contact-icon" aria-hidden="true"><i class="fas fa-phone-alt"></i></span>
+                            <a href="tel:@contactPhone.Replace(" ", "")">@contactPhone</a>
+                        </li>
+                    </ul>
+                    <p class="ft-pay-label">Thanh toán</p>
+                    <img src="~/img/payment.png" class="ft-pay-img" alt="Phương thức thanh toán được chấp nhận" />
+                </div>
             </div>
         </div>
     </div>
-</div>
-<!-- Copyright End -->
+
+    @* Copyright *@
+    <div class="ft-bottom">
+        <div class="container">
+            <div class="ft-bottom-inner">
+                <p class="ft-copy">
+                    <span aria-hidden="true">&copy;</span> @DateTime.Now.Year @siteName. Mọi quyền được bảo lưu.
+                </p>
+                <p class="ft-credit">
+                    Nông sản tươi - giao đến tận nhà
+                </p>
+            </div>
+        </div>
+    </div>
+</footer>
+
+<style>
+    /* =========================================================
+       Footer Fruitables - fresh market, dark surface, green accent
+       ========================================================= */
+    .ft {
+        --ft-bg: #2f3e40;
+        --ft-bg-deep: #263436;
+        --ft-line: rgba(255, 255, 255, 0.1);
+        --ft-text: rgba(255, 255, 255, 0.72);
+        --ft-text-soft: rgba(255, 255, 255, 0.52);
+        --ft-heading: #ffffff;
+        --ft-accent: #81c408;
+        --ft-accent-dark: #6aa006;
+        --ft-gold: #e8a91c;
+        margin-top: 4rem;
+        background: var(--ft-bg);
+        color: var(--ft-text);
+    }
+
+    .ft a {
+        color: inherit;
+        text-decoration: none;
+        transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+    }
+
+    /* ----- Top bar ----- */
+    .ft-top {
+        padding: 2.25rem 0 1.75rem;
+        border-bottom: 1px solid var(--ft-line);
+        background:
+            radial-gradient(ellipse 60% 80% at 0% 0%, rgba(129, 196, 8, 0.12), transparent 55%),
+            var(--ft-bg);
+    }
+
+    .ft-top-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.6fr) auto;
+        gap: 1.5rem 2rem;
+        align-items: center;
+    }
+
+    .ft-logo {
+        display: inline-block;
+        font-size: clamp(1.75rem, 3vw, 2.15rem);
+        font-weight: 900;
+        letter-spacing: -0.03em;
+        line-height: 1.1;
+        color: var(--ft-accent) !important;
+    }
+
+    .ft-logo:hover {
+        color: #9ad42a !important;
+    }
+
+    .ft-tagline {
+        margin: 0.35rem 0 0;
+        font-size: 0.88rem;
+        font-weight: 600;
+        color: var(--ft-gold);
+    }
+
+    .ft-newsletter {
+        width: 100%;
+        max-width: 520px;
+        margin: 0 auto;
+    }
+
+    .ft-newsletter-field {
+        display: flex;
+        align-items: stretch;
+        background: #fff;
+        border-radius: 999px;
+        padding: 4px 4px 4px 4px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+    }
+
+    .ft-newsletter-input {
+        flex: 1 1 auto;
+        min-width: 0;
+        border: 0;
+        outline: none;
+        background: transparent;
+        padding: 0.7rem 1.1rem;
+        font-size: 0.92rem;
+        color: #273438;
+    }
+
+    .ft-newsletter-input::placeholder {
+        color: #94a3b8;
+    }
+
+    .ft-newsletter-btn {
+        flex: 0 0 auto;
+        border: 0;
+        border-radius: 999px;
+        padding: 0.7rem 1.25rem;
+        background: var(--ft-accent);
+        color: #fff;
+        font-size: 0.88rem;
+        font-weight: 800;
+        white-space: nowrap;
+        cursor: pointer;
+        transition: background 0.2s ease, transform 0.15s ease;
+    }
+
+    .ft-newsletter-btn:hover {
+        background: var(--ft-accent-dark);
+    }
+
+    .ft-newsletter-btn:active {
+        transform: scale(0.98);
+    }
+
+    .ft-social {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 0.5rem;
+    }
+
+    .ft-social-link {
+        width: 40px;
+        height: 40px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        border: 1.5px solid rgba(232, 169, 28, 0.55);
+        color: var(--ft-gold) !important;
+        font-size: 0.9rem;
+        background: transparent;
+    }
+
+    .ft-social-link:hover {
+        background: var(--ft-gold);
+        border-color: var(--ft-gold);
+        color: #1f2d2f !important;
+        transform: translateY(-2px);
+    }
+
+    /* ----- Main columns ----- */
+    .ft-main {
+        padding: 2.75rem 0 2.25rem;
+    }
+
+    .ft-cols {
+        display: grid;
+        grid-template-columns: 1.25fr 1fr 1fr 1.15fr;
+        gap: 2rem 1.75rem;
+    }
+
+    .ft-heading {
+        margin: 0 0 1rem;
+        font-size: 1.05rem;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+        color: var(--ft-heading);
+    }
+
+    .ft-about-text {
+        margin: 0 0 1.15rem;
+        max-width: 32ch;
+        font-size: 0.92rem;
+        line-height: 1.65;
+        color: var(--ft-text-soft);
+    }
+
+    .ft-cta {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.55rem 1.15rem;
+        border-radius: 999px;
+        border: 1.5px solid var(--ft-accent);
+        color: var(--ft-accent) !important;
+        font-size: 0.88rem;
+        font-weight: 800;
+        background: transparent;
+    }
+
+    .ft-cta:hover {
+        background: var(--ft-accent);
+        color: #fff !important;
+    }
+
+    .ft-cta i {
+        font-size: 0.75rem;
+        transition: transform 0.2s ease;
+    }
+
+    .ft-cta:hover i {
+        transform: translateX(3px);
+    }
+
+    .ft-links {
+        display: flex;
+        flex-direction: column;
+        gap: 0.55rem;
+    }
+
+    .ft-links a {
+        font-size: 0.9rem;
+        color: var(--ft-text-soft);
+        width: fit-content;
+    }
+
+    .ft-links a:hover {
+        color: var(--ft-accent);
+    }
+
+    .ft-contact-list {
+        list-style: none;
+        margin: 0 0 1.1rem;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.7rem;
+    }
+
+    .ft-contact-list li {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.65rem;
+        font-size: 0.9rem;
+        line-height: 1.45;
+        color: var(--ft-text-soft);
+    }
+
+    .ft-contact-icon {
+        flex: 0 0 1.1rem;
+        width: 1.1rem;
+        margin-top: 0.15rem;
+        color: var(--ft-accent);
+        text-align: center;
+    }
+
+    .ft-contact-list a:hover {
+        color: var(--ft-accent);
+    }
+
+    .ft-pay-label {
+        margin: 0 0 0.45rem;
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: rgba(255, 255, 255, 0.45);
+    }
+
+    .ft-pay-img {
+        max-width: 200px;
+        height: auto;
+        opacity: 0.92;
+    }
+
+    /* ----- Bottom bar ----- */
+    .ft-bottom {
+        border-top: 1px solid var(--ft-line);
+        background: var(--ft-bg-deep);
+        padding: 1rem 0;
+    }
+
+    .ft-bottom-inner {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem 1.25rem;
+    }
+
+    .ft-copy,
+    .ft-credit {
+        margin: 0;
+        font-size: 0.82rem;
+        color: rgba(255, 255, 255, 0.48);
+    }
+
+    .ft-credit {
+        color: rgba(255, 255, 255, 0.38);
+    }
+
+    /* ----- Responsive ----- */
+    @@media (max-width: 991.98px) {
+        .ft-top-grid {
+            grid-template-columns: 1fr;
+            text-align: center;
+        }
+
+        .ft-newsletter {
+            margin: 0 auto;
+        }
+
+        .ft-social {
+            justify-content: center;
+        }
+
+        .ft-cols {
+            grid-template-columns: 1fr 1fr;
+        }
+
+        .ft-col-about {
+            grid-column: 1 / -1;
+        }
+
+        .ft-about-text {
+            max-width: 48ch;
+        }
+    }
+
+    @@media (max-width: 575.98px) {
+        .ft {
+            margin-top: 2.5rem;
+        }
+
+        .ft-newsletter-field {
+            flex-direction: column;
+            border-radius: 14px;
+            padding: 6px;
+            gap: 6px;
+        }
+
+        .ft-newsletter-input {
+            padding: 0.75rem 0.9rem;
+            text-align: center;
+        }
+
+        .ft-newsletter-btn {
+            width: 100%;
+            border-radius: 10px;
+            padding: 0.8rem 1rem;
+        }
+
+        .ft-cols {
+            grid-template-columns: 1fr;
+            gap: 1.75rem;
+        }
+
+        .ft-bottom-inner {
+            flex-direction: column;
+            text-align: center;
+        }
+    }
+
+    @@media (prefers-reduced-motion: reduce) {
+        .ft a,
+        .ft-newsletter-btn,
+        .ft-social-link,
+        .ft-cta i {
+            transition: none;
+        }
+
+        .ft-social-link:hover,
+        .ft-newsletter-btn:active {
+            transform: none;
+        }
+    }
+</style>

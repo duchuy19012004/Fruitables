@@ -1,25 +1,30 @@
 @{
-    ViewData["Title"] = "Contact";
+    ViewData["Title"] = "Liên hệ";
+    var address = ViewBag.ContactAddress as string ?? "120, Yên Lãng, Đống Đa, Hà Nội";
+    var email = ViewBag.ContactEmail as string ?? "hotro@fruitables.vn";
+    var phone = ViewBag.ContactPhone as string ?? "+0123 4567 8910";
+    var hours = ViewBag.ContactHours as string ?? "Thứ 2 - Chủ nhật: 8:00 - 20:00";
+    var mapEmbed = ViewBag.MapEmbed as string;
+    var phoneTel = new string((phone ?? "").Where(c => char.IsDigit(c) || c == '+').ToArray());
 }
 
-<!-- Single Page Header start -->
+@* Breadcrumb / tiêu đề trang *@
 <div class="container-fluid page-header py-5">
-    <h1 class="text-center text-white display-6">Contact</h1>
+    <h1 class="text-center text-white display-6">Liên hệ</h1>
     <ol class="breadcrumb justify-content-center mb-0">
-        <li class="breadcrumb-item"><a asp-controller="Home" asp-action="Index">Home</a></li>
-        <li class="breadcrumb-item active text-white">Contact</li>
+        <li class="breadcrumb-item"><a asp-controller="Home" asp-action="Index">Trang chủ</a></li>
+        <li class="breadcrumb-item active text-white">Liên hệ</li>
     </ol>
 </div>
-<!-- Single Page Header End -->
 
-<!-- Toast Container -->
+@* Toast *@
 <div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1100;">
     @if (TempData["Success"] != null)
     {
         <div class="toast show" role="alert" data-bs-autohide="true" data-bs-delay="5000">
             <div class="toast-header bg-success text-white">
                 <i class="fa fa-check-circle me-2"></i>
-                <strong class="me-auto">Thành công</strong>
+                <strong class="me-auto">Đã gửi</strong>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
             </div>
             <div class="toast-body">@TempData["Success"]</div>
@@ -30,7 +35,7 @@
         <div class="toast show" role="alert" data-bs-autohide="true" data-bs-delay="5000">
             <div class="toast-header bg-danger text-white">
                 <i class="fa fa-exclamation-circle me-2"></i>
-                <strong class="me-auto">Lỗi</strong>
+                <strong class="me-auto">Chưa gửi được</strong>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
             </div>
             <div class="toast-body">@TempData["Error"]</div>
@@ -38,66 +43,434 @@
     }
 </div>
 
-<!-- Contact Start -->
-<div class="container-fluid contact py-5">
-    <div class="container py-5">
-        <div class="p-5 bg-light rounded">
-            <div class="row g-4">
-                <div class="col-12">
-                    <div class="text-center mx-auto" style="max-width: 700px;">
-                        <h1 class="text-primary">Get in touch</h1>
-                        <p class="mb-4">The contact form is currently inactive. Get a functional and working contact form with Ajax & PHP in a few minutes.</p>
+<section class="ct">
+    <div class="container">
+        @* Intro *@
+        <div class="ct-intro">
+            <p class="ct-eyebrow">Fruitables</p>
+            <h2 class="ct-title">Gửi tin cho cửa hàng</h2>
+            <p class="ct-lead">
+                Cần hỏi đơn hàng, đổi địa chỉ giao, hay chọn loại rau củ phù hợp?
+                Viết form bên dưới, hoặc gọi thẳng nếu gấp.
+            </p>
+            <p class="ct-side">
+                Cũng có thể chat nhanh trên site
+                (<a asp-controller="Chat" asp-action="Index">mở hỗ trợ chat</a>
+                nếu câu hỏi thuộc dạng FAQ.
+            </p>
+        </div>
+
+        <div class="ct-grid">
+            @* Form *@
+            <div class="ct-form-card">
+                <h3 class="ct-card-title">Tin nhắn của bạn</h3>
+                <form asp-controller="Contact" asp-action="SendMessage" method="post" class="ct-form" novalidate>
+                    @Html.AntiForgeryToken()
+
+                    <div class="ct-field">
+                        <label for="ct-name">Họ tên</label>
+                        <input id="ct-name" type="text" name="name" maxlength="100"
+                               placeholder="Ví dụ: Nguyễn An" required autocomplete="name" />
                     </div>
-                </div>
-                <div class="col-lg-12">
-                    <div class="h-100 rounded">
-                        <iframe class="rounded w-100" style="height: 400px;" src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d387191.33750346623!2d-73.97968099999999!3d40.6974881!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x89c24fa5d33f083b%3A0xc80b8f06e177fe62!2sNew%20York%2C%20NY%2C%20USA!5e0!3m2!1sen!2sbd!4v1694259649153!5m2!1sen!2sbd" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+
+                    <div class="ct-field">
+                        <label for="ct-email">Email</label>
+                        <input id="ct-email" type="email" name="email" maxlength="200"
+                               placeholder="ban@email.com" required autocomplete="email" />
                     </div>
-                </div>
-                <div class="col-lg-7">
-                    <form asp-controller="Contact" asp-action="SendMessage" method="post">
-                        @Html.AntiForgeryToken()
-                        <input type="text" name="name" class="w-100 form-control border-0 py-3 mb-4" placeholder="Your Name" required>
-                        <input type="email" name="email" class="w-100 form-control border-0 py-3 mb-4" placeholder="Enter Your Email" required>
-                        <textarea name="message" class="w-100 form-control border-0 mb-4" rows="5" cols="10" placeholder="Your Message" required></textarea>
-                        <button type="submit" class="w-100 btn form-control border-secondary py-3 bg-white text-primary">Submit</button>
-                    </form>
-                </div>
-                <div class="col-lg-5">
-                    <div class="d-flex p-4 rounded mb-4 bg-white">
-                        <i class="fas fa-map-marker-alt fa-2x text-primary me-4"></i>
-                        <div>
-                            <h4>Address</h4>
-                            <p class="mb-2">123 Street New York, USA</p>
-                        </div>
+
+                    <div class="ct-field">
+                        <label for="ct-message">Nội dung</label>
+                        <textarea id="ct-message" name="message" rows="6" maxlength="2000"
+                                  placeholder="Bạn đang cần hỗ trợ gì? Càng cụ thể càng dễ xử lý."
+                                  required></textarea>
                     </div>
-                    <div class="d-flex p-4 rounded mb-4 bg-white">
-                        <i class="fas fa-envelope fa-2x text-primary me-4"></i>
-                        <div>
-                            <h4>Mail Us</h4>
-                            <p class="mb-2">info@example.com</p>
-                        </div>
-                    </div>
-                    <div class="d-flex p-4 rounded bg-white">
-                        <i class="fa fa-phone-alt fa-2x text-primary me-4"></i>
-                        <div>
-                            <h4>Telephone</h4>
-                            <p class="mb-2">(+012) 3456 7890</p>
-                        </div>
-                    </div>
-                </div>
+
+                    <button type="submit" class="ct-submit">
+                        Gửi tin nhắn
+                        <i class="fas fa-paper-plane" aria-hidden="true"></i>
+                    </button>
+                    <p class="ct-form-note">
+                        Thường phản hồi trong giờ làm việc. Đừng gửi mật khẩu hay mã OTP qua form này.
+                    </p>
+                </form>
             </div>
+
+            @* Info cards *@
+            <aside class="ct-aside">
+                <div class="ct-info">
+                    <div class="ct-info-icon" aria-hidden="true"><i class="fas fa-map-marker-alt"></i></div>
+                    <div>
+                        <h4>Địa chỉ</h4>
+                        <p>@address</p>
+                    </div>
+                </div>
+                <div class="ct-info">
+                    <div class="ct-info-icon" aria-hidden="true"><i class="fas fa-envelope"></i></div>
+                    <div>
+                        <h4>Email</h4>
+                        <p><a href="mailto:@email">@email</a></p>
+                    </div>
+                </div>
+                <div class="ct-info">
+                    <div class="ct-info-icon" aria-hidden="true"><i class="fas fa-phone-alt"></i></div>
+                    <div>
+                        <h4>Điện thoại</h4>
+                        <p><a href="tel:@phoneTel">@phone</a></p>
+                    </div>
+                </div>
+                <div class="ct-info">
+                    <div class="ct-info-icon" aria-hidden="true"><i class="fas fa-clock"></i></div>
+                    <div>
+                        <h4>Giờ làm việc</h4>
+                        <p>@hours</p>
+                    </div>
+                </div>
+
+                <div class="ct-tips">
+                    <h4>Gợi ý nhanh</h4>
+                    <ul>
+                        <li>Theo dõi đơn: vào <a asp-controller="OrderHistory" asp-action="Index">Lịch sử đơn hàng</a> sau khi đăng nhập.</li>
+                        <li>Hỏi phí ship / bảo quản: thử <a asp-controller="Chat" asp-action="Index">chatbot</a> trước, nhiều câu trả lời ngay.</li>
+                        <li>Khiếu nại đơn: ghi rõ mã đơn trong tin nhắn.</li>
+                    </ul>
+                </div>
+            </aside>
+        </div>
+
+        @* Bản đồ *@
+        <div class="ct-map-wrap">
+            <h3 class="ct-card-title">Vị trí cửa hàng</h3>
+            @if (!string.IsNullOrWhiteSpace(mapEmbed) && mapEmbed.Contains("iframe", StringComparison.OrdinalIgnoreCase))
+            {
+                <div class="ct-map">@Html.Raw(mapEmbed)</div>
+            }
+            else if (!string.IsNullOrWhiteSpace(mapEmbed) && mapEmbed.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            {
+                <div class="ct-map">
+                    <iframe title="Bản đồ cửa hàng Fruitables"
+                            src="@mapEmbed"
+                            loading="lazy"
+                            referrerpolicy="no-referrer-when-downgrade"
+                            allowfullscreen></iframe>
+                </div>
+            }
+            else
+            {
+                <div class="ct-map">
+                    <iframe title="Bản đồ khu vực Yên Lãng, Hà Nội"
+                            src="https://www.google.com/maps?q=Yen+Lang+Dong+Da+Ha+Noi&output=embed"
+                            loading="lazy"
+                            referrerpolicy="no-referrer-when-downgrade"
+                            allowfullscreen></iframe>
+                </div>
+                <p class="ct-map-note">
+                    Bản đồ mặc định theo khu vực Yên Lãng. Admin có thể dán embed riêng trong Cài đặt (Contact map).
+                </p>
+            }
         </div>
     </div>
-</div>
-<!-- Contact End -->
+</section>
 
+<style>
+    .ct {
+        --ct-accent: #81c408;
+        --ct-accent-dark: #6aa006;
+        --ct-ink: #273438;
+        --ct-muted: #64748b;
+        --ct-line: #e8edf0;
+        --ct-bg: #f6f8f4;
+        --ct-card: #ffffff;
+        padding: 3rem 0 4rem;
+        background: var(--ct-bg);
+    }
+
+    .ct-intro {
+        max-width: 38rem;
+        margin: 0 0 2.25rem;
+    }
+
+    .ct-eyebrow {
+        margin: 0 0 0.4rem;
+        font-size: 0.78rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--ct-accent-dark);
+    }
+
+    .ct-title {
+        margin: 0 0 0.65rem;
+        font-size: clamp(1.6rem, 3vw, 2.1rem);
+        font-weight: 900;
+        letter-spacing: -0.02em;
+        color: var(--ct-ink);
+        line-height: 1.2;
+    }
+
+    .ct-lead {
+        margin: 0 0 0.55rem;
+        font-size: 1.02rem;
+        line-height: 1.6;
+        color: var(--ct-muted);
+    }
+
+    .ct-side {
+        margin: 0;
+        font-size: 0.92rem;
+        color: var(--ct-muted);
+    }
+
+    .ct-side a {
+        color: var(--ct-accent-dark);
+        font-weight: 700;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+    }
+
+    .ct-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+        gap: 1.5rem;
+        align-items: start;
+    }
+
+    .ct-form-card,
+    .ct-info,
+    .ct-tips,
+    .ct-map-wrap {
+        background: var(--ct-card);
+        border: 1px solid rgba(39, 52, 56, 0.08);
+        border-radius: 14px;
+        box-shadow: 0 10px 28px rgba(31, 41, 55, 0.06);
+    }
+
+    .ct-form-card {
+        padding: 1.5rem 1.5rem 1.35rem;
+    }
+
+    .ct-card-title {
+        margin: 0 0 1.15rem;
+        font-size: 1.1rem;
+        font-weight: 800;
+        color: var(--ct-ink);
+    }
+
+    .ct-form {
+        display: flex;
+        flex-direction: column;
+        gap: 0.95rem;
+    }
+
+    .ct-field label {
+        display: block;
+        margin-bottom: 0.35rem;
+        font-size: 0.86rem;
+        font-weight: 700;
+        color: var(--ct-ink);
+    }
+
+    .ct-field input,
+    .ct-field textarea {
+        width: 100%;
+        border: 1px solid #d7dee3;
+        border-radius: 10px;
+        padding: 0.75rem 0.9rem;
+        font-size: 0.95rem;
+        color: var(--ct-ink);
+        background: #fbfcfc;
+        outline: none;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .ct-field input:focus,
+    .ct-field textarea:focus {
+        border-color: var(--ct-accent);
+        box-shadow: 0 0 0 3px rgba(129, 196, 8, 0.2);
+        background: #fff;
+    }
+
+    .ct-field input::placeholder,
+    .ct-field textarea::placeholder {
+        color: #94a3b8;
+    }
+
+    .ct-field textarea {
+        resize: vertical;
+        min-height: 140px;
+    }
+
+    .ct-submit {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        width: 100%;
+        margin-top: 0.25rem;
+        border: 0;
+        border-radius: 999px;
+        padding: 0.85rem 1.25rem;
+        background: var(--ct-accent);
+        color: #fff;
+        font-size: 0.98rem;
+        font-weight: 800;
+        cursor: pointer;
+        transition: background 0.2s ease, transform 0.15s ease;
+    }
+
+    .ct-submit:hover {
+        background: var(--ct-accent-dark);
+    }
+
+    .ct-submit:active {
+        transform: scale(0.99);
+    }
+
+    .ct-form-note {
+        margin: 0.15rem 0 0;
+        font-size: 0.8rem;
+        color: var(--ct-muted);
+        line-height: 1.45;
+    }
+
+    .ct-aside {
+        display: flex;
+        flex-direction: column;
+        gap: 0.85rem;
+    }
+
+    .ct-info {
+        display: flex;
+        gap: 0.9rem;
+        padding: 1.05rem 1.15rem;
+    }
+
+    .ct-info-icon {
+        flex: 0 0 42px;
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(129, 196, 8, 0.12);
+        color: var(--ct-accent-dark);
+        font-size: 1rem;
+    }
+
+    .ct-info h4 {
+        margin: 0 0 0.25rem;
+        font-size: 0.95rem;
+        font-weight: 800;
+        color: var(--ct-ink);
+    }
+
+    .ct-info p {
+        margin: 0;
+        font-size: 0.9rem;
+        line-height: 1.45;
+        color: var(--ct-muted);
+    }
+
+    .ct-info a {
+        color: var(--ct-muted);
+        text-decoration: none;
+    }
+
+    .ct-info a:hover {
+        color: var(--ct-accent-dark);
+    }
+
+    .ct-tips {
+        padding: 1.15rem 1.2rem;
+    }
+
+    .ct-tips h4 {
+        margin: 0 0 0.65rem;
+        font-size: 0.95rem;
+        font-weight: 800;
+        color: var(--ct-ink);
+    }
+
+    .ct-tips ul {
+        margin: 0;
+        padding-left: 1.1rem;
+        color: var(--ct-muted);
+        font-size: 0.88rem;
+        line-height: 1.55;
+    }
+
+    .ct-tips li + li {
+        margin-top: 0.4rem;
+    }
+
+    .ct-tips a {
+        color: var(--ct-accent-dark);
+        font-weight: 700;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+    }
+
+    .ct-map-wrap {
+        margin-top: 1.5rem;
+        padding: 1.25rem 1.25rem 1.1rem;
+    }
+
+    .ct-map {
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid var(--ct-line);
+        background: #eef2f0;
+        min-height: 320px;
+    }
+
+    .ct-map iframe {
+        display: block;
+        width: 100%;
+        height: 360px;
+        border: 0;
+    }
+
+    .ct-map-note {
+        margin: 0.65rem 0 0;
+        font-size: 0.8rem;
+        color: var(--ct-muted);
+    }
+
+    @@media (max-width: 991.98px) {
+        .ct-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @@media (max-width: 575.98px) {
+        .ct {
+            padding: 2rem 0 2.5rem;
+        }
+
+        .ct-form-card {
+            padding: 1.2rem;
+        }
+    }
+
+    @@media (prefers-reduced-motion: reduce) {
+        .ct-field input,
+        .ct-field textarea,
+        .ct-submit {
+            transition: none;
+        }
+
+        .ct-submit:active {
+            transform: none;
+        }
+    }
+</style>
 
 @section Scripts {
     <script>
-        (function() {
-            document.querySelectorAll('.toast.show').forEach(function(toast) {
-                setTimeout(function() {
+        (function () {
+            document.querySelectorAll('.toast.show').forEach(function (toast) {
+                setTimeout(function () {
                     var bsToast = bootstrap.Toast.getOrCreateInstance(toast);
                     bsToast.hide();
                 }, 5000);

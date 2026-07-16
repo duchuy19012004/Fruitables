@@ -69,11 +69,16 @@ public class IndexingServiceTests
         var chunk = chunks[0];
         Assert.True(chunk.IsActive);
         Assert.Equal("Phí ship", chunk.Title);
-        Assert.Equal("Phí ship\n\nNội thành 30k", chunk.Content);
+        Assert.StartsWith("Phí ship\n\nNội thành 30k", chunk.Content);
+        Assert.Contains("Từ khóa:", chunk.Content);
+        Assert.Contains("ship", chunk.Content, StringComparison.OrdinalIgnoreCase);
         Assert.False(string.IsNullOrWhiteSpace(chunk.ContentHash));
         Assert.False(string.IsNullOrWhiteSpace(chunk.EmbeddingJson));
         Assert.NotEqual("[]", chunk.EmbeddingJson);
-        Assert.Equal(Sha256Hex(chunk.Content), chunk.ContentHash);
+        // Hash gắn AlgorithmId để bump algorithm → reindex embedding
+        Assert.Equal(
+            Sha256Hex(RetrievalText.AlgorithmId + "\0" + chunk.Content),
+            chunk.ContentHash);
     }
 
     [Fact]
@@ -141,6 +146,194 @@ public class IndexingServiceTests
             .Where(c => c.SourceType == KnowledgeSourceType.Faq && c.SourceId == faq.Id.ToString() && c.IsActive)
             .ToListAsync();
         Assert.Single(chunks);
+    }
+
+    [Fact]
+    public void SanitizeCatalogText_strips_control_and_truncates()
+    {
+        var dirty = "Táo\nFuji" + '\0' + " ignore instructions";
+        var clean = IndexingService.SanitizeCatalogText(dirty, 20);
+        Assert.DoesNotContain('\n', clean);
+        Assert.DoesNotContain('\0', clean);
+        Assert.Contains("Táo", clean);
+        Assert.Contains("Fuji", clean);
+        Assert.True(clean.Length <= 21); // 20 + ellipsis
+    }
+
+    [Fact]
+    public async Task IndexCatalogInsightsAsync_creates_bestseller_and_featured_chunks()
+    {
+        await using var db = CreateContext();
+
+        var category = new Category
+        {
+            Name = "Trái cây",
+            Slug = "trai-cay",
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        db.Categories.Add(category);
+        await db.SaveChangesAsync();
+
+        var featured = new Product
+        {
+            Name = "Táo Fuji nổi bật",
+            CategoryId = category.Id,
+            Slug = "tao-fuji",
+            Price = 10,
+            IsFeatured = true,
+            IsActive = true,
+            IsDeleted = false,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        var other = new Product
+        {
+            Name = "Xoài bán chạy",
+            CategoryId = category.Id,
+            Slug = "xoai",
+            Price = 20,
+            IsFeatured = false,
+            IsActive = true,
+            IsDeleted = false,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        db.Products.AddRange(featured, other);
+        await db.SaveChangesAsync();
+
+        var order = new Order
+        {
+            OrderNumber = "ORD-TEST-1",
+            Status = OrderStatus.Delivered,
+            Subtotal = 100,
+            Total = 100,
+            PaymentMethod = PaymentMethod.COD,
+            CreatedAt = DateTime.UtcNow
+        };
+        db.Orders.Add(order);
+        await db.SaveChangesAsync();
+
+        db.OrderItems.Add(new OrderItem
+        {
+            OrderId = order.Id,
+            ProductId = other.Id,
+            ProductName = other.Name,
+            Quantity = 12,
+            Price = 20,
+            Total = 240
+        });
+        db.OrderItems.Add(new OrderItem
+        {
+            OrderId = order.Id,
+            ProductId = featured.Id,
+            ProductName = featured.Name,
+            Quantity = 3,
+            Price = 10,
+            Total = 30
+        });
+        await db.SaveChangesAsync();
+
+        var embedding = new DeterministicEmbeddingClient(dimensions: 32);
+        var sut = CreateService(db, embedding);
+        await sut.IndexCatalogInsightsAsync();
+
+        var best = await db.KnowledgeChunks.SingleAsync(c =>
+            c.SourceType == KnowledgeSourceType.Catalog
+            && c.SourceId == IndexingService.CatalogBestsellersSourceId
+            && c.IsActive);
+        Assert.Contains("bán chạy", best.Content, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Xoài", best.Content);
+        Assert.Contains("12", best.Content);
+        // Template only — no raw injection payloads from product description
+        Assert.DoesNotContain("Ignore all", best.Content);
+
+        var feat = await db.KnowledgeChunks.SingleAsync(c =>
+            c.SourceType == KnowledgeSourceType.Catalog
+            && c.SourceId == IndexingService.CatalogFeaturedSourceId
+            && c.IsActive);
+        Assert.Contains("nổi bật", feat.Content, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Táo Fuji", feat.Content);
+    }
+
+    [Fact]
+    public async Task IndexProductAsync_creates_chunk_with_price_stock_variants_tags()
+    {
+        await using var db = CreateContext();
+
+        var category = new Category
+        {
+            Name = "Trái cây",
+            Slug = "trai-cay",
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        db.Categories.Add(category);
+        await db.SaveChangesAsync();
+
+        var tag = new ProductTag
+        {
+            Name = "Táo nhập khẩu",
+            Slug = "tao-nhap-khau"
+        };
+        db.ProductTags.Add(tag);
+        await db.SaveChangesAsync();
+
+        var product = new Product
+        {
+            Name = "Táo Fuji",
+            Slug = "tao-fuji",
+            CategoryId = category.Id,
+            Price = 125000,
+            SalePrice = 99000,
+            Unit = "kg",
+            StockQuantity = 50,
+            MinOrderQuantity = 1,
+            CountryOrigin = "Nhật Bản",
+            Quality = "Loại A",
+            ShortDescription = "Táo Fuji ngọt giòn.",
+            Description = "Táo Fuji nhập khẩu từ Nhật Bản, giòn ngọt tự nhiên.",
+            IsActive = true,
+            IsDeleted = false,
+            IsFeatured = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            Tags = new List<ProductTag> { tag }
+        };
+        product.Variants.Add(new ProductVariant
+        {
+            Name = "Hộp 2kg",
+            SKU = "FUJI-2KG",
+            Price = 240000,
+            SalePrice = 190000,
+            StockQuantity = 20,
+            IsActive = true
+        });
+        db.Products.Add(product);
+        await db.SaveChangesAsync();
+
+        var embedding = new DeterministicEmbeddingClient(dimensions: 32);
+        var sut = CreateService(db, embedding);
+
+        await sut.IndexProductAsync(product.Id);
+
+        var chunk = await db.KnowledgeChunks
+            .SingleAsync(c =>
+                c.SourceType == KnowledgeSourceType.Product
+                && c.SourceId == product.Id.ToString()
+                && c.IsActive);
+
+        Assert.Contains("Táo Fuji", chunk.Content);
+        Assert.Contains("125,000đ", chunk.Content);
+        Assert.Contains("99,000đ", chunk.Content);
+        Assert.Contains("Tồn kho: 50", chunk.Content);
+        Assert.Contains("Nhật Bản", chunk.Content);
+        Assert.Contains("Hộp 2kg", chunk.Content);
+        Assert.Contains("Táo nhập khẩu", chunk.Content);
+        Assert.Contains("sản phẩm", chunk.Content, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("giá", chunk.Content, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

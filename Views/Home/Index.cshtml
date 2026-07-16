@@ -820,6 +820,38 @@
 
     .market-product-card {
         overflow: hidden;
+        position: relative;
+        transition:
+            transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+            box-shadow 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+            border-color 0.28s ease;
+    }
+
+    .market-product-card:hover {
+        transform: translateY(-8px);
+        border-color: rgba(129, 196, 8, 0.45);
+        box-shadow:
+            0 16px 28px rgba(31, 41, 55, 0.08),
+            0 28px 48px rgba(129, 196, 8, 0.14);
+    }
+
+    .market-product-card:hover .market-product-name {
+        color: #5f9307;
+    }
+
+    .market-product-card:hover .market-product-footer button {
+        background: #81c408;
+        color: #ffffff;
+        border-color: #81c408;
+        box-shadow: 0 8px 18px rgba(129, 196, 8, 0.35);
+    }
+
+    .market-product-card:hover .market-product-image img {
+        transform: scale(1.08);
+    }
+
+    .market-product-card:hover .market-product-image span {
+        transform: scale(1.06);
     }
 
     .market-product-image {
@@ -829,6 +861,7 @@
         align-items: center;
         justify-content: center;
         background: #f8fafc;
+        overflow: hidden;
     }
 
     .market-product-image img {
@@ -836,6 +869,8 @@
         height: 100%;
         object-fit: contain;
         padding: 16px;
+        transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+        will-change: transform;
     }
 
     .market-product-image span {
@@ -848,6 +883,7 @@
         color: #ffffff;
         font-size: 0.78rem;
         font-weight: 900;
+        transition: transform 0.28s ease;
     }
 
     .market-product-body {
@@ -1056,13 +1092,21 @@
         .market-side-card,
         .market-shortcuts a,
         .market-product-card,
+        .market-product-image img,
+        .market-product-image span,
         .market-category-grid a,
         .market-product-footer button {
             transition: none;
         }
 
         .market-side-card:hover,
-        .market-category-grid a:hover {
+        .market-category-grid a:hover,
+        .market-product-card:hover {
+            transform: none;
+        }
+
+        .market-product-card:hover .market-product-image img,
+        .market-product-card:hover .market-product-image span {
             transform: none;
         }
     }

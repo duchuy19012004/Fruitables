@@ -71,6 +71,38 @@
 </div>
 
 <style>
+/* Thẻ sản phẩm homepage — hover */
+.fruite-item {
+    transition:
+        transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+        box-shadow 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+    background: #fff;
+}
+
+.fruite-item:hover {
+    transform: translateY(-8px);
+    box-shadow:
+        0 16px 28px rgba(31, 41, 55, 0.08),
+        0 28px 48px rgba(129, 196, 8, 0.14);
+    z-index: 2;
+}
+
+.fruite-item:hover h4 a {
+    color: #5f9307 !important;
+}
+
+.fruite-item:hover .btn.border-secondary {
+    background: #81c408;
+    border-color: #81c408 !important;
+    color: #fff !important;
+    box-shadow: 0 8px 18px rgba(129, 196, 8, 0.35);
+}
+
+.fruite-item:hover .btn.border-secondary .text-primary,
+.fruite-item:hover .btn.border-secondary i {
+    color: #fff !important;
+}
+
 /* Container ảnh - chiều cao cố định */
 .fruite-img {
     height: 250px;
@@ -88,6 +120,11 @@
     height: 100%;
     object-fit: contain;
     padding: 10px;
+    transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.fruite-item:hover .product-image {
+    transform: scale(1.08);
 }
 
 /* Featured ribbon */

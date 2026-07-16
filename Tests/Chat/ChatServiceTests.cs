@@ -123,4 +123,85 @@ public class ChatServiceTests
         // Only two user + two assistant messages persisted (third/fourth blocked before save)
         Assert.Equal(4, await db.ChatMessages.CountAsync());
     }
+
+    [Fact]
+    public async Task SendStreamingAsync_yields_meta_tokens_done_and_persists()
+    {
+        await using var db = CreateContext();
+        var rag = new Mock<IRagService>();
+        rag.Setup(r => r.AnswerStreamingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(StreamParts(
+                RagStreamPart.Token("Xin "),
+                RagStreamPart.Token("chào"),
+                RagStreamPart.Complete("Xin chào", new List<long> { 9 })));
+
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var sut = new ChatService(
+            db,
+            rag.Object,
+            cache,
+            Microsoft.Extensions.Options.Options.Create(new ChatOptions()),
+            NullLogger<ChatService>.Instance);
+
+        var sessionId = await sut.CreateSessionAsync(null, "widget");
+        var events = new List<ChatStreamEvent>();
+        await foreach (var evt in sut.SendStreamingAsync(sessionId, "Hello", null, "127.0.0.1"))
+            events.Add(evt);
+
+        Assert.Equal("meta", events[0].Type);
+        Assert.Equal(sessionId, events[0].SessionId);
+        Assert.Contains(events, e => e.Type == "token" && e.Text == "Xin ");
+        Assert.Contains(events, e => e.Type == "token" && e.Text == "chào");
+        var done = Assert.Single(events, e => e.Type == "done");
+        Assert.Equal("Xin chào", done.Text);
+        Assert.False(done.Refused);
+        Assert.True(done.MessageId > 0);
+
+        var messages = await db.ChatMessages.Where(m => m.SessionId == sessionId).OrderBy(m => m.CreatedAt).ToListAsync();
+        Assert.Equal(2, messages.Count);
+        Assert.Equal("user", messages[0].Role);
+        Assert.Equal("Hello", messages[0].Content);
+        Assert.Equal("assistant", messages[1].Role);
+        Assert.Equal("Xin chào", messages[1].Content);
+        Assert.Contains("streamed", messages[1].MetaJson!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SendStreamingAsync_refuse_persists_refused_meta()
+    {
+        await using var db = CreateContext();
+        var rag = new Mock<IRagService>();
+        rag.Setup(r => r.AnswerStreamingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(StreamParts(RagStreamPart.Refuse("Chưa có thông tin.")));
+
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var sut = new ChatService(
+            db,
+            rag.Object,
+            cache,
+            Microsoft.Extensions.Options.Options.Create(new ChatOptions()),
+            NullLogger<ChatService>.Instance);
+
+        var sessionId = await sut.CreateSessionAsync(null, "page");
+        var events = new List<ChatStreamEvent>();
+        await foreach (var evt in sut.SendStreamingAsync(sessionId, "??? ", null, "10.0.0.1"))
+            events.Add(evt);
+
+        Assert.Contains(events, e => e.Type == "token" && e.Text == "Chưa có thông tin.");
+        var done = Assert.Single(events, e => e.Type == "done");
+        Assert.True(done.Refused);
+        Assert.Equal("Chưa có thông tin.", done.Text);
+
+        var assistant = await db.ChatMessages.SingleAsync(m => m.SessionId == sessionId && m.Role == "assistant");
+        Assert.Contains("\"refused\":true", assistant.MetaJson!.Replace(" ", ""), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static async IAsyncEnumerable<RagStreamPart> StreamParts(params RagStreamPart[] parts)
+    {
+        foreach (var part in parts)
+        {
+            yield return part;
+            await Task.Yield();
+        }
+    }
 }

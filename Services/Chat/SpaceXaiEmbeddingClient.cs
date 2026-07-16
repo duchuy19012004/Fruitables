@@ -6,9 +6,12 @@ using Microsoft.Extensions.Options;
 
 namespace Fruitables.Services.Chat;
 
-/// <summary>
-/// SpaceXAI / xAI OpenAI-compatible embeddings client.
-/// </summary>
+// ============================================================
+// GỌI API /embeddings (khi cấu hình EmbeddingProvider = OpenAICompatible)
+//
+// Hiện mặc định app dùng LocalHashEmbeddingClient (không cần file này).
+// Giữ lại để sau này nếu có nhà cung cấp embed tương thích OpenAI thì bật lại.
+// ============================================================
 public sealed class SpaceXaiEmbeddingClient : IEmbeddingClient
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -44,7 +47,7 @@ public sealed class SpaceXaiEmbeddingClient : IEmbeddingClient
         {
             var errorBody = await response.Content.ReadAsStringAsync(ct);
             _logger.LogError(
-                "SpaceXAI embedding request failed with status {StatusCode}: {Body}",
+                "Embedding request failed with status {StatusCode}: {Body}",
                 (int)response.StatusCode,
                 errorBody);
             throw new InvalidOperationException("LLM provider error");
