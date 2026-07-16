@@ -1,3 +1,4 @@
+using ClosedXML.Excel;
 using Fruitables.Models;
 using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Analytics;
@@ -77,8 +78,262 @@ public class SalesAnalyticsService : ISalesAnalyticsService
         }
     }
 
-    public Task<byte[]> ExportExcelAsync(SalesAnalyticsFilterVm filter) =>
-        throw new NotImplementedException("Excel export will be implemented in a later task.");
+    public async Task<byte[]> ExportExcelAsync(SalesAnalyticsFilterVm filter)
+    {
+        var hub = await GetHubAsync(filter);
+        if (!string.IsNullOrEmpty(hub.Error))
+            throw new InvalidOperationException(hub.Error);
+
+        // Always include overview KPIs even when exporting merch/cancel tabs.
+        SalesOverviewVm? overview = hub.Overview;
+        if (overview is null)
+        {
+            var ovFilter = CloneFilter(filter, SalesAnalyticsTab.Overview);
+            var ovHub = await GetHubAsync(ovFilter);
+            overview = ovHub.Overview;
+        }
+
+        using var wb = new XLWorkbook();
+        WriteMetricDefinitionsSheet(wb, hub);
+        WriteKpiSheet(wb, hub, overview);
+        WriteTabDataSheet(wb, hub);
+
+        using var ms = new MemoryStream();
+        wb.SaveAs(ms);
+        return ms.ToArray();
+    }
+
+    private static SalesAnalyticsFilterVm CloneFilter(SalesAnalyticsFilterVm src, SalesAnalyticsTab tab) =>
+        new()
+        {
+            Preset = src.Preset,
+            From = src.From,
+            To = src.To,
+            Tab = tab,
+            Dimension = src.Dimension,
+            Sort = src.Sort,
+            Dir = src.Dir,
+            Take = src.Take
+        };
+
+    private static void WriteMetricDefinitionsSheet(XLWorkbook wb, SalesHubVm hub)
+    {
+        var ws = wb.Worksheets.Add("Định nghĩa metric");
+        ws.Cell(1, 1).Value = "Metric";
+        ws.Cell(1, 2).Value = "Định nghĩa (v1)";
+        ws.Range(1, 1, 1, 2).Style.Font.Bold = true;
+
+        var rows = new (string Metric, string Def)[]
+        {
+            ("Gross revenue", "Sum(Total) của đơn Paid (PaymentStatus == Paid)"),
+            ("Net revenue", "Sum(Total) Delivered+Paid − Sum(Total) Refunded"),
+            ("Orders paid", "Số đơn thuộc Paid set"),
+            ("AOV gross", "Gross / count(Paid); 0 nếu không có đơn"),
+            ("AOV net", "Net / count(Delivered); 0 nếu không có đơn"),
+            ("Cancel rate", "count(Cancelled) / count(All orders) × 100"),
+            ("Cancelled value", "Sum(Total) của đơn Cancelled"),
+            ("Refund rate", "count(Refund) / count(Paid) × 100; 0 nếu Paid = 0"),
+            ("Merch Net (line)", "Price × Quantity trên dòng OrderItem của đơn Delivered+Paid"),
+            ("Share %", "Line Net / tổng Line Net trong kỳ"),
+            ("Time basis", "Order.CreatedAt (giờ cửa hàng VN); không dùng ngày paid/delivered"),
+            ("Kỳ hiện tại", hub.Periods.Current.Label),
+            ("Kỳ so sánh", hub.Periods.Previous.Label),
+            ("Tab xuất", hub.Filter.Tab.ToString()),
+            ("Dimension", hub.Filter.Dimension.ToString())
+        };
+
+        for (var i = 0; i < rows.Length; i++)
+        {
+            ws.Cell(i + 2, 1).Value = rows[i].Metric;
+            ws.Cell(i + 2, 2).Value = rows[i].Def;
+        }
+
+        ws.Columns().AdjustToContents();
+    }
+
+    private static void WriteKpiSheet(XLWorkbook wb, SalesHubVm hub, SalesOverviewVm? overview)
+    {
+        var ws = wb.Worksheets.Add("KPI");
+        ws.Cell(1, 1).Value = "KPI";
+        ws.Cell(1, 2).Value = "Hiện tại";
+        ws.Cell(1, 3).Value = "Kỳ trước";
+        ws.Cell(1, 4).Value = "Δ";
+        ws.Cell(1, 5).Value = "Δ %";
+        ws.Range(1, 1, 1, 5).Style.Font.Bold = true;
+
+        ws.Cell(2, 1).Value = "Kỳ hiện tại";
+        ws.Cell(2, 2).Value = hub.Periods.Current.Label;
+        ws.Cell(3, 1).Value = "Kỳ so sánh";
+        ws.Cell(3, 2).Value = hub.Periods.Previous.Label;
+
+        var row = 5;
+        void WriteMetric(string name, MetricValue m)
+        {
+            ws.Cell(row, 1).Value = name;
+            ws.Cell(row, 2).Value = m.Value;
+            ws.Cell(row, 3).Value = m.Previous ?? 0;
+            ws.Cell(row, 4).Value = m.Delta ?? 0;
+            if (m.DeltaPercent is null)
+                ws.Cell(row, 5).Value = "—";
+            else
+                ws.Cell(row, 5).Value = m.DeltaPercent.Value;
+            row++;
+        }
+
+        if (overview is not null)
+        {
+            WriteMetric("Gross", overview.Gross);
+            WriteMetric("Net", overview.Net);
+            WriteMetric("Orders paid", overview.OrdersPaid);
+            WriteMetric("AOV net", overview.AovNet);
+            WriteMetric("Cancel rate %", overview.CancelRate);
+        }
+
+        if (hub.Cancellations is { } c)
+        {
+            WriteMetric("Cancelled count", c.CancelledCount);
+            WriteMetric("Cancel rate % (tab)", c.CancelRate);
+            WriteMetric("Cancelled value", c.CancelledValue);
+            WriteMetric("Refund rate %", c.RefundRate);
+        }
+
+        ws.Columns().AdjustToContents();
+    }
+
+    private static void WriteTabDataSheet(XLWorkbook wb, SalesHubVm hub)
+    {
+        switch (hub.Filter.Tab)
+        {
+            case SalesAnalyticsTab.Merch when hub.Merch is not null:
+                WriteMerchSheet(wb, hub.Merch);
+                break;
+            case SalesAnalyticsTab.Cancellations when hub.Cancellations is not null:
+                WriteCancelReasonsSheet(wb, hub.Cancellations);
+                break;
+            default:
+                WriteOverviewTablesSheet(wb, hub.Overview);
+                break;
+        }
+    }
+
+    private static void WriteMerchSheet(XLWorkbook wb, SalesMerchVm merch)
+    {
+        var ws = wb.Worksheets.Add("Merch ranking");
+        var headers = new[] { "#", "Name", "Category", "Units", "Net", "Share %", "Orders", "Δ %" };
+        for (var c = 0; c < headers.Length; c++)
+            ws.Cell(1, c + 1).Value = headers[c];
+        ws.Range(1, 1, 1, headers.Length).Style.Font.Bold = true;
+
+        var r = 2;
+        foreach (var row in merch.Rows)
+        {
+            ws.Cell(r, 1).Value = row.Rank;
+            ws.Cell(r, 2).Value = row.Name;
+            ws.Cell(r, 3).Value = row.CategoryName ?? "";
+            ws.Cell(r, 4).Value = row.Units;
+            ws.Cell(r, 5).Value = row.NetRevenue;
+            ws.Cell(r, 6).Value = row.SharePercent;
+            ws.Cell(r, 7).Value = row.OrderCount;
+            if (row.DeltaPercent is null)
+                ws.Cell(r, 8).Value = "—";
+            else
+                ws.Cell(r, 8).Value = row.DeltaPercent.Value;
+            r++;
+        }
+
+        ws.Columns().AdjustToContents();
+    }
+
+    private static void WriteCancelReasonsSheet(XLWorkbook wb, SalesCancellationsVm cancel)
+    {
+        var ws = wb.Worksheets.Add("Cancel reasons");
+        ws.Cell(1, 1).Value = "Reason";
+        ws.Cell(1, 2).Value = "Count";
+        ws.Range(1, 1, 1, 2).Style.Font.Bold = true;
+
+        var labels = cancel.Reasons.Labels;
+        var data = cancel.Reasons.Datasets.FirstOrDefault()?.Data ?? new List<decimal>();
+        for (var i = 0; i < labels.Count; i++)
+        {
+            ws.Cell(i + 2, 1).Value = labels[i];
+            ws.Cell(i + 2, 2).Value = i < data.Count ? data[i] : 0;
+        }
+
+        // Also dump value-by-product for depth
+        var ws2 = wb.Worksheets.Add("Cancel by product");
+        ws2.Cell(1, 1).Value = "Product";
+        ws2.Cell(1, 2).Value = "Value";
+        ws2.Range(1, 1, 1, 2).Style.Font.Bold = true;
+        var pLabels = cancel.ValueByProduct.Labels;
+        var pData = cancel.ValueByProduct.Datasets.FirstOrDefault()?.Data ?? new List<decimal>();
+        for (var i = 0; i < pLabels.Count; i++)
+        {
+            ws2.Cell(i + 2, 1).Value = pLabels[i];
+            ws2.Cell(i + 2, 2).Value = i < pData.Count ? pData[i] : 0;
+        }
+
+        ws.Columns().AdjustToContents();
+        ws2.Columns().AdjustToContents();
+    }
+
+    private static void WriteOverviewTablesSheet(XLWorkbook wb, SalesOverviewVm? overview)
+    {
+        var ws = wb.Worksheets.Add("Top products");
+        ws.Cell(1, 1).Value = "#";
+        ws.Cell(1, 2).Value = "Product";
+        ws.Cell(1, 3).Value = "Category";
+        ws.Cell(1, 4).Value = "Units";
+        ws.Cell(1, 5).Value = "Net";
+        ws.Cell(1, 6).Value = "Share %";
+        ws.Cell(1, 7).Value = "Δ %";
+        ws.Range(1, 1, 1, 7).Style.Font.Bold = true;
+
+        if (overview is not null)
+        {
+            var r = 2;
+            foreach (var row in overview.TopProducts)
+            {
+                ws.Cell(r, 1).Value = row.Rank;
+                ws.Cell(r, 2).Value = row.Name;
+                ws.Cell(r, 3).Value = row.CategoryName ?? "";
+                ws.Cell(r, 4).Value = row.Units;
+                ws.Cell(r, 5).Value = row.NetRevenue;
+                ws.Cell(r, 6).Value = row.SharePercent;
+                if (row.DeltaPercent is null)
+                    ws.Cell(r, 7).Value = "—";
+                else
+                    ws.Cell(r, 7).Value = row.DeltaPercent.Value;
+                r++;
+            }
+
+            var wsCat = wb.Worksheets.Add("Top categories");
+            wsCat.Cell(1, 1).Value = "#";
+            wsCat.Cell(1, 2).Value = "Category";
+            wsCat.Cell(1, 3).Value = "Units";
+            wsCat.Cell(1, 4).Value = "Net";
+            wsCat.Cell(1, 5).Value = "Share %";
+            wsCat.Cell(1, 6).Value = "Δ %";
+            wsCat.Range(1, 1, 1, 6).Style.Font.Bold = true;
+            var cr = 2;
+            foreach (var row in overview.TopCategories)
+            {
+                wsCat.Cell(cr, 1).Value = row.Rank;
+                wsCat.Cell(cr, 2).Value = row.Name;
+                wsCat.Cell(cr, 3).Value = row.Units;
+                wsCat.Cell(cr, 4).Value = row.NetRevenue;
+                wsCat.Cell(cr, 5).Value = row.SharePercent;
+                if (row.DeltaPercent is null)
+                    wsCat.Cell(cr, 6).Value = "—";
+                else
+                    wsCat.Cell(cr, 6).Value = row.DeltaPercent.Value;
+                cr++;
+            }
+
+            wsCat.Columns().AdjustToContents();
+        }
+
+        ws.Columns().AdjustToContents();
+    }
 
     private static OrderAnalyticsSnapshot ToSnapshot(OrderRow o) =>
         new(o.Total, o.PaymentStatus, o.Status, o.Discount, o.ShippingFee, o.Subtotal);

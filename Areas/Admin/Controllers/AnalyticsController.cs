@@ -53,7 +53,10 @@ namespace Fruitables.Areas.Admin.Controllers
         {
             var filter = BuildFilter(preset, from, to, tab, dimension, sort, dir, take);
             var bytes = await _analytics.ExportExcelAsync(filter);
-            var fileName = $"SalesAnalytics_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx";
+            var fromPart = filter.From?.ToString("yyyyMMdd") ?? filter.Preset.ToString();
+            var toPart = filter.To?.ToString("yyyyMMdd") ?? DateTime.Now.ToString("yyyyMMdd");
+            var tabPart = filter.Tab.ToString().ToLowerInvariant();
+            var fileName = $"ThongKeBanHang_{tabPart}_{fromPart}_{toPart}.xlsx";
             return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
         }
 
