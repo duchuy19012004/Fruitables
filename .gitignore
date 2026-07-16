@@ -428,5 +428,7 @@ dotnet-tools.json
 .playwright-mcp/
 test-results/
 skills-lock.json
-.agents/
+# Project-scoped Codex skills are shared with the repository.
+!.agents/
+!.agents/**
 .worktrees/
