@@ -67,6 +67,7 @@ builder.Services.AddScoped<IProfileService, ProfileService>();
 builder.Services.AddScoped<IOrderHistoryService, OrderHistoryService>();
 builder.Services.AddScoped<IRevenueStatisticsService, RevenueStatisticsService>();
 builder.Services.AddScoped<ICancelledOrdersStatisticsService, CancelledOrdersStatisticsService>();
+builder.Services.AddScoped<ISalesAnalyticsService, SalesAnalyticsService>();
 builder.Services.AddScoped<IUserManagementService, UserManagementService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IShippingService, ShippingService>();
