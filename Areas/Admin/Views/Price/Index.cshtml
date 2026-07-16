@@ -1,0 +1,159 @@
+@using Fruitables.Models
+@using Fruitables.ViewModels
+@model PriceManagementViewModel
+@{
+    ViewData["Title"] = "Quản lý giá";
+    var now = DateTimeOffset.UtcNow;
+}
+
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div><h2 class="mb-1">Quản lý giá</h2><p class="text-muted mb-0">Giá gốc, giá đang áp dụng và lịch giảm giá.</p></div>
+        <button class="btn btn-primary" type="button" onclick="openCreateSchedule()"><i class="fas fa-calendar-plus me-2"></i>Tạo lịch giảm giá</button>
+    </div>
+
+    @if (TempData["Success"] != null) { <div class="alert alert-success">@TempData["Success"]</div> }
+    @if (TempData["Error"] != null) { <div class="alert alert-danger">@TempData["Error"]</div> }
+
+    <form method="get" class="card card-body mb-3">
+        <div class="input-group">
+            <input name="search" value="@Model.Search" class="form-control" placeholder="Tên sản phẩm hoặc SKU"/>
+            <select name="filter" class="form-select" style="max-width:210px">
+                <option value="" selected="@(string.IsNullOrEmpty(Model.Filter))">Tất cả trạng thái</option>
+                <option value="active" selected="@(Model.Filter == "active")">Đang giảm giá</option>
+                <option value="upcoming" selected="@(Model.Filter == "upcoming")">Có lịch sắp tới</option>
+                <option value="regular" selected="@(Model.Filter == "regular")">Chưa có lịch</option>
+            </select>
+            <button class="btn btn-outline-primary">Lọc</button>
+        </div>
+    </form>
+
+    <form asp-action="BulkUpdate" method="post" id="bulkForm">
+        @Html.AntiForgeryToken()
+        <div class="card mb-4">
+            <div class="card-header d-flex flex-wrap gap-2 align-items-center">
+                <strong class="me-auto">Bảng giá</strong>
+                <select name="adjustmentType" class="form-select form-select-sm" style="width:auto"><option value="Amount">Số tiền</option><option value="Percentage">Phần trăm</option></select>
+                <select name="direction" class="form-select form-select-sm" style="width:auto"><option value="Increase">Tăng</option><option value="Decrease">Giảm</option></select>
+                <input name="value" type="number" min="0.01" step="0.01" class="form-control form-control-sm" style="width:150px" placeholder="Mức điều chỉnh" required/>
+                <button class="btn btn-sm btn-outline-primary">Xem trước và cập nhật</button>
+            </div>
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead><tr><th><input type="checkbox" id="selectAll"/></th><th>Sản phẩm / biến thể</th><th>SKU</th><th>Giá gốc</th><th>Giá hiện tại</th><th>Lịch đang chạy</th><th>Lịch sắp tới</th><th></th></tr></thead>
+                    <tbody>
+                    @foreach (var row in Model.Rows)
+                    {
+                        <tr>
+                            <td><input class="row-check" type="checkbox" name="selectedTargets" value="@row.ProductId:@row.ProductVariantId" data-label="@row.ProductName @(row.VariantName ?? "")" data-price="@row.BasePrice"/></td>
+                            <td><strong>@row.ProductName</strong>@if (row.ProductVariantId.HasValue) { <div class="small text-muted">@row.VariantName</div> }</td>
+                            <td>@(row.SKU ?? "—")</td>
+                            <td>@row.BasePrice.ToString("N0")đ</td>
+                            <td>@if (row.EffectivePrice < row.BasePrice) { <span class="text-decoration-line-through text-muted me-2">@row.BasePrice.ToString("N0")đ</span><strong class="text-danger">@row.EffectivePrice.ToString("N0")đ</strong> } else { <strong>@row.EffectivePrice.ToString("N0")đ</strong> }</td>
+                            <td>@if (row.CurrentSchedule == null) { <span>—</span> } else { <span class="badge bg-success">@(row.CurrentSchedule.DiscountType == DiscountType.FixedPrice ? $"{row.CurrentSchedule.Value:N0}đ" : $"-{row.CurrentSchedule.Value:N0}%")</span> }</td>
+                            <td>@(row.UpcomingSchedule == null ? "—" : row.UpcomingSchedule.StartsAt.ToOffset(TimeSpan.FromHours(7)).ToString("dd/MM/yyyy HH:mm"))</td>
+                            <td><button type="button" class="btn btn-sm btn-outline-secondary" onclick="openBasePrice(@row.ProductId, @(row.ProductVariantId?.ToString() ?? "null"), @row.BasePrice)">Sửa giá</button></td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </form>
+
+    <div class="card"><div class="card-header"><strong>Lịch sử gần đây</strong></div><div class="table-responsive"><table class="table mb-0 align-middle">
+        <thead><tr><th>Đối tượng</th><th>Kiểu giảm</th><th>Hiệu lực</th><th>Trạng thái</th><th></th></tr></thead>
+        <tbody>@foreach (var schedule in Model.Schedules) { var status = schedule.GetStatus(now); <tr>
+            <td>@schedule.Product.Name @(schedule.ProductVariant == null ? "" : "· " + schedule.ProductVariant.Name)</td>
+            <td>@(schedule.DiscountType == DiscountType.FixedPrice ? $"Giá {schedule.Value:N0}đ" : $"Giảm {schedule.Value:N0}%")</td>
+            <td>@schedule.StartsAt.ToOffset(TimeSpan.FromHours(7)).ToString("dd/MM/yyyy HH:mm") → @(schedule.EndsAt?.ToOffset(TimeSpan.FromHours(7)).ToString("dd/MM/yyyy HH:mm") ?? "Không giới hạn")</td>
+            <td><span class="badge bg-@(status == PriceScheduleStatus.Active ? "success" : status == PriceScheduleStatus.Scheduled ? "primary" : "secondary")">@status</span></td>
+            <td>
+                <div class="d-flex gap-1">
+                    @if (status == PriceScheduleStatus.Scheduled)
+                    {
+                        <button type="button" class="btn btn-sm btn-outline-primary schedule-action"
+                                data-mode="edit" data-id="@schedule.Id" data-product="@schedule.ProductId"
+                                data-variant="@schedule.ProductVariantId" data-type="@schedule.DiscountType"
+                                data-value="@schedule.Value" data-start="@schedule.StartsAt.ToOffset(TimeSpan.FromHours(7)).ToString("yyyy-MM-ddTHH:mm")"
+                                data-end="@(schedule.EndsAt?.ToOffset(TimeSpan.FromHours(7)).ToString("yyyy-MM-ddTHH:mm") ?? "")">Sửa</button>
+                    }
+                    <button type="button" class="btn btn-sm btn-outline-secondary schedule-action"
+                            data-mode="clone" data-product="@schedule.ProductId" data-variant="@schedule.ProductVariantId"
+                            data-type="@schedule.DiscountType" data-value="@schedule.Value">Nhân bản</button>
+                    @if (status is PriceScheduleStatus.Active or PriceScheduleStatus.Scheduled)
+                    {
+                        <form asp-action="CancelSchedule" asp-route-id="@schedule.Id" method="post"><button class="btn btn-sm btn-outline-danger" onclick="return confirm('Hủy lịch giá này?')">Hủy</button></form>
+                    }
+                </div>
+            </td>
+        </tr> }</tbody>
+    </table></div></div>
+</div>
+
+<div class="modal fade" id="scheduleModal"><div class="modal-dialog"><form asp-action="CreateSchedule" method="post" class="modal-content" id="scheduleForm">
+    <div class="modal-header"><h5 class="modal-title" id="scheduleModalTitle">Tạo lịch giảm giá</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+        <label class="form-label">Đối tượng</label><select id="scheduleTarget" class="form-select mb-3" required><option value="">Chọn sản phẩm / biến thể</option>@foreach (var row in Model.Rows) { <option value="@row.ProductId:@row.ProductVariantId">@row.ProductName @(row.VariantName == null ? "" : "· " + row.VariantName)</option> }</select>
+        <input type="hidden" name="ProductId" id="scheduleProductId"/><input type="hidden" name="ProductVariantId" id="scheduleVariantId"/>
+        <label class="form-label">Kiểu giảm</label><select name="DiscountType" id="scheduleType" class="form-select mb-3"><option value="FixedPrice">Giá bán cụ thể</option><option value="Percentage">Phần trăm</option></select>
+        <label class="form-label">Giá trị</label><input name="Value" id="scheduleValue" type="number" min="0" step="0.01" class="form-control mb-3" required/>
+        <label class="form-label">Bắt đầu</label><input name="StartsAt" id="scheduleStart" type="datetime-local" class="form-control mb-3" required/>
+        <label class="form-label">Kết thúc (tùy chọn)</label><input name="EndsAt" id="scheduleEnd" type="datetime-local" class="form-control"/>
+    </div><div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Đóng</button><button class="btn btn-primary">Lưu lịch</button></div>
+</form></div></div>
+
+<div class="modal fade" id="basePriceModal"><div class="modal-dialog"><form asp-action="UpdateBasePrice" method="post" class="modal-content">
+    <div class="modal-header"><h5 class="modal-title">Cập nhật giá gốc</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body"><input type="hidden" name="productId" id="baseProductId"/><input type="hidden" name="productVariantId" id="baseVariantId"/><input type="number" name="newPrice" id="newPrice" min="1" step="0.01" class="form-control" required/></div>
+    <div class="modal-footer"><button class="btn btn-primary">Cập nhật</button></div>
+</form></div></div>
+
+@section Scripts { <script>
+document.getElementById('selectAll')?.addEventListener('change', e => document.querySelectorAll('.row-check').forEach(x => x.checked = e.target.checked));
+document.getElementById('scheduleTarget')?.addEventListener('change', e => { const p=e.target.value.split(':'); document.getElementById('scheduleProductId').value=p[0]||''; document.getElementById('scheduleVariantId').value=p[1]||''; });
+document.getElementById('bulkForm')?.addEventListener('submit', e => {
+    const rows = [...document.querySelectorAll('.row-check:checked')];
+    if (!rows.length) { e.preventDefault(); alert('Vui lòng chọn ít nhất một dòng.'); return; }
+    const form = e.currentTarget, value = Number(form.elements.value.value), percent = form.elements.adjustmentType.value === 'Percentage';
+    const increase = form.elements.direction.value === 'Increase';
+    const preview = rows.slice(0, 8).map(row => {
+        const current = Number(row.dataset.price), delta = percent ? Math.round(current * value / 100) : value;
+        return `${row.dataset.label}: ${current.toLocaleString('vi-VN')}đ → ${(increase ? current + delta : current - delta).toLocaleString('vi-VN')}đ`;
+    });
+    if (rows.length > 8) preview.push(`… và ${rows.length - 8} dòng khác`);
+    if (!confirm(`Xem trước thay đổi:\n\n${preview.join('\n')}\n\nToàn bộ sẽ được áp dụng cùng lúc; nếu có lỗi sẽ không dòng nào thay đổi.`)) e.preventDefault();
+});
+document.querySelectorAll('.schedule-action').forEach(button => button.addEventListener('click', () => openSchedule(button.dataset)));
+function resetScheduleForm(){
+    const form=document.getElementById('scheduleForm'); form.reset();
+    form.action='@Url.Action("CreateSchedule", "Price", new { area = "Admin" })';
+    document.getElementById('scheduleModalTitle').textContent='Tạo lịch giảm giá';
+    document.getElementById('scheduleTarget').disabled=false;
+}
+function openCreateSchedule(){ resetScheduleForm(); new bootstrap.Modal(document.getElementById('scheduleModal')).show(); }
+function openSchedule(data){
+    resetScheduleForm();
+    document.getElementById('scheduleTarget').value=`${data.product}:${data.variant || ''}`;
+    document.getElementById('scheduleProductId').value=data.product;
+    document.getElementById('scheduleVariantId').value=data.variant || '';
+    document.getElementById('scheduleType').value=data.type;
+    document.getElementById('scheduleValue').value=data.value;
+    document.getElementById('scheduleStart').value=data.start || '';
+    document.getElementById('scheduleEnd').value=data.end || '';
+    if(data.mode==='edit'){
+        document.getElementById('scheduleForm').action='@Url.Action("UpdateSchedule", "Price", new { area = "Admin" })/' + data.id;
+        document.getElementById('scheduleModalTitle').textContent='Sửa lịch giảm giá';
+        document.getElementById('scheduleTarget').disabled=true;
+    } else {
+        document.getElementById('scheduleModalTitle').textContent='Nhân bản lịch giảm giá';
+    }
+    new bootstrap.Modal(document.getElementById('scheduleModal')).show();
+}
+function openBasePrice(productId, variantId, price){ document.getElementById('baseProductId').value=productId; document.getElementById('baseVariantId').value=variantId??''; document.getElementById('newPrice').value=price; new bootstrap.Modal(document.getElementById('basePriceModal')).show(); }
+if(window.ecommerceHub){
+    window.ecommerceHub.on('PriceChanged', () => {
+        if(!document.querySelector('.modal.show')) window.location.reload();
+    });
+}
+</script> }

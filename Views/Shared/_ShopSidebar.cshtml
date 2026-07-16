@@ -116,7 +116,7 @@
                         @foreach (var product in featuredProducts.Take(3))
                         {
                             var primaryImage = product.Images?.FirstOrDefault(i => i.IsPrimary)?.ImageUrl ?? product.Images?.FirstOrDefault()?.ImageUrl ?? "~/img/featur-1.jpg";
-                            var displayPrice = product.SalePrice ?? product.Price;
+                            var displayPrice = product.DisplayMinPrice;
                             <a asp-controller="Shop" asp-action="Detail" asp-route-slug="@product.Slug" class="shop-featured-item">
                                 <img src="@primaryImage" alt="@product.Name">
                                 <span>

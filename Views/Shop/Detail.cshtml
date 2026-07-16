@@ -6,8 +6,9 @@
         ?? Model.Images?.FirstOrDefault()?.ImageUrl
         ?? "~/img/single-item.jpg";
     var relatedProducts = ViewBag.RelatedProducts as List<Product> ?? new List<Product>();
-    var isSale = Model.SalePrice.HasValue && Model.SalePrice < Model.Price;
-    var discountPercent = isSale ? (int)Math.Round((1 - (Model.SalePrice!.Value / Model.Price)) * 100) : 0;
+    var activeVariants = Model.Variants?.Where(v => v.IsActive).OrderBy(v => v.Name).ToList() ?? new List<ProductVariant>();
+    var isSale = !activeVariants.Any() && Model.DisplayMinPrice < Model.Price;
+    var discountPercent = isSale ? (int)Math.Round((1 - (Model.DisplayMinPrice / Model.Price)) * 100) : 0;
     var avgRating = (double)Model.AverageRating;
     var reviewCount = Model.ReviewCount;
 }
@@ -87,19 +88,40 @@
 
                 <div class="pd-price-block">
                     <div class="pd-price-main">
-                        @if (isSale)
+                        @if (activeVariants.Any())
                         {
-                            <span class="pd-sale-price">@Model.SalePrice!.Value.ToString("N0")đ</span>
+                            <span class="pd-sale-price" id="currentPrice" style="color:var(--pd-text);">@Model.DisplayMinPrice.ToString("N0")đ@(Model.DisplayMaxPrice != Model.DisplayMinPrice ? $" – {Model.DisplayMaxPrice:N0}đ" : "")</span>
+                        }
+                        else if (isSale)
+                        {
+                            <span class="pd-sale-price">@Model.DisplayMinPrice.ToString("N0")đ</span>
                             <span class="pd-original-price">@Model.Price.ToString("N0")đ</span>
-                            <span class="pd-discount-pill">Tiết kiệm @((Model.Price - Model.SalePrice.Value).ToString("N0"))đ</span>
+                            <span class="pd-discount-pill">Tiết kiệm @((Model.Price - Model.DisplayMinPrice).ToString("N0"))đ</span>
                         }
                         else
                         {
-                            <span class="pd-sale-price" style="color:var(--pd-text);">@Model.Price.ToString("N0")đ</span>
+                            <span class="pd-sale-price" id="currentPrice" style="color:var(--pd-text);">@Model.Price.ToString("N0")đ</span>
                         }
                     </div>
                     <div class="pd-unit-note">/ @Model.Unit · Giá đã bao gồm thuế VAT</div>
                 </div>
+
+                @if (activeVariants.Any())
+                {
+                    <div class="mb-4" id="variantPicker">
+                        <div class="fw-semibold mb-2">Chọn biến thể</div>
+                        <div class="d-flex flex-wrap gap-2">
+                        @foreach (var variant in activeVariants)
+                        {
+                            var effective = variant.DisplayPrice;
+                            <button type="button" class="btn btn-outline-primary variant-option" data-id="@variant.Id" data-price="@effective" data-base="@variant.Price" data-stock="@variant.StockQuantity" @(variant.StockQuantity <= 0 ? "disabled" : "")>
+                                @variant.Name · @effective.ToString("N0")đ
+                            </button>
+                        }
+                        </div>
+                        <small class="text-muted d-block mt-2">Vui lòng chọn một biến thể trước khi mua.</small>
+                    </div>
+                }
 
                 @if (!string.IsNullOrEmpty(Model.ShortDescription))
                 {
@@ -136,10 +158,12 @@
 
                 <form asp-controller="Cart" asp-action="AddToCart" method="post" class="d-inline" id="addToCartForm">
                     <input type="hidden" name="productId" value="@Model.Id" />
+                    <input type="hidden" name="variantId" class="selectedVariantId" />
                     <input type="hidden" name="quantity" id="hiddenQuantity" value="@Model.MinOrderQuantity" />
                 </form>
                 <form asp-controller="Checkout" asp-action="BuyNow" method="post" class="d-inline" id="buyNowForm">
                     <input type="hidden" name="productId" value="@Model.Id" />
+                    <input type="hidden" name="variantId" class="selectedVariantId" />
                     <input type="hidden" name="quantity" id="hiddenQuantityBuyNow" value="@Model.MinOrderQuantity" />
                 </form>
 
@@ -150,10 +174,10 @@
                             <input type="text" id="quantity" value="@Model.MinOrderQuantity" min="@Model.MinOrderQuantity" readonly>
                             <button type="button" onclick="increaseQty()"><i class="fa fa-plus"></i></button>
                         </div>
-                        <button type="submit" form="addToCartForm" class="pd-btn-cart" id="btnAddToCart" @(Model.StockQuantity <= 0 ? "disabled" : "")>
+                        <button type="submit" form="addToCartForm" class="pd-btn-cart" id="btnAddToCart" @(Model.StockQuantity <= 0 || activeVariants.Any() ? "disabled" : "")>
                             <i class="fa fa-shopping-bag me-2"></i>Thêm vào giỏ
                         </button>
-                        <button type="submit" form="buyNowForm" class="pd-btn-buy" id="btnBuyNow" @(Model.StockQuantity <= 0 ? "disabled" : "")>
+                        <button type="submit" form="buyNowForm" class="pd-btn-buy" id="btnBuyNow" @(Model.StockQuantity <= 0 || activeVariants.Any() ? "disabled" : "")>
                             <i class="fa fa-bolt me-2"></i>Mua ngay
                         </button>
                         <button type="button" class="pd-btn-wishlist" title="Yêu thích"><i class="fa fa-heart"></i></button>
@@ -217,9 +241,10 @@
                         var rpImage = product.Images?.FirstOrDefault(i => i.IsPrimary)?.ImageUrl
                             ?? product.Images?.FirstOrDefault()?.ImageUrl
                             ?? "~/img/fruite-item-5.jpg";
-                        var rpSale = product.SalePrice.HasValue && product.SalePrice < product.Price;
-                        var rpDiscount = rpSale ? (int)Math.Round((1 - (product.SalePrice!.Value / product.Price)) * 100) : 0;
-                        var rpPrice = rpSale ? product.SalePrice!.Value : product.Price;
+                        var rpHasVariants = product.Variants.Any(v => v.IsActive);
+                        var rpSale = !rpHasVariants && product.DisplayMinPrice < product.Price;
+                        var rpDiscount = rpSale ? (int)Math.Round((1 - (product.DisplayMinPrice / product.Price)) * 100) : 0;
+                        var rpPrice = product.DisplayMinPrice;
 
                         <div class="col-6 col-md-4 col-lg-3">
                             <div class="pd-related-card">
@@ -237,13 +262,28 @@
                                     </p>
                                     <div class="pd-related-bottom">
                                         <div class="pd-related-price">
-                                            @rpPrice.ToString("N0")đ <span class="unit">/ @product.Unit</span>
+                                            @if (rpHasVariants)
+                                            {
+                                                <span>@product.DisplayMinPrice.ToString("N0")đ@(product.DisplayMaxPrice != product.DisplayMinPrice ? $" – {product.DisplayMaxPrice:N0}đ" : "")</span>
+                                            }
+                                            else
+                                            {
+                                                <span>@rpPrice.ToString("N0")đ</span>
+                                            }
+                                            <span class="unit">/ @product.Unit</span>
                                         </div>
-                                        <form asp-controller="Cart" asp-action="AddToCart" method="post">
-                                            <input type="hidden" name="productId" value="@product.Id" />
-                                            <input type="hidden" name="quantity" value="@product.MinOrderQuantity" />
-                                            <button type="submit" class="pd-related-add" @(product.StockQuantity <= 0 ? "disabled" : "")><i class="fa fa-plus"></i></button>
-                                        </form>
+                                        @if (rpHasVariants)
+                                        {
+                                            <a asp-controller="Shop" asp-action="Detail" asp-route-slug="@product.Slug" class="pd-related-add" title="Chọn biến thể"><i class="fa fa-sliders"></i></a>
+                                        }
+                                        else
+                                        {
+                                            <form asp-controller="Cart" asp-action="AddToCart" method="post">
+                                                <input type="hidden" name="productId" value="@product.Id" />
+                                                <input type="hidden" name="quantity" value="@product.MinOrderQuantity" />
+                                                <button type="submit" class="pd-related-add" @(product.StockQuantity <= 0 ? "disabled" : "")><i class="fa fa-plus"></i></button>
+                                            </form>
+                                        }
                                     </div>
                                 </div>
                             </div>
@@ -257,10 +297,10 @@
 
 <!-- Mobile sticky CTA -->
 <div class="pd-mobile-cta">
-    <button type="submit" form="addToCartForm" class="pd-btn-cart" id="btnAddToCartMobile" @(Model.StockQuantity <= 0 ? "disabled" : "")>
+    <button type="submit" form="addToCartForm" class="pd-btn-cart" id="btnAddToCartMobile" @(Model.StockQuantity <= 0 || activeVariants.Any() ? "disabled" : "")>
         <i class="fa fa-shopping-bag me-2"></i>Thêm vào giỏ
     </button>
-    <button type="submit" form="buyNowForm" class="pd-btn-buy" id="btnBuyNowMobile" @(Model.StockQuantity <= 0 ? "disabled" : "")>
+    <button type="submit" form="buyNowForm" class="pd-btn-buy" id="btnBuyNowMobile" @(Model.StockQuantity <= 0 || activeVariants.Any() ? "disabled" : "")>
         <i class="fa fa-bolt me-2"></i>Mua ngay
     </button>
 </div>
@@ -299,11 +339,33 @@
             el.classList.add('active');
         }
 
+        document.querySelectorAll('.variant-option').forEach(button => button.addEventListener('click', function () {
+            document.querySelectorAll('.variant-option').forEach(x => x.classList.remove('active'));
+            this.classList.add('active');
+            document.querySelectorAll('.selectedVariantId').forEach(x => x.value = this.dataset.id);
+            maxQty = Number(this.dataset.stock);
+            updateQuantity(Math.min(Math.max(minQty, Number(document.getElementById('quantity').value)), maxQty));
+            const price = Number(this.dataset.price).toLocaleString('vi-VN') + 'đ';
+            const priceElement = document.getElementById('currentPrice') || document.querySelector('.pd-sale-price');
+            if (priceElement) priceElement.textContent = price;
+            const stockStatus = document.getElementById('stockStatus');
+            if (stockStatus) {
+                stockStatus.innerHTML = maxQty > 0
+                    ? `<i class="fa fa-check-circle"></i><span>Còn ${maxQty} @Model.Unit - giao hôm nay nếu đặt trước 16:00</span>`
+                    : '<i class="fa fa-times-circle"></i><span>Hết hàng</span>';
+                stockStatus.classList.toggle('out', maxQty <= 0);
+            }
+            ['btnBuyNow','btnAddToCart','btnBuyNowMobile','btnAddToCartMobile'].forEach(id => {
+                const el = document.getElementById(id); if (el) el.disabled = maxQty <= 0;
+            });
+        }));
+
         if (window.ecommerceHub) {
             const currentProductId = @Model.Id;
 
             window.ecommerceHub.on("StockChanged", function(data) {
-                if (data.productId === currentProductId) {
+                const selectedVariant = Number(document.querySelector('.selectedVariantId')?.value || 0);
+                if (data.productId === currentProductId && (!data.variantId || data.variantId === selectedVariant)) {
                     maxQty = data.stock;
                     var qtyInput = document.getElementById('quantity');
                     var currentVal = parseInt(qtyInput.value);
@@ -333,6 +395,10 @@
                         showRealtimeToast('Số lượng tồn kho vừa được cập nhật tự động!', false);
                     }
                 }
+            });
+
+            window.ecommerceHub.on("PriceChanged", function(data) {
+                if (data.productId === currentProductId) window.location.reload();
             });
 
             window.ecommerceHubReady.then(() => {

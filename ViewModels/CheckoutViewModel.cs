@@ -72,6 +72,7 @@ public class CheckoutViewModel
 
     // Cart summary
     public CartViewModel Cart { get; set; } = new();
+    public string PricingToken { get; set; } = string.Empty;
 
     public string ComposedFullAddress =>
         $"{StreetAddress}, {CommuneName}, {ProvinceName}";

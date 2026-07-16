@@ -10,6 +10,13 @@ public class OrderItem
     public int OrderId { get; set; }
 
     public int ProductId { get; set; }
+    public int? ProductVariantId { get; set; }
+
+    [MaxLength(100)]
+    public string? VariantName { get; set; }
+
+    [MaxLength(50)]
+    public string? VariantSKU { get; set; }
 
     [Required, MaxLength(255)]
     public string ProductName { get; set; } = string.Empty;
@@ -25,4 +32,5 @@ public class OrderItem
     // Navigation properties
     public virtual Order Order { get; set; } = null!;
     public virtual Product Product { get; set; } = null!;
+    public virtual ProductVariant? ProductVariant { get; set; }
 }

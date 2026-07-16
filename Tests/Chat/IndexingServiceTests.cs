@@ -287,7 +287,6 @@ public class IndexingServiceTests
             Slug = "tao-fuji",
             CategoryId = category.Id,
             Price = 125000,
-            SalePrice = 99000,
             Unit = "kg",
             StockQuantity = 50,
             MinOrderQuantity = 1,
@@ -307,11 +306,19 @@ public class IndexingServiceTests
             Name = "Hộp 2kg",
             SKU = "FUJI-2KG",
             Price = 240000,
-            SalePrice = 190000,
             StockQuantity = 20,
             IsActive = true
         });
         db.Products.Add(product);
+        await db.SaveChangesAsync();
+        db.PriceSchedules.Add(new PriceSchedule
+        {
+            ProductId = product.Id,
+            ProductVariantId = product.Variants.Single().Id,
+            DiscountType = DiscountType.FixedPrice,
+            Value = 190000,
+            StartsAt = DateTimeOffset.UtcNow.AddMinutes(-1)
+        });
         await db.SaveChangesAsync();
 
         var embedding = new DeterministicEmbeddingClient(dimensions: 32);
@@ -327,8 +334,8 @@ public class IndexingServiceTests
 
         Assert.Contains("Táo Fuji", chunk.Content);
         Assert.Contains("125,000đ", chunk.Content);
-        Assert.Contains("99,000đ", chunk.Content);
-        Assert.Contains("Tồn kho: 50", chunk.Content);
+        Assert.Contains("190,000đ", chunk.Content);
+        Assert.Contains("Tổng tồn kho biến thể: 20", chunk.Content);
         Assert.Contains("Nhật Bản", chunk.Content);
         Assert.Contains("Hộp 2kg", chunk.Content);
         Assert.Contains("Táo nhập khẩu", chunk.Content);

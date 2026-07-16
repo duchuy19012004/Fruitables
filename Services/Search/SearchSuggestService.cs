@@ -12,11 +12,14 @@ public sealed class SearchSuggestService : ISearchSuggestService
 {
     private readonly ApplicationDbContext _db;
     private readonly SearchSuggestOptions _options;
+    private readonly IProductPricingService? _pricing;
 
-    public SearchSuggestService(ApplicationDbContext db, IOptions<SearchSuggestOptions> options)
+    public SearchSuggestService(ApplicationDbContext db, IOptions<SearchSuggestOptions> options,
+        IProductPricingService? pricing = null)
     {
         _db = db;
         _options = options?.Value ?? new SearchSuggestOptions();
+        _pricing = pricing;
     }
 
     public async Task<SearchSuggestResponse> SuggestAsync(string? query, CancellationToken ct = default)
@@ -51,8 +54,8 @@ public sealed class SearchSuggestService : ISearchSuggestService
                 p.Name,
                 p.Slug,
                 p.Price,
-                p.SalePrice,
-                p.IsFeatured
+                p.IsFeatured,
+                HasVariants = p.Variants.Any(v => v.IsActive)
             })
             .ToListAsync(ct);
 
@@ -80,14 +83,27 @@ public sealed class SearchSuggestService : ISearchSuggestService
                 })
                 .ToDictionaryAsync(x => x.ProductId, x => (string?)x.Url, ct);
 
+        var quotes = _pricing == null || topIds.Count == 0
+            ? new Dictionary<PriceTargetKey, PriceQuote>()
+            : (await _pricing.GetQuotesAsync(topIds.Select(id => new PriceTargetKey(id, null))))
+                .ToDictionary(x => x.Key, x => x.Value);
+        var catalogPrices = _pricing == null || topIds.Count == 0
+            ? new Dictionary<int, ProductPriceProjection>()
+            : await _pricing.ProjectCatalogPrices(_db.Products.Where(p => topIds.Contains(p.Id)))
+                .ToDictionaryAsync(p => p.ProductId, ct);
+
         response.Products = rankedProducts
             .Select(x => new SearchSuggestProductDto
             {
                 Id = x.p.Id,
                 Name = x.p.Name,
                 Slug = x.p.Slug,
-                Price = x.p.Price,
-                SalePrice = x.p.SalePrice,
+                Price = x.p.HasVariants && catalogPrices.TryGetValue(x.p.Id, out var range)
+                    ? range.MinPrice
+                    : x.p.Price,
+                SalePrice = !x.p.HasVariants && quotes.TryGetValue(new PriceTargetKey(x.p.Id, null), out var quote) && quote.IsDiscounted
+                    ? quote.EffectivePrice
+                    : null,
                 ImageUrl = imageByProduct.TryGetValue(x.p.Id, out var url) ? url : null,
                 Url = "/Shop/Detail/" + Uri.EscapeDataString(x.p.Slug)
             })

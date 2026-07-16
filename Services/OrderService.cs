@@ -26,15 +26,31 @@ public class OrderService : IOrderService
 
     public async Task<Order> CreateOrderAsync(CheckoutViewModel model, string sessionId, int? userId = null)
     {
-        var cart = await _cartService.GetCartAsync(sessionId);
+        var cart = await _cartService.RepriceForCheckoutAsync(sessionId)
+            ?? await _cartService.GetCartAsync(sessionId);
+        if (!string.IsNullOrWhiteSpace(cart.PricingToken) &&
+            !string.Equals(model.PricingToken, cart.PricingToken, StringComparison.Ordinal))
+            throw new InvalidOperationException("Giá hoặc mã giảm giá vừa thay đổi. Vui lòng kiểm tra tổng tiền và xác nhận lại.");
 
         // Load products batch and validate before any mutation.
         var productIds = cart.Items.Select(i => i.ProductId).Distinct().ToList();
         var products = await _unitOfWork.Products.Query()
-            .Where(p => productIds.Contains(p.Id))
+            .Where(p => productIds.Contains(p.Id) && p.IsActive && !p.IsDeleted)
             .ToDictionaryAsync(p => p.Id);
 
         var missingProductIds = productIds.Except(products.Keys).ToList();
+        var variantIds = cart.Items.Where(i => i.ProductVariantId.HasValue)
+            .Select(i => i.ProductVariantId!.Value).Distinct().ToList();
+        var variants = await _unitOfWork.ProductVariants.Query()
+            .Where(v => variantIds.Contains(v.Id) && v.IsActive)
+            .ToDictionaryAsync(v => v.Id);
+        var variantManagedProductIds = await _unitOfWork.ProductVariants.Query()
+            .Where(v => productIds.Contains(v.ProductId) && v.IsActive)
+            .Select(v => v.ProductId).Distinct().ToListAsync();
+        if (variantIds.Except(variants.Keys).Any())
+            throw new InvalidOperationException("Một số biến thể không còn bán.");
+        if (cart.Items.Any(i => !i.ProductVariantId.HasValue && variantManagedProductIds.Contains(i.ProductId)))
+            throw new InvalidOperationException("Một số sản phẩm nay yêu cầu chọn biến thể. Vui lòng cập nhật lại giỏ hàng.");
         if (missingProductIds.Any())
         {
             throw new InvalidOperationException("Một số sản phẩm không tồn tại trong hệ thống.");
@@ -43,17 +59,20 @@ public class OrderService : IOrderService
         // Group cart lines by product so duplicate lines don't bypass the stock check.
         // Reused for validation, in-memory mutation, and atomic conditional update.
         var productGroups = cart.Items
-            .GroupBy(i => i.ProductId)
+            .GroupBy(i => new { i.ProductId, i.ProductVariantId })
             .Select(g => new
             {
-                ProductId = g.Key,
+                ProductId = g.Key.ProductId,
+                ProductVariantId = g.Key.ProductVariantId,
                 Quantity = g.Sum(i => i.Quantity),
                 ProductNames = g.Select(i => i.ProductName).Distinct().ToList()
             })
             .ToList();
 
         var insufficientGroups = productGroups
-            .Where(g => !products.ContainsKey(g.ProductId) || products[g.ProductId].StockQuantity < g.Quantity)
+            .Where(g => g.ProductVariantId.HasValue
+                ? !variants.ContainsKey(g.ProductVariantId.Value) || variants[g.ProductVariantId.Value].StockQuantity < g.Quantity
+                : !products.ContainsKey(g.ProductId) || products[g.ProductId].StockQuantity < g.Quantity)
             .ToList();
         if (insufficientGroups.Any())
         {
@@ -88,6 +107,9 @@ public class OrderService : IOrderService
             order.Items.Add(new OrderItem
             {
                 ProductId = item.ProductId,
+                ProductVariantId = item.ProductVariantId,
+                VariantName = item.VariantName,
+                VariantSKU = item.VariantSKU,
                 ProductName = item.ProductName,
                 Quantity = item.Quantity,
                 Price = item.Price,
@@ -157,10 +179,10 @@ public class OrderService : IOrderService
                 // InMemory: mutate tracked entities directly.
                 foreach (var group in productGroups)
                 {
-                    if (products.TryGetValue(group.ProductId, out var product))
-                    {
+                    if (group.ProductVariantId.HasValue && variants.TryGetValue(group.ProductVariantId.Value, out var variant))
+                        variant.StockQuantity -= group.Quantity;
+                    else if (products.TryGetValue(group.ProductId, out var product))
                         product.StockQuantity -= group.Quantity;
-                    }
                 }
             }
             else
@@ -169,9 +191,15 @@ public class OrderService : IOrderService
                 // Prevents oversell when two requests race on the same product.
                 foreach (var group in productGroups)
                 {
-                    var rows = await _unitOfWork.Products.Query()
-                        .Where(p => p.Id == group.ProductId && p.StockQuantity >= group.Quantity)
-                        .ExecuteUpdateAsync(s => s.SetProperty(p => p.StockQuantity, p => p.StockQuantity - group.Quantity));
+                    var rows = group.ProductVariantId.HasValue
+                        ? await _unitOfWork.ProductVariants.Query()
+                            .Where(v => v.Id == group.ProductVariantId.Value && v.ProductId == group.ProductId &&
+                                v.IsActive && v.Product.IsActive && !v.Product.IsDeleted && v.StockQuantity >= group.Quantity)
+                            .ExecuteUpdateAsync(s => s.SetProperty(v => v.StockQuantity, v => v.StockQuantity - group.Quantity))
+                        : await _unitOfWork.Products.Query()
+                            .Where(p => p.Id == group.ProductId && p.IsActive && !p.IsDeleted &&
+                                !p.Variants.Any(v => v.IsActive) && p.StockQuantity >= group.Quantity)
+                            .ExecuteUpdateAsync(s => s.SetProperty(p => p.StockQuantity, p => p.StockQuantity - group.Quantity));
 
                     if (rows == 0)
                     {
@@ -204,13 +232,29 @@ public class OrderService : IOrderService
 
         // Notify Realtime Clients
         await _notifier.NotifyOrderCreatedAsync(order.Id, order.UserId);
+        // The initial batch lookup is also the stock snapshot for notifications.
+        // Each grouped conditional update succeeded, so applying the same deltas
+        // locally avoids another product/variant query after commit.
+        var currentProductStocks = products.ToDictionary(pair => pair.Key, pair => pair.Value.StockQuantity);
+        var currentVariantStocks = variants.ToDictionary(pair => pair.Key, pair => pair.Value.StockQuantity);
+        if (!isInMemory)
+        {
+            foreach (var group in productGroups)
+            {
+                if (group.ProductVariantId.HasValue && currentVariantStocks.ContainsKey(group.ProductVariantId.Value))
+                    currentVariantStocks[group.ProductVariantId.Value] -= group.Quantity;
+                else if (currentProductStocks.ContainsKey(group.ProductId))
+                    currentProductStocks[group.ProductId] -= group.Quantity;
+            }
+        }
         foreach (var group in productGroups)
         {
-            if (products.TryGetValue(group.ProductId, out var product))
+            if (group.ProductVariantId.HasValue && currentVariantStocks.TryGetValue(group.ProductVariantId.Value, out var variantStock))
             {
-                int currentStock = isInMemory ? product.StockQuantity : product.StockQuantity - group.Quantity;
-                await _notifier.NotifyStockChangedAsync(group.ProductId, currentStock);
+                await _notifier.NotifyStockChangedAsync(group.ProductId, variantStock, group.ProductVariantId);
             }
+            else if (currentProductStocks.TryGetValue(group.ProductId, out var productStock))
+                await _notifier.NotifyStockChangedAsync(group.ProductId, productStock);
         }
 
         return order;

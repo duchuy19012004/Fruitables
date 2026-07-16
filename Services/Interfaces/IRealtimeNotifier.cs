@@ -9,5 +9,7 @@ namespace Fruitables.Services.Interfaces
         Task NotifyPaymentStatusChangedAsync(int orderId, int? userId, string newPaymentStatus);
         Task NotifyOrderNoteAddedAsync(int orderId, string noteSnippet);
         Task NotifyStockChangedAsync(int productId, int newStock);
+        Task NotifyStockChangedAsync(int productId, int newStock, int? variantId);
+        Task NotifyPriceChangedAsync(int productId, int? variantId = null);
     }
 }

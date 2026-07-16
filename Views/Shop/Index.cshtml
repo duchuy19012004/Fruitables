@@ -359,3 +359,9 @@
         }
     }
 </style>
+
+@section Scripts {
+    <script>
+        if (window.ecommerceHub) window.ecommerceHub.on('PriceChanged', () => window.location.reload());
+    </script>
+}

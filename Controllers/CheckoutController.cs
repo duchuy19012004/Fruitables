@@ -87,7 +87,8 @@ public class CheckoutController : Controller
         }
         
         // Load cart, tính phí ship theo commune (xã) mặc định
-        var cart = await _cartService.GetCartAsync(sessionId, defaultCommune);
+        var cart = await _cartService.RepriceForCheckoutAsync(sessionId)
+            ?? await _cartService.GetCartAsync(sessionId, defaultCommune);
         if (defaultGhnDistrictId.HasValue && !string.IsNullOrWhiteSpace(defaultGhnWardCode))
         {
             var shippingInfo = await _shippingService.CalculateShippingAsync(
@@ -105,6 +106,11 @@ public class CheckoutController : Controller
         {
             return RedirectToAction("Index", "Cart");
         }
+        if (cart.Items.Any(item => !item.IsAvailable || item.StockQuantity < item.Quantity))
+        {
+            TempData["Error"] = "Một số sản phẩm hoặc biến thể không còn bán hoặc không đủ tồn kho. Vui lòng kiểm tra lại giỏ hàng.";
+            return RedirectToAction("Index", "Cart");
+        }
         
         // Lưu snapshot phí ship khi vào checkout (chống thay đổi phí giữa chừng)
         if (cart.ShippingInfo != null)
@@ -118,7 +124,8 @@ public class CheckoutController : Controller
         
         var model = new CheckoutViewModel
         {
-            SelectedAddressId = defaultAddressId
+            SelectedAddressId = defaultAddressId,
+            PricingToken = cart.PricingToken
         };
         
         return View(model);
@@ -127,11 +134,11 @@ public class CheckoutController : Controller
     // POST: Mua ngay — thêm sản phẩm vào giỏ rồi redirect thẳng tới checkout
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> BuyNow(int productId, int quantity = 1)
+    public async Task<IActionResult> BuyNow(int productId, int quantity = 1, int? variantId = null)
     {
         var sessionId = GetSessionId();
         
-        await _cartService.AddToCartAsync(sessionId, productId, quantity);
+        await _cartService.AddToCartAsync(sessionId, productId, quantity, variantId);
         
         return RedirectToAction(nameof(Index));
     }
@@ -175,14 +182,23 @@ public class CheckoutController : Controller
             ghnWardCode = selectedAddress?.GhnWardCode;
         }
         
-        var cart = await _cartService.GetCartAsync(sessionId, district);
+        var submittedPricingToken = model.PricingToken;
+        var cart = await _cartService.RepriceForCheckoutAsync(sessionId)
+            ?? await _cartService.GetCartAsync(sessionId, district);
+        if (cart.Items.Any(item => !item.IsAvailable || item.StockQuantity < item.Quantity))
+            ModelState.AddModelError(string.Empty, "Một số sản phẩm hoặc biến thể không còn bán hoặc không đủ tồn kho.");
+        if (!string.IsNullOrEmpty(cart.PricingToken) && !string.Equals(submittedPricingToken, cart.PricingToken, StringComparison.Ordinal))
+        {
+            ModelState.AddModelError(string.Empty, "Giá hoặc mã giảm giá vừa thay đổi. Vui lòng kiểm tra tổng tiền và xác nhận đặt hàng lại.");
+            model.PricingToken = cart.PricingToken;
+        }
 
         // Validation thất bại → reload lại checkout với lỗi
         if (!ModelState.IsValid)
         {
             var errors = ModelState
                 .Where(x => x.Value?.Errors.Count > 0)
-                .Select(x => $"{x.Key}: {string.Join(", ", x.Value.Errors.Select(e => e.ErrorMessage))}")
+                .Select(x => $"{x.Key}: {string.Join(", ", x.Value!.Errors.Select(e => e.ErrorMessage))}")
                 .ToList();
             _logger.LogWarning("PlaceOrder validation failed: {Errors}", string.Join(" | ", errors));
             

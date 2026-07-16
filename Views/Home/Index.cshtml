@@ -7,7 +7,7 @@
     var testimonials = ViewBag.Testimonials as List<Testimonial> ?? new List<Testimonial>();
 
     var saleProducts = products
-        .Where(p => p.SalePrice.HasValue && p.SalePrice.Value < p.Price)
+        .Where(p => !p.Variants.Any(v => v.IsActive) && p.DisplayMinPrice < p.Price)
         .Take(4)
         .ToList();
     var featuredProducts = products
@@ -24,13 +24,13 @@
         ?? "/img/fruite-item-5.jpg";
 
     bool HasSale(Product product) =>
-        product.SalePrice.HasValue && product.SalePrice.Value < product.Price;
+        !product.Variants.Any(v => v.IsActive) && product.DisplayMinPrice < product.Price;
 
     decimal DisplayPrice(Product product) =>
-        HasSale(product) ? product.SalePrice!.Value : product.Price;
+        product.DisplayMinPrice;
 
     int DiscountPercent(Product product) =>
-        HasSale(product) ? (int)Math.Round((1 - product.SalePrice!.Value / product.Price) * 100) : 0;
+        HasSale(product) ? (int)Math.Round((1 - product.DisplayMinPrice / product.Price) * 100) : 0;
 }
 
 <main class="home-marketplace">
@@ -1216,3 +1216,9 @@
         }
     }
 </style>
+
+@section Scripts {
+    <script>
+        if (window.ecommerceHub) window.ecommerceHub.on('PriceChanged', () => window.location.reload());
+    </script>
+}

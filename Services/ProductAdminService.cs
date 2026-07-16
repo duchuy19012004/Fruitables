@@ -15,17 +15,20 @@ public class ProductAdminService : IProductAdminService
     private readonly IImageUploadService _imageUploadService;
     private readonly IIndexingService _indexing;
     private readonly ILogger<ProductAdminService> _logger;
+    private readonly IRealtimeNotifier? _notifier;
 
     public ProductAdminService(
         IUnitOfWork unitOfWork,
         IImageUploadService imageUploadService,
         IIndexingService indexing,
-        ILogger<ProductAdminService> logger)
+        ILogger<ProductAdminService> logger,
+        IRealtimeNotifier? notifier = null)
     {
         _unitOfWork = unitOfWork;
         _imageUploadService = imageUploadService;
         _indexing = indexing;
         _logger = logger;
+        _notifier = notifier;
     }
 
     private async Task TryIndexProductAsync(int productId)
@@ -177,7 +180,6 @@ public class ProductAdminService : IProductAdminService
             ShortDescription = request.ShortDescription,
             CategoryId = request.CategoryId,
             Price = request.Price,
-            SalePrice = request.SalePrice,
             Unit = request.Unit,
             Weight = request.Weight,
             CountryOrigin = request.CountryOrigin,
@@ -208,6 +210,9 @@ public class ProductAdminService : IProductAdminService
         if (product == null)
             return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy sản phẩm với ID {request.Id}");
 
+        if (request.Price != product.Price)
+            return ProductResult.Fail(ProductErrorType.ValidationError, "Vui lòng thay đổi giá gốc tại trang Quản lý giá để hệ thống kiểm tra lịch và ghi nhật ký.");
+
         // Validation
         if (string.IsNullOrWhiteSpace(request.Name))
             return ProductResult.Fail(ProductErrorType.ValidationError, "Tên sản phẩm không được để trống");
@@ -231,13 +236,12 @@ public class ProductAdminService : IProductAdminService
         if (category == null)
             return ProductResult.Fail(ProductErrorType.InvalidCategory, $"Danh mục với ID {request.CategoryId} không tồn tại");
 
+        var oldStock = product.StockQuantity;
         product.Name = request.Name.Trim();
         product.Slug = slug;
         product.Description = request.Description;
         product.ShortDescription = request.ShortDescription;
         product.CategoryId = request.CategoryId;
-        product.Price = request.Price;
-        product.SalePrice = request.SalePrice;
         product.Unit = request.Unit;
         product.Weight = request.Weight;
         product.CountryOrigin = request.CountryOrigin;
@@ -251,6 +255,9 @@ public class ProductAdminService : IProductAdminService
         await _unitOfWork.SaveChangesAsync();
 
         await TryIndexProductAsync(product.Id);
+        if (_notifier != null && oldStock != product.StockQuantity &&
+            !await _unitOfWork.ProductVariants.AnyAsync(variant => variant.ProductId == product.Id && variant.IsActive))
+            await _notifier.NotifyStockChangedAsync(product.Id, product.StockQuantity);
 
         return ProductResult.Ok(product);
     }
@@ -313,6 +320,12 @@ public class ProductAdminService : IProductAdminService
             return ProductResult.Fail(ProductErrorType.HasOrders, 
                 "Không thể xóa vĩnh viễn sản phẩm đã có trong đơn hàng. Hãy sử dụng chức năng xóa mềm.");
         }
+        if (await _unitOfWork.PriceSchedules.AnyAsync(schedule => schedule.ProductId == id))
+            return ProductResult.Fail(ProductErrorType.ValidationError,
+                "Không thể xóa vĩnh viễn sản phẩm đã có lịch sử giá. Hãy sử dụng chức năng xóa mềm.");
+        if (await _unitOfWork.CartItems.AnyAsync(item => item.ProductId == id))
+            return ProductResult.Fail(ProductErrorType.ValidationError,
+                "Không thể xóa vĩnh viễn sản phẩm đang nằm trong giỏ hàng. Hãy sử dụng chức năng xóa mềm.");
 
         // Delete related data
         var images = await _unitOfWork.ProductImages
@@ -549,6 +562,7 @@ public class ProductAdminService : IProductAdminService
 
     public async Task<ProductResult> AddVariantAsync(CreateVariantRequest request)
     {
+        await using var transaction = await BeginVariantWriteAsync();
         // Check product exists
         var products = await _unitOfWork.Products
             .FindAsync(p => p.Id == request.ProductId);
@@ -556,6 +570,9 @@ public class ProductAdminService : IProductAdminService
 
         if (product == null)
             return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy sản phẩm với ID {request.ProductId}");
+
+        if (request.IsActive && !await CanEnableVariantAsync(request.ProductId))
+            return ProductResult.Fail(ProductErrorType.ValidationError, "Hãy hủy các lịch giá cấp sản phẩm đang chạy hoặc sắp tới trước khi kích hoạt biến thể.");
 
         // Validation
         if (request.Price < 0)
@@ -576,25 +593,38 @@ public class ProductAdminService : IProductAdminService
             SKU = request.SKU,
             Name = request.Name,
             Price = request.Price,
-            SalePrice = request.SalePrice,
             StockQuantity = request.StockQuantity,
             IsActive = request.IsActive
         };
 
         await _unitOfWork.ProductVariants.AddAsync(variant);
         await _unitOfWork.SaveChangesAsync();
+        if (transaction != null) await transaction.CommitAsync();
+        if (_notifier != null && variant.IsActive)
+        {
+            await _notifier.NotifyStockChangedAsync(product.Id, variant.StockQuantity, variant.Id);
+            await _notifier.NotifyPriceChangedAsync(product.Id, variant.Id);
+        }
+        await TryIndexProductAsync(product.Id);
 
         return ProductResult.Ok(product);
     }
 
     public async Task<ProductResult> UpdateVariantAsync(int variantId, CreateVariantRequest request)
     {
+        await using var transaction = await BeginVariantWriteAsync();
         var variants = await _unitOfWork.ProductVariants
             .FindAsync(pv => pv.Id == variantId);
         var variant = variants.FirstOrDefault();
 
         if (variant == null)
             return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy variant với ID {variantId}");
+
+        if (request.Price != variant.Price)
+            return ProductResult.Fail(ProductErrorType.ValidationError, "Vui lòng thay đổi giá biến thể tại trang Quản lý giá để hệ thống kiểm tra lịch và ghi nhật ký.");
+
+        if (request.IsActive && !variant.IsActive && !await CanEnableVariantAsync(variant.ProductId))
+            return ProductResult.Fail(ProductErrorType.ValidationError, "Hãy hủy các lịch giá cấp sản phẩm đang chạy hoặc sắp tới trước khi kích hoạt biến thể.");
 
         // Validation
         if (request.Price < 0)
@@ -609,10 +639,10 @@ public class ProductAdminService : IProductAdminService
         if (existingVariants.Any())
             return ProductResult.Fail(ProductErrorType.DuplicateSKU, $"SKU '{request.SKU}' đã tồn tại");
 
+        var oldStock = variant.StockQuantity;
+        var wasActive = variant.IsActive;
         variant.SKU = request.SKU;
         variant.Name = request.Name;
-        variant.Price = request.Price;
-        variant.SalePrice = request.SalePrice;
         variant.StockQuantity = request.StockQuantity;
         variant.IsActive = request.IsActive;
 
@@ -622,6 +652,13 @@ public class ProductAdminService : IProductAdminService
         var products = await _unitOfWork.Products
             .FindAsync(p => p.Id == variant.ProductId);
         var product = products.FirstOrDefault();
+        if (transaction != null) await transaction.CommitAsync();
+        if (_notifier != null && product != null && (oldStock != variant.StockQuantity || wasActive != variant.IsActive))
+        {
+            await _notifier.NotifyStockChangedAsync(product.Id, variant.StockQuantity, variant.Id);
+            if (wasActive != variant.IsActive) await _notifier.NotifyPriceChangedAsync(product.Id, variant.Id);
+        }
+        if (product != null) await TryIndexProductAsync(product.Id);
 
         return product != null 
             ? ProductResult.Ok(product) 
@@ -638,9 +675,21 @@ public class ProductAdminService : IProductAdminService
             return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy variant với ID {variantId}");
 
         var productId = variant.ProductId;
+        var wasActive = variant.IsActive;
 
-        _unitOfWork.ProductVariants.Remove(variant);
+        if (await _unitOfWork.OrderItems.AnyAsync(i => i.ProductVariantId == variantId) ||
+            await _unitOfWork.PriceSchedules.AnyAsync(schedule => schedule.ProductVariantId == variantId) ||
+            await _unitOfWork.CartItems.AnyAsync(item => item.ProductVariantId == variantId))
+            variant.IsActive = false;
+        else
+            _unitOfWork.ProductVariants.Remove(variant);
         await _unitOfWork.SaveChangesAsync();
+        await TryIndexProductAsync(productId);
+        if (_notifier != null && wasActive)
+        {
+            await _notifier.NotifyStockChangedAsync(productId, 0, variantId);
+            await _notifier.NotifyPriceChangedAsync(productId, variantId);
+        }
 
         // Get product for result
         var products = await _unitOfWork.Products
@@ -653,4 +702,19 @@ public class ProductAdminService : IProductAdminService
     }
 
     #endregion
+
+    private Task<bool> CanEnableVariantAsync(int productId)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return _unitOfWork.PriceSchedules.Query().AllAsync(s =>
+            s.ProductId != productId || s.ProductVariantId != null || s.IsCancelled ||
+            (s.EndsAt.HasValue && s.EndsAt <= now));
+    }
+
+    private async Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction?> BeginVariantWriteAsync()
+    {
+        if ((_unitOfWork.DatabaseProviderName ?? string.Empty).Contains("InMemory", StringComparison.OrdinalIgnoreCase))
+            return null;
+        return await _unitOfWork.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+    }
 }

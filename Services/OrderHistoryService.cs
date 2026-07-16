@@ -9,10 +9,12 @@ namespace Fruitables.Services;
 public class OrderHistoryService : IOrderHistoryService
 {
     private readonly IOrderRepository _orderRepository;
+    private readonly IRealtimeNotifier? _notifier;
 
-    public OrderHistoryService(IOrderRepository orderRepository)
+    public OrderHistoryService(IOrderRepository orderRepository, IRealtimeNotifier? notifier = null)
     {
         _orderRepository = orderRepository;
+        _notifier = notifier;
     }
 
     /// <summary>
@@ -140,6 +142,16 @@ public class OrderHistoryService : IOrderHistoryService
 
         // Hủy đơn hàng và hoàn trả stock trong một transaction
         var result = await _orderRepository.CancelOrderWithStockRestoreAsync(orderId, reason.Trim(), userId);
+        if (result.IsSuccess && _notifier != null)
+        {
+            foreach (var item in result.RestoredItems)
+            {
+                if (item.ProductVariantId.HasValue)
+                    await _notifier.NotifyStockChangedAsync(item.ProductId, item.CurrentStock, item.ProductVariantId);
+                else
+                    await _notifier.NotifyStockChangedAsync(item.ProductId, item.CurrentStock);
+            }
+        }
         return result.IsSuccess;
     }
 

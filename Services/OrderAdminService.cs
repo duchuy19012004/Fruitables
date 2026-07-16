@@ -138,21 +138,23 @@ public class OrderAdminService : IOrderAdminService
 
             // Stock is deducted when the order is placed in OrderService.CreateOrderAsync.
             // Cancel → restore; restore from cancelled → deduct.
+            Dictionary<(int ProductId, int? VariantId), int>? changedStocks = null;
             if (request.NewStatus == OrderStatus.Cancelled && order.Status != OrderStatus.Cancelled)
             {
-                await RestoreStockForOrder(order);
+                changedStocks = await RestoreStockForOrder(order);
             }
             else if (order.Status == OrderStatus.Cancelled && request.NewStatus != OrderStatus.Cancelled)
             {
-                var insufficientItems = await CheckAndDeductStockForOrder(order);
-                if (insufficientItems.Any())
+                var deduction = await CheckAndDeductStockForOrder(order);
+                if (deduction.InsufficientItems.Any())
                 {
                     if (transaction != null)
                     {
                         await transaction.RollbackAsync();
                     }
-                    return OrderResult.FailWithInsufficientStock(insufficientItems);
+                    return OrderResult.FailWithInsufficientStock(deduction.InsufficientItems);
                 }
+                changedStocks = deduction.StockLevels;
             }
 
             // Stage status update + history so a single SaveChanges commits the full atomic flow.
@@ -181,11 +183,7 @@ public class OrderAdminService : IOrderAdminService
             // If status cancelled or restored, stock changed. Broadcast.
             if (request.NewStatus == OrderStatus.Cancelled || oldStatus == OrderStatus.Cancelled)
             {
-                foreach (var item in order.Items)
-                {
-                    var p = await _context.Products.FindAsync(item.ProductId);
-                    if (p != null) await _notifier.NotifyStockChangedAsync(p.Id, p.StockQuantity);
-                }
+                await NotifyStockForItemsAsync(order.Items, changedStocks);
             }
 
             return OrderResult.Ok(order);
@@ -213,23 +211,86 @@ public class OrderAdminService : IOrderAdminService
         }
     }
 
-    private async Task RestoreStockForOrder(Order order)
+    private async Task NotifyStockForItemsAsync(
+        IEnumerable<OrderItem> items,
+        IReadOnlyDictionary<(int ProductId, int? VariantId), int>? knownStockLevels = null)
+    {
+        var targets = items.GroupBy(item => new { item.ProductId, item.ProductVariantId })
+            .Select(group => group.Key).ToList();
+        if (knownStockLevels != null)
+        {
+            foreach (var target in targets)
+            {
+                if (!knownStockLevels.TryGetValue((target.ProductId, target.ProductVariantId), out var stock))
+                    continue;
+                if (target.ProductVariantId.HasValue)
+                    await _notifier.NotifyStockChangedAsync(target.ProductId, stock, target.ProductVariantId);
+                else
+                    await _notifier.NotifyStockChangedAsync(target.ProductId, stock);
+            }
+            return;
+        }
+
+        var isInMemory = (_context.Database.ProviderName ?? string.Empty).Contains("InMemory");
+        var productIds = targets.Select(target => target.ProductId).Distinct().ToList();
+        var variantIds = targets.Where(target => target.ProductVariantId.HasValue).Select(target => target.ProductVariantId!.Value).Distinct().ToList();
+        var products = isInMemory
+            ? _context.Products.Local.ToDictionary(product => product.Id)
+            : await _context.Products.AsNoTracking().Where(product => productIds.Contains(product.Id)).ToDictionaryAsync(product => product.Id);
+        var variants = isInMemory
+            ? _context.ProductVariants.Local.ToDictionary(variant => variant.Id)
+            : await _context.ProductVariants.AsNoTracking().Where(variant => variantIds.Contains(variant.Id)).ToDictionaryAsync(variant => variant.Id);
+        foreach (var target in targets)
+        {
+            if (target.ProductVariantId.HasValue && variants.TryGetValue(target.ProductVariantId.Value, out var variant))
+                await _notifier.NotifyStockChangedAsync(target.ProductId, variant.StockQuantity, target.ProductVariantId);
+            else if (products.TryGetValue(target.ProductId, out var product))
+                await _notifier.NotifyStockChangedAsync(target.ProductId, product.StockQuantity);
+        }
+    }
+
+    private async Task<Dictionary<(int ProductId, int? VariantId), int>> RestoreStockForOrder(Order order)
     {
         var productIds = order.Items.Select(item => item.ProductId).Distinct().ToList();
         var products = await _context.Products
             .Where(p => productIds.Contains(p.Id))
             .ToDictionaryAsync(p => p.Id);
+        var variantIds = order.Items.Where(i => i.ProductVariantId.HasValue).Select(i => i.ProductVariantId!.Value).Distinct().ToList();
+        var variants = await _context.ProductVariants.Where(v => variantIds.Contains(v.Id)).ToDictionaryAsync(v => v.Id);
 
-        foreach (var item in order.Items)
+        var isInMemory = (_context.Database.ProviderName ?? string.Empty).Contains("InMemory");
+        var groups = order.Items.GroupBy(item => new { item.ProductId, item.ProductVariantId })
+            .Select(group => new { group.Key.ProductId, group.Key.ProductVariantId, Quantity = group.Sum(item => item.Quantity) });
+        var stockLevels = new Dictionary<(int ProductId, int? VariantId), int>();
+        foreach (var group in groups)
         {
-            if (products.TryGetValue(item.ProductId, out var product))
+            if (group.ProductVariantId.HasValue && variants.TryGetValue(group.ProductVariantId.Value, out var variant))
             {
-                product.StockQuantity += item.Quantity;
+                if (isInMemory) variant.StockQuantity += group.Quantity;
+                else
+                {
+                    await _context.ProductVariants.Where(v => v.Id == variant.Id)
+                        .ExecuteUpdateAsync(update => update.SetProperty(v => v.StockQuantity, v => v.StockQuantity + group.Quantity));
+                    SynchronizeStock(variant, variant.StockQuantity + group.Quantity);
+                }
+                stockLevels[(group.ProductId, group.ProductVariantId)] = variant.StockQuantity;
+            }
+            else if (products.TryGetValue(group.ProductId, out var product))
+            {
+                if (isInMemory) product.StockQuantity += group.Quantity;
+                else
+                {
+                    await _context.Products.Where(p => p.Id == product.Id)
+                        .ExecuteUpdateAsync(update => update.SetProperty(p => p.StockQuantity, p => p.StockQuantity + group.Quantity));
+                    SynchronizeStock(product, product.StockQuantity + group.Quantity);
+                }
+                stockLevels[(group.ProductId, null)] = product.StockQuantity;
             }
         }
+        return stockLevels;
     }
 
-    private async Task<List<InsufficientStockItem>> CheckAndDeductStockForOrder(Order order)
+    private async Task<StockDeductionResult> CheckAndDeductStockForOrder(Order order)
     {
         var insufficientItems = new List<InsufficientStockItem>();
 
@@ -237,37 +298,107 @@ public class OrderAdminService : IOrderAdminService
         var products = await _context.Products
             .Where(p => productIds.Contains(p.Id))
             .ToDictionaryAsync(p => p.Id);
+        var variantIds = order.Items.Where(i => i.ProductVariantId.HasValue).Select(i => i.ProductVariantId!.Value).Distinct().ToList();
+        var variants = await _context.ProductVariants.Where(v => variantIds.Contains(v.Id) && v.IsActive).ToDictionaryAsync(v => v.Id);
 
-        // First check if all items have sufficient stock
-        foreach (var item in order.Items)
+        var groups = order.Items.GroupBy(item => new { item.ProductId, item.ProductVariantId })
+            .Select(group => new
+            {
+                group.Key.ProductId,
+                group.Key.ProductVariantId,
+                Quantity = group.Sum(item => item.Quantity),
+                ProductName = group.First().ProductName
+            }).ToList();
+
+        // First check grouped quantities so duplicate lines cannot bypass validation.
+        foreach (var group in groups)
         {
-            products.TryGetValue(item.ProductId, out var product);
-            if (product == null || product.StockQuantity < item.Quantity)
+            products.TryGetValue(group.ProductId, out var product);
+            variants.TryGetValue(group.ProductVariantId ?? 0, out var variant);
+            var available = group.ProductVariantId.HasValue ? variant?.StockQuantity : product?.StockQuantity;
+            if (!available.HasValue || available.Value < group.Quantity)
             {
                 insufficientItems.Add(new InsufficientStockItem
                 {
-                    ProductId = item.ProductId,
-                    ProductName = item.ProductName,
-                    RequestedQuantity = item.Quantity,
-                    AvailableQuantity = product?.StockQuantity ?? 0
+                    ProductId = group.ProductId,
+                    ProductName = group.ProductName,
+                    RequestedQuantity = group.Quantity,
+                    AvailableQuantity = available ?? 0
                 });
             }
         }
 
         // If all items have sufficient stock, deduct them
+        var stockLevels = new Dictionary<(int ProductId, int? VariantId), int>();
         if (!insufficientItems.Any())
         {
-            foreach (var item in order.Items)
+            var isInMemory = (_context.Database.ProviderName ?? string.Empty).Contains("InMemory");
+            foreach (var group in groups)
             {
-                if (products.TryGetValue(item.ProductId, out var product))
+                int rows;
+                ProductVariant? variant = null;
+                Product? product = null;
+                if (group.ProductVariantId.HasValue && variants.TryGetValue(group.ProductVariantId.Value, out variant))
                 {
-                    product.StockQuantity -= item.Quantity;
+                    if (isInMemory) { variant.StockQuantity -= group.Quantity; rows = 1; }
+                    else rows = await _context.ProductVariants.Where(v => v.Id == variant.Id && v.IsActive &&
+                            v.Product.IsActive && !v.Product.IsDeleted && v.StockQuantity >= group.Quantity)
+                        .ExecuteUpdateAsync(update => update.SetProperty(v => v.StockQuantity, v => v.StockQuantity - group.Quantity));
+                }
+                else if (products.TryGetValue(group.ProductId, out product))
+                {
+                    if (isInMemory) { product.StockQuantity -= group.Quantity; rows = 1; }
+                    else rows = await _context.Products.Where(p => p.Id == product.Id && p.IsActive && !p.IsDeleted &&
+                            !p.Variants.Any(v => v.IsActive) && p.StockQuantity >= group.Quantity)
+                        .ExecuteUpdateAsync(update => update.SetProperty(p => p.StockQuantity, p => p.StockQuantity - group.Quantity));
+                }
+                else rows = 0;
+
+                if (rows == 0)
+                {
+                    insufficientItems.Add(new InsufficientStockItem
+                    {
+                        ProductId = group.ProductId, ProductName = group.ProductName,
+                        RequestedQuantity = group.Quantity, AvailableQuantity = 0
+                    });
+                    break;
+                }
+
+                if (group.ProductVariantId.HasValue && variant != null)
+                {
+                    if (!isInMemory) SynchronizeStock(variant, variant.StockQuantity - group.Quantity);
+                    stockLevels[(group.ProductId, group.ProductVariantId)] = variant.StockQuantity;
+                }
+                else if (product != null)
+                {
+                    if (!isInMemory) SynchronizeStock(product, product.StockQuantity - group.Quantity);
+                    stockLevels[(group.ProductId, null)] = product.StockQuantity;
                 }
             }
         }
 
-        return insufficientItems;
+        return new StockDeductionResult(insufficientItems, stockLevels);
     }
+
+    private void SynchronizeStock(Product product, int stock)
+    {
+        product.StockQuantity = stock;
+        var property = _context.Entry(product).Property(p => p.StockQuantity);
+        property.OriginalValue = stock;
+        property.IsModified = false;
+    }
+
+    private void SynchronizeStock(ProductVariant variant, int stock)
+    {
+        variant.StockQuantity = stock;
+        var property = _context.Entry(variant).Property(v => v.StockQuantity);
+        property.OriginalValue = stock;
+        property.IsModified = false;
+    }
+
+    private sealed record StockDeductionResult(
+        List<InsufficientStockItem> InsufficientItems,
+        Dictionary<(int ProductId, int? VariantId), int> StockLevels);
 
     public async Task<OrderResult> UpdatePaymentStatusAsync(UpdatePaymentStatusRequest request)
     {
@@ -491,28 +622,30 @@ public class OrderAdminService : IOrderAdminService
             }
 
             // Handle stock management for order status changes
+            Dictionary<(int ProductId, int? VariantId), int>? changedStocks = null;
             if (request.NewOrderStatus == OrderStatus.Cancelled && order.Status != OrderStatus.Cancelled)
             {
                 // Restore stock when cancelling
-                await RestoreStockForOrder(order);
+                changedStocks = await RestoreStockForOrder(order);
             }
             else if (request.NewOrderStatus == OrderStatus.Returned && order.Status != OrderStatus.Returned)
             {
                 // Restore stock when returning (if not already cancelled)
                 if (order.Status != OrderStatus.Cancelled)
                 {
-                    await RestoreStockForOrder(order);
+                    changedStocks = await RestoreStockForOrder(order);
                 }
             }
             else if (order.Status == OrderStatus.Cancelled && request.NewOrderStatus != OrderStatus.Cancelled)
             {
                 // Deduct stock when restoring from cancelled
-                var insufficientItems = await CheckAndDeductStockForOrder(order);
-                if (insufficientItems.Any())
+                var deduction = await CheckAndDeductStockForOrder(order);
+                if (deduction.InsufficientItems.Any())
                 {
                     await transaction.RollbackAsync();
-                    return OrderResult.FailWithInsufficientStock(insufficientItems);
+                    return OrderResult.FailWithInsufficientStock(deduction.InsufficientItems);
                 }
+                changedStocks = deduction.StockLevels;
             }
 
             // Update both statuses atomically (Requirement 1.2)
@@ -542,11 +675,7 @@ public class OrderAdminService : IOrderAdminService
                 if (request.NewOrderStatus == OrderStatus.Cancelled || request.NewOrderStatus == OrderStatus.Returned || 
                     (oldOrderStatus == OrderStatus.Cancelled && request.NewOrderStatus != OrderStatus.Cancelled))
                 {
-                    foreach (var item in order.Items)
-                    {
-                        var p = await _context.Products.FindAsync(item.ProductId);
-                        if (p != null) await _notifier.NotifyStockChangedAsync(p.Id, p.StockQuantity);
-                    }
+                    await NotifyStockForItemsAsync(order.Items, changedStocks);
                 }
             }
             if (oldPaymentStatus != request.NewPaymentStatus)

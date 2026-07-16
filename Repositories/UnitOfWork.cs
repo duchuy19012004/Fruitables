@@ -1,6 +1,7 @@
 using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Repositories.Interfaces;
+using Microsoft.EntityFrameworkCore;
 
 namespace Fruitables.Repositories;
 
@@ -29,6 +30,7 @@ public class UnitOfWork : IUnitOfWork
     private IRepository<ProductVariant>? _productVariants;
     private IRepository<ProductTag>? _productTags;
     private IRepository<ProductLog>? _productLogs;
+    private IRepository<PriceSchedule>? _priceSchedules;
     private IRepository<Address>? _addresses;
     
     // RBAC repositories
@@ -98,6 +100,9 @@ public class UnitOfWork : IUnitOfWork
     
     public IRepository<ProductLog> ProductLogs => 
         _productLogs ??= new Repository<ProductLog>(_context);
+
+    public IRepository<PriceSchedule> PriceSchedules =>
+        _priceSchedules ??= new Repository<PriceSchedule>(_context);
     
     public IRepository<Address> Addresses =>
         _addresses ??= new Repository<Address>(_context);
@@ -136,6 +141,11 @@ public class UnitOfWork : IUnitOfWork
     public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync()
     {
         return _context.Database.BeginTransactionAsync();
+    }
+
+    public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(System.Data.IsolationLevel isolationLevel)
+    {
+        return _context.Database.BeginTransactionAsync(isolationLevel);
     }
 
     public string? DatabaseProviderName => _context.Database.ProviderName;

@@ -34,6 +34,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<Setting> Settings => Set<Setting>();
     public DbSet<ProductVariant> ProductVariants => Set<ProductVariant>();
     public DbSet<ProductLog> ProductLogs => Set<ProductLog>();
+    public DbSet<PriceSchedule> PriceSchedules => Set<PriceSchedule>();
     public DbSet<OrderStatusHistory> OrderStatusHistories => Set<OrderStatusHistory>();
     public DbSet<OrderNote> OrderNotes => Set<OrderNote>();
     public DbSet<UserAccountLog> UserAccountLogs => Set<UserAccountLog>();
@@ -153,6 +154,40 @@ public class ApplicationDbContext : DbContext
                   .WithMany(p => p.Variants)
                   .HasForeignKey(v => v.ProductId)
                   .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CartItem>(entity =>
+        {
+            entity.HasIndex(e => new { e.CartId, e.ProductId, e.ProductVariantId })
+                  .IsUnique()
+                  .HasFilter("[ProductVariantId] IS NOT NULL");
+            entity.HasIndex(e => new { e.CartId, e.ProductId })
+                  .IsUnique()
+                  .HasDatabaseName("IX_CartItems_CartId_ProductId_NoVariant")
+                  .HasFilter("[ProductVariantId] IS NULL");
+            entity.HasOne(e => e.ProductVariant).WithMany().HasForeignKey(e => e.ProductVariantId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<OrderItem>(entity =>
+        {
+            entity.HasOne(e => e.ProductVariant).WithMany().HasForeignKey(e => e.ProductVariantId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<PriceSchedule>(entity =>
+        {
+            entity.HasIndex(e => new { e.ProductId, e.ProductVariantId, e.StartsAt });
+            entity.HasOne(e => e.Product)
+                  .WithMany(p => p.PriceSchedules)
+                  .HasForeignKey(e => e.ProductId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.ProductVariant)
+                  .WithMany(v => v.PriceSchedules)
+                  .HasForeignKey(e => e.ProductVariantId)
+                  .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.CreatedByAdmin)
+                  .WithMany()
+                  .HasForeignKey(e => e.CreatedByAdminId)
+                  .OnDelete(DeleteBehavior.SetNull);
         });
 
         // ProductLog

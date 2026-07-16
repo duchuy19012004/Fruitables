@@ -77,6 +77,8 @@ public class OrderRepository : Repository<Order>, IOrderRepository
             .Include(o => o.Items)
             .ThenInclude(oi => oi.Product)
             .ThenInclude(p => p.Images)
+            .Include(o => o.Items)
+            .ThenInclude(oi => oi.ProductVariant)
             .Include(o => o.StatusHistory)
             .ThenInclude(sh => sh.Admin)
             .Include(o => o.Address)
@@ -204,18 +206,72 @@ public class OrderRepository : Repository<Order>, IOrderRepository
             var products = await _context.Products
                 .Where(p => productIds.Contains(p.Id))
                 .ToDictionaryAsync(p => p.Id);
+            var variantIds = order.Items.Where(item => item.ProductVariantId.HasValue)
+                .Select(item => item.ProductVariantId!.Value).Distinct().ToList();
+            var variants = await _context.ProductVariants
+                .Where(variant => variantIds.Contains(variant.Id))
+                .ToDictionaryAsync(variant => variant.Id);
 
-            foreach (var item in order.Items)
+            var restoreGroups = order.Items
+                .GroupBy(item => new { item.ProductId, item.ProductVariantId })
+                .Select(group => new { group.Key.ProductId, group.Key.ProductVariantId, Quantity = group.Sum(item => item.Quantity), Item = group.First() })
+                .ToList();
+            foreach (var group in restoreGroups)
             {
-                if (products.TryGetValue(item.ProductId, out var product))
+                if (group.ProductVariantId.HasValue && variants.TryGetValue(group.ProductVariantId.Value, out var variant))
                 {
-                    product.StockQuantity += item.Quantity;
+                    if (supportsTransactions)
+                    {
+                        var rows = await _context.ProductVariants.Where(v => v.Id == variant.Id)
+                            .ExecuteUpdateAsync(update => update.SetProperty(v => v.StockQuantity, v => v.StockQuantity + group.Quantity));
+                        if (rows == 0) return StockRestoreResult.Fail("Biến thể trong đơn hàng không còn tồn tại");
+                    }
+                    else variant.StockQuantity += group.Quantity;
                     restoredItems.Add(new StockRestoreItem
                     {
-                        ProductId = item.ProductId,
-                        ProductName = product.Name,
-                        QuantityRestored = item.Quantity
+                        ProductId = group.ProductId,
+                        ProductVariantId = group.ProductVariantId,
+                        ProductName = $"{group.Item.ProductName} · {group.Item.VariantName ?? variant.Name}",
+                        QuantityRestored = group.Quantity,
+                        CurrentStock = variant.StockQuantity
                     });
+                }
+                else if (products.TryGetValue(group.ProductId, out var product))
+                {
+                    if (supportsTransactions)
+                    {
+                        var rows = await _context.Products.Where(p => p.Id == product.Id)
+                            .ExecuteUpdateAsync(update => update.SetProperty(p => p.StockQuantity, p => p.StockQuantity + group.Quantity));
+                        if (rows == 0) return StockRestoreResult.Fail("Sản phẩm trong đơn hàng không còn tồn tại");
+                    }
+                    else product.StockQuantity += group.Quantity;
+                    restoredItems.Add(new StockRestoreItem
+                    {
+                        ProductId = group.ProductId,
+                        ProductName = product.Name,
+                        QuantityRestored = group.Quantity,
+                        CurrentStock = product.StockQuantity
+                    });
+                }
+            }
+
+            // ExecuteUpdate bypasses tracking. Read the committed candidates in
+            // two batches while still inside the transaction so realtime receives
+            // the exact post-restore quantities, including concurrent-safe updates.
+            if (supportsTransactions)
+            {
+                var currentProductStocks = await _context.Products.AsNoTracking()
+                    .Where(product => productIds.Contains(product.Id))
+                    .ToDictionaryAsync(product => product.Id, product => product.StockQuantity);
+                var currentVariantStocks = await _context.ProductVariants.AsNoTracking()
+                    .Where(variant => variantIds.Contains(variant.Id))
+                    .ToDictionaryAsync(variant => variant.Id, variant => variant.StockQuantity);
+                foreach (var item in restoredItems)
+                {
+                    if (item.ProductVariantId.HasValue && currentVariantStocks.TryGetValue(item.ProductVariantId.Value, out var variantStock))
+                        item.CurrentStock = variantStock;
+                    else if (currentProductStocks.TryGetValue(item.ProductId, out var productStock))
+                        item.CurrentStock = productStock;
                 }
             }
 
@@ -241,6 +297,10 @@ public class OrderRepository : Repository<Order>, IOrderRepository
             if (transaction != null)
             {
                 await transaction.CommitAsync();
+                // ExecuteUpdate bypasses tracked stock entities. Detach after commit so
+                // the caller's detail query observes the committed quantities.
+                foreach (var product in products.Values) _context.Entry(product).State = EntityState.Detached;
+                foreach (var variant in variants.Values) _context.Entry(variant).State = EntityState.Detached;
             }
 
             return StockRestoreResult.Success(restoredItems);

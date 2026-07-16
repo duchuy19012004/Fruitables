@@ -85,7 +85,8 @@ public sealed class IndexingService : IIndexingService
             .AsNoTracking()
             .Include(p => p.Category)
             .Include(p => p.Tags)
-            .Include(p => p.Variants)
+            .Include(p => p.PriceSchedules)
+            .Include(p => p.Variants).ThenInclude(v => v.PriceSchedules)
             .FirstOrDefaultAsync(p => p.Id == productId, ct);
 
         // Xóa mềm / ẩn / không tồn tại → gỡ khỏi sổ
@@ -93,6 +94,15 @@ public sealed class IndexingService : IIndexingService
         {
             await DeactivateSourceAsync(KnowledgeSourceType.Product, sourceId, ct);
             return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var productQuote = ProductPricingService.CalculateQuote(product.Price, product.PriceSchedules, now);
+        if (productQuote.IsDiscounted) product.SalePrice = productQuote.EffectivePrice;
+        foreach (var variant in product.Variants)
+        {
+            var quote = ProductPricingService.CalculateQuote(variant.Price, variant.PriceSchedules, now);
+            if (quote.IsDiscounted) variant.SalePrice = quote.EffectivePrice;
         }
 
         var safeName = SanitizeCatalogText(product.Name, MaxProductNameChars);
@@ -355,21 +365,39 @@ public sealed class IndexingService : IIndexingService
     {
         var parts = new List<string>();
         var unit = SanitizeCatalogText(product.Unit, 20);
+        var activeVariants = product.Variants?
+            .Where(v => v.IsActive)
+            .OrderBy(v => v.Name)
+            .ToList() ?? [];
 
         parts.Add($"Tên sản phẩm: {SanitizeCatalogText(product.Name, MaxProductNameChars)}");
 
         if (product.Category is not null && !string.IsNullOrWhiteSpace(product.Category.Name))
             parts.Add($"Danh mục: {SanitizeCatalogText(product.Category.Name, MaxProductNameChars)}");
 
-        parts.Add($"Giá: {product.Price.ToString("#,##0", CultureInfo.InvariantCulture)}đ / {unit}");
-
-        if (product.SalePrice.HasValue && product.SalePrice.Value > 0 && product.SalePrice.Value < product.Price)
-            parts.Add($"Giá khuyến mãi: {product.SalePrice.Value.ToString("#,##0", CultureInfo.InvariantCulture)}đ / {unit}");
-
-        if (product.StockQuantity > 0)
-            parts.Add($"Tồn kho: {product.StockQuantity} {unit} (còn hàng)");
+        if (activeVariants.Count > 0)
+        {
+            // Keep the product's reference price searchable while the purchasable
+            // prices below are taken exclusively from active variants.
+            parts.Add($"Giá gốc sản phẩm: {product.Price.ToString("#,##0", CultureInfo.InvariantCulture)}đ / {unit}");
+            var effectivePrices = activeVariants.Select(v => v.SalePrice ?? v.Price).ToList();
+            var minPrice = effectivePrices.Min();
+            var maxPrice = effectivePrices.Max();
+            parts.Add(minPrice == maxPrice
+                ? $"Giá: {minPrice.ToString("#,##0", CultureInfo.InvariantCulture)}đ / {unit}"
+                : $"Khoảng giá biến thể: {minPrice.ToString("#,##0", CultureInfo.InvariantCulture)}đ - {maxPrice.ToString("#,##0", CultureInfo.InvariantCulture)}đ / {unit}");
+            var totalStock = activeVariants.Sum(v => v.StockQuantity);
+            parts.Add(totalStock > 0 ? $"Tổng tồn kho biến thể: {totalStock} (còn hàng)" : "Tổng tồn kho biến thể: 0");
+        }
         else
-            parts.Add($"Tồn kho: 0 {unit}");
+        {
+            parts.Add($"Giá: {product.Price.ToString("#,##0", CultureInfo.InvariantCulture)}đ / {unit}");
+            if (product.SalePrice.HasValue && product.SalePrice.Value >= 0 && product.SalePrice.Value < product.Price)
+                parts.Add($"Giá khuyến mãi: {product.SalePrice.Value.ToString("#,##0", CultureInfo.InvariantCulture)}đ / {unit}");
+            parts.Add(product.StockQuantity > 0
+                ? $"Tồn kho: {product.StockQuantity} {unit} (còn hàng)"
+                : $"Tồn kho: 0 {unit}");
+        }
 
         if (product.MinOrderQuantity > 1)
             parts.Add($"Mua tối thiểu: {product.MinOrderQuantity} {unit}");
@@ -395,17 +423,13 @@ public sealed class IndexingService : IIndexingService
             parts.Add($"Tag: {tags}");
         }
 
-        var activeVariants = product.Variants?
-            .Where(v => v.IsActive)
-            .OrderBy(v => v.Name)
-            .ToList();
-        if (activeVariants is not null && activeVariants.Count > 0)
+        if (activeVariants.Count > 0)
         {
             parts.Add("Biến thể:");
             foreach (var v in activeVariants)
             {
                 var line = $"- {SanitizeCatalogText(v.Name, 60)}: {v.Price.ToString("#,##0", CultureInfo.InvariantCulture)}đ";
-                if (v.SalePrice.HasValue && v.SalePrice.Value > 0 && v.SalePrice.Value < v.Price)
+                if (v.SalePrice.HasValue && v.SalePrice.Value >= 0 && v.SalePrice.Value < v.Price)
                     line += $" (khuyến mãi {v.SalePrice.Value.ToString("#,##0", CultureInfo.InvariantCulture)}đ)";
                 line += $", tồn kho {v.StockQuantity}";
                 parts.Add(line);

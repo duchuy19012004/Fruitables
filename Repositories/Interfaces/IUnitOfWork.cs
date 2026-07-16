@@ -29,6 +29,7 @@ public interface IUnitOfWork : IDisposable
     IRepository<ProductVariant> ProductVariants { get; }
     IRepository<ProductTag> ProductTags { get; }
     IRepository<ProductLog> ProductLogs { get; }
+    IRepository<PriceSchedule> PriceSchedules { get; }
     
     // New repository for Address
     IRepository<Address> Addresses { get; }
@@ -48,5 +49,6 @@ public interface IUnitOfWork : IDisposable
     // Exposed so services can wrap atomic flows (e.g. order create, role assign).
     Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction BeginTransaction();
     Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync();
+    Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(System.Data.IsolationLevel isolationLevel);
     string? DatabaseProviderName { get; }
 }

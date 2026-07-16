@@ -9,9 +9,10 @@
         var primaryImage = product.Images?.FirstOrDefault(i => i.IsPrimary)?.ImageUrl
             ?? product.Images?.FirstOrDefault()?.ImageUrl
             ?? "~/img/fruite-item-5.jpg";
-        var isSale = product.SalePrice.HasValue && product.SalePrice.Value < product.Price;
-        var displayPrice = isSale ? product.SalePrice!.Value : product.Price;
-        var discountPercent = isSale ? (int)Math.Round((1 - product.SalePrice!.Value / product.Price) * 100) : 0;
+        var hasVariants = product.Variants.Any(v => v.IsActive);
+        var isSale = !hasVariants && product.DisplayMinPrice < product.Price;
+        var displayPrice = product.DisplayMinPrice;
+        var discountPercent = isSale ? (int)Math.Round((1 - product.DisplayMinPrice / product.Price) * 100) : 0;
 
         <article class="shop-product-card">
             <a asp-controller="Shop" asp-action="Detail" asp-route-slug="@product.Slug" class="shop-product-image">
@@ -30,13 +31,19 @@
                 <p>@(product.ShortDescription ?? product.Description?.Substring(0, Math.Min(product.Description?.Length ?? 0, 76)) ?? "Sản phẩm tươi ngon cho gia đình.")</p>
                 <div class="shop-product-footer">
                     <div class="shop-price">
-                        <strong>@displayPrice.ToString("N0")đ</strong>
+                        <strong>@(hasVariants ? $"{product.DisplayMinPrice:N0}đ{(product.DisplayMaxPrice != product.DisplayMinPrice ? $" – {product.DisplayMaxPrice:N0}đ" : "")}" : $"{displayPrice:N0}đ")</strong>
                         <small>/ @product.Unit</small>
                         @if (isSale)
                         {
                             <del>@product.Price.ToString("N0")đ</del>
                         }
                     </div>
+                    @if (hasVariants)
+                    {
+                        <a asp-controller="Shop" asp-action="Detail" asp-route-slug="@product.Slug" class="btn btn-outline-primary">Chọn</a>
+                    }
+                    else
+                    {
                     <form asp-controller="Cart" asp-action="AddToCart" method="post">
                         <input type="hidden" name="productId" value="@product.Id" />
                         <button type="submit" aria-label="Thêm @product.Name vào giỏ hàng">
@@ -44,6 +51,7 @@
                             <span>Thêm</span>
                         </button>
                     </form>
+                    }
                 </div>
             </div>
         </article>

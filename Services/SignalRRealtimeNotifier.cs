@@ -84,15 +84,29 @@ namespace Fruitables.Services
             }
         }
 
-        public async Task NotifyStockChangedAsync(int productId, int newStock)
+        public Task NotifyStockChangedAsync(int productId, int newStock) => NotifyStockChangedAsync(productId, newStock, null);
+
+        public async Task NotifyStockChangedAsync(int productId, int newStock, int? variantId)
         {
             try
             {
-                await _hubContext.Clients.Group($"Product:{productId}").SendAsync("StockChanged", new { ProductId = productId, Stock = newStock });
+                await _hubContext.Clients.Group($"Product:{productId}").SendAsync("StockChanged", new { ProductId = productId, VariantId = variantId, Stock = newStock });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error broadcasting StockChanged for ProductId: {ProductId}", productId);
+            }
+        }
+
+        public async Task NotifyPriceChangedAsync(int productId, int? variantId = null)
+        {
+            try
+            {
+                await _hubContext.Clients.All.SendAsync("PriceChanged", new { ProductId = productId, VariantId = variantId });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error broadcasting PriceChanged for ProductId: {ProductId}", productId);
             }
         }
     }

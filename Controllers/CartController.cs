@@ -25,7 +25,8 @@ public class CartController : Controller
     public async Task<IActionResult> Index()
     {
         var sessionId = GetSessionId();
-        var cart = await _cartService.GetCartAsync(sessionId);
+        var cart = await _cartService.RepriceForCheckoutAsync(sessionId)
+            ?? await _cartService.GetCartAsync(sessionId);
         ViewBag.CartCount = cart.Items.Sum(i => i.Quantity);
         return View(cart);
     }
@@ -33,29 +34,29 @@ public class CartController : Controller
     // POST: Thêm sản phẩm vào giỏ (yêu cầu đăng nhập)
     [HttpPost]
     [Authorize]
-    public async Task<IActionResult> AddToCart(int productId, int quantity = 1)
+    public async Task<IActionResult> AddToCart(int productId, int quantity = 1, int? variantId = null)
     {
         var sessionId = GetSessionId();
-        await _cartService.AddToCartAsync(sessionId, productId, quantity);
+        await _cartService.AddToCartAsync(sessionId, productId, quantity, variantId);
         TempData["Success"] = "Product added to cart!";
         return RedirectToAction(nameof(Index));
     }
 
     // POST: Cập nhật số lượng sản phẩm (form submit)
     [HttpPost]
-    public async Task<IActionResult> UpdateQuantity(int productId, int quantity)
+    public async Task<IActionResult> UpdateQuantity(int cartItemId, int quantity)
     {
         var sessionId = GetSessionId();
-        await _cartService.UpdateQuantityAsync(sessionId, productId, quantity);
+        await _cartService.UpdateQuantityAsync(sessionId, cartItemId, quantity);
         return RedirectToAction(nameof(Index));
     }
 
     // POST: Xóa sản phẩm khỏi giỏ (form submit)
     [HttpPost]
-    public async Task<IActionResult> RemoveFromCart(int productId)
+    public async Task<IActionResult> RemoveFromCart(int cartItemId)
     {
         var sessionId = GetSessionId();
-        await _cartService.RemoveFromCartAsync(sessionId, productId);
+        await _cartService.RemoveFromCartAsync(sessionId, cartItemId);
         return RedirectToAction(nameof(Index));
     }
 
@@ -64,9 +65,9 @@ public class CartController : Controller
     public async Task<IActionResult> UpdateQuantityAjax([FromBody] UpdateQuantityRequest request)
     {
         var sessionId = GetSessionId();
-        await _cartService.UpdateQuantityAsync(sessionId, request.ProductId, request.Quantity);
+        await _cartService.UpdateQuantityAsync(sessionId, request.CartItemId, request.Quantity);
         var cart = await _cartService.GetCartAsync(sessionId);
-        var item = cart.Items.FirstOrDefault(i => i.ProductId == request.ProductId);
+        var item = cart.Items.FirstOrDefault(i => i.CartItemId == request.CartItemId);
         
         return Json(new
         {
@@ -98,7 +99,7 @@ public class CartController : Controller
     public async Task<IActionResult> RemoveFromCartAjax([FromBody] RemoveFromCartRequest request)
     {
         var sessionId = GetSessionId();
-        await _cartService.RemoveFromCartAsync(sessionId, request.ProductId);
+        await _cartService.RemoveFromCartAsync(sessionId, request.CartItemId);
         var cart = await _cartService.GetCartAsync(sessionId);
         
         return Json(new
@@ -155,14 +156,14 @@ public class CartController : Controller
     // Request DTO cho cập nhật số lượng
     public class UpdateQuantityRequest
     {
-        public int ProductId { get; set; }
+        public int CartItemId { get; set; }
         public int Quantity { get; set; }
     }
 
     // Request DTO cho xóa sản phẩm
     public class RemoveFromCartRequest
     {
-        public int ProductId { get; set; }
+        public int CartItemId { get; set; }
     }
     
     // Request DTO cho tính phí ship

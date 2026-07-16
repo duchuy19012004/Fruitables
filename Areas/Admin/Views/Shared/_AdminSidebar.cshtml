@@ -65,6 +65,13 @@
             </a>
         </li>
         <li class="sidebar-nav-item">
+            <a asp-action="Index" asp-controller="Price" asp-area="Admin"
+               class="sidebar-nav-link @(controller == "Price" ? "active" : "")">
+                <i class="fas fa-tags"></i>
+                <span>Quản lý giá</span>
+            </a>
+        </li>
+        <li class="sidebar-nav-item">
             <a asp-action="Index" asp-controller="Category" asp-area="Admin" 
                class="sidebar-nav-link @(controller == "Category" ? "active" : "")">
                 <i class="fas fa-tags"></i>

@@ -18,8 +18,11 @@ public class ProductVariant
     [Column(TypeName = "decimal(10,2)")]
     public decimal Price { get; set; }
 
-    [Column(TypeName = "decimal(10,2)")]
+    [NotMapped]
     public decimal? SalePrice { get; set; }
+
+    [NotMapped]
+    public decimal DisplayPrice { get; set; }
 
     public int StockQuantity { get; set; } = 0;
 
@@ -29,4 +32,5 @@ public class ProductVariant
 
     // Navigation property
     public virtual Product Product { get; set; } = null!;
+    public virtual ICollection<PriceSchedule> PriceSchedules { get; set; } = new List<PriceSchedule>();
 }

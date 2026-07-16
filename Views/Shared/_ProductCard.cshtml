@@ -1,9 +1,10 @@
 @model Fruitables.Models.Product
 @{
     var isFeatured = Model.IsFeatured;
-    var isSale = Model.SalePrice.HasValue && Model.SalePrice < Model.Price;
+    var hasVariants = Model.Variants.Any(v => v.IsActive);
+    var isSale = !hasVariants && Model.DisplayMinPrice < Model.Price;
     var showCategoryBadge = ViewData["ShowCategoryBadge"] as bool? ?? true;
-    var discountPercent = isSale ? (int)Math.Round((1 - (Model.SalePrice!.Value / Model.Price)) * 100) : 0;
+    var discountPercent = isSale ? (int)Math.Round((1 - (Model.DisplayMinPrice / Model.Price)) * 100) : 0;
 }
 
 <div class="col-md-6 col-lg-4 col-xl-3 product-card-wrapper" data-featured="@isFeatured.ToString().ToLower()" data-sale="@isSale.ToString().ToLower()">
@@ -44,10 +45,14 @@
             </h4>
             <p>@(Model.ShortDescription ?? Model.Description?.Substring(0, Math.Min(Model.Description?.Length ?? 0, 60)) ?? "Tươi ngon, phù hợp cho bữa ăn gia đình.")</p>
             <div class="d-flex justify-content-between flex-lg-wrap">
-                @if (isSale)
+                @if (hasVariants)
+                {
+                    <div class="price-wrapper"><span class="regular-price">@Model.DisplayMinPrice.ToString("N0")đ@(Model.DisplayMaxPrice != Model.DisplayMinPrice ? $" – {Model.DisplayMaxPrice:N0}đ" : "")</span><span class="unit-text">/ @Model.Unit</span></div>
+                }
+                else if (isSale)
                 {
                     <div class="price-wrapper">
-                        <span class="sale-price">@Model.SalePrice!.Value.ToString("N0")đ</span>
+                        <span class="sale-price">@Model.DisplayMinPrice.ToString("N0")đ</span>
                         <span class="unit-text">/ @Model.Unit</span>
                         <div class="original-price">@Model.Price.ToString("N0")đ</div>
                     </div>
@@ -59,12 +64,19 @@
                         <span class="unit-text">/ @Model.Unit</span>
                     </div>
                 }
+                @if (hasVariants)
+                {
+                    <a asp-controller="Shop" asp-action="Detail" asp-route-slug="@Model.Slug" class="btn border border-secondary rounded-pill px-3 text-primary">Chọn biến thể</a>
+                }
+                else
+                {
                 <form asp-controller="Cart" asp-action="AddToCart" method="post" class="d-inline">
                     <input type="hidden" name="productId" value="@Model.Id" />
                     <button type="submit" class="btn border border-secondary rounded-pill px-3 text-primary">
                         <i class="fa fa-shopping-bag me-2 text-primary"></i> Thêm vào giỏ
                     </button>
                 </form>
+                }
             </div>
         </div>
     </div>

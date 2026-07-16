@@ -67,7 +67,7 @@
                         <div class="col-md-6 mb-3">
                             <label for="request_Price" class="form-label">Giá gốc <span class="text-danger">*</span></label>
                             <div class="input-group">
-                                <input type="number" name="request.Price" id="request_Price" value="@Model.Product.Price" step="0.01" class="form-control" placeholder="0" />
+                                <input type="number" name="request.Price" id="request_Price" value="@Model.Product.Price" step="0.01" class="form-control" placeholder="0" readonly />
                                 <span class="input-group-text">đ</span>
                             </div>
                             <small class="text-muted d-flex align-items-center mt-1">
@@ -75,16 +75,10 @@
                                 <span id="pricePreview">@Model.Product.Price.ToString("N0") VND</span>
                             </small>
                         </div>
-                        <div class="col-md-6 mb-3">
-                            <label for="request_SalePrice" class="form-label">Giá khuyến mãi</label>
-                            <div class="input-group">
-                                <input type="number" name="request.SalePrice" id="request_SalePrice" value="@Model.Product.SalePrice" step="0.01" class="form-control" placeholder="0" />
-                                <span class="input-group-text">đ</span>
-                            </div>
-                            <small class="text-muted d-flex align-items-center mt-1">
-                                <i class="fas fa-eye me-1"></i>
-                                <span id="salePricePreview">@(Model.Product.SalePrice?.ToString("N0") ?? "0") VND</span>
-                            </small>
+                        <div class="col-md-6 mb-3 d-flex align-items-end">
+                            <a asp-area="Admin" asp-controller="Price" asp-action="Index" asp-route-search="@Model.Product.Name" class="btn btn-outline-primary w-100">
+                                <i class="fas fa-calendar-alt me-1"></i> Quản lý giá và lịch giảm
+                            </a>
                         </div>
                     </div>
 
@@ -359,14 +353,6 @@
                     </small>
                 </div>
                 <div class="mb-3">
-                    <label class="form-label">Giá khuyến mãi</label>
-                    <input type="number" id="variantSalePrice" class="form-control" placeholder="0" step="0.01" />
-                    <small class="text-muted d-flex align-items-center mt-1">
-                        <i class="fas fa-eye me-1"></i>
-                        <span id="variantSalePricePreview">0 VND</span>
-                    </small>
-                </div>
-                <div class="mb-3">
                     <label class="form-label">Số lượng tồn kho</label>
                     <input type="number" id="variantStock" class="form-control" placeholder="0" />
                 </div>
@@ -400,17 +386,9 @@
             document.getElementById('pricePreview').textContent = formatPrice(e.target.value);
         });
 
-        document.getElementById('request_SalePrice')?.addEventListener('input', function(e) {
-            document.getElementById('salePricePreview').textContent = formatPrice(e.target.value);
-        });
-
         // Variant price formatting
         document.getElementById('variantPrice')?.addEventListener('input', function(e) {
             document.getElementById('variantPricePreview').textContent = formatPrice(e.target.value);
-        });
-
-        document.getElementById('variantSalePrice')?.addEventListener('input', function(e) {
-            document.getElementById('variantSalePricePreview').textContent = formatPrice(e.target.value);
         });
 
         // Tags management
@@ -505,7 +483,6 @@
                 sku: document.getElementById('variantSKU').value,
                 name: document.getElementById('variantName').value,
                 price: parseFloat(document.getElementById('variantPrice').value),
-                salePrice: document.getElementById('variantSalePrice').value ? parseFloat(document.getElementById('variantSalePrice').value) : null,
                 stockQuantity: parseInt(document.getElementById('variantStock').value) || 0,
                 isActive: document.getElementById('variantIsActive').checked
             };

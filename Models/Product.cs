@@ -23,8 +23,17 @@ public class Product
     [Column(TypeName = "decimal(10,2)")]
     public decimal Price { get; set; }
 
-    [Column(TypeName = "decimal(10,2)")]
+    [NotMapped]
     public decimal? SalePrice { get; set; }
+
+    [NotMapped]
+    public decimal DisplayMinPrice { get; set; }
+
+    [NotMapped]
+    public decimal DisplayMaxPrice { get; set; }
+
+    [NotMapped]
+    public bool HasPriceRange => DisplayMaxPrice > DisplayMinPrice;
 
     [MaxLength(20)]
     public string Unit { get; set; } = "kg";
@@ -65,4 +74,5 @@ public class Product
     public virtual ICollection<Review> Reviews { get; set; } = new List<Review>();
     public virtual ICollection<ProductTag> Tags { get; set; } = new List<ProductTag>();
     public virtual ICollection<ProductVariant> Variants { get; set; } = new List<ProductVariant>();
+    public virtual ICollection<PriceSchedule> PriceSchedules { get; set; } = new List<PriceSchedule>();
 }
