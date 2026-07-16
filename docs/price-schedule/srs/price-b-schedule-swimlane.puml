@@ -1,0 +1,58 @@
+@startuml
+!theme plain
+title B. Đặt lịch hẹn giá (variant)
+
+skinparam shadowing false
+skinparam activity {
+  StartColor #000000
+  EndColor #000000
+  BackgroundColor #FFFFFF
+  BorderColor #000000
+  DiamondBackgroundColor #FFFFFF
+  DiamondBorderColor #000000
+}
+
+|Admin|
+start
+:Chọn sản phẩm / variant;
+
+|Hệ thống|
+:Hiện giá hiện tại\nvà lịch chờ nếu có;
+if (Đã có lịch chờ?) then (Có)
+  |Admin|
+  if (Hủy lịch cũ và đặt lại?) then (Không)
+    |Admin|
+    :Giữ lịch cũ;
+    stop
+  else (Có)
+    |Hệ thống|
+    :Hủy lịch chờ cũ;
+  endif
+else (Không)
+endif
+
+|Admin|
+:Chọn mục tiêu giá\n(gốc hoặc KM);
+:Nhập giá mới\n(hoặc gỡ KM);
+:Chọn thời điểm áp dụng;
+
+|Hệ thống|
+if (Giá và thời điểm hợp lệ?) then (Không)
+  |Hệ thống|
+  :Báo lỗi;
+  |Admin|
+  :Sửa lại;
+  stop
+else (Có)
+endif
+
+|Admin|
+:Xác nhận đặt lịch;
+
+|Hệ thống|
+:Lưu một lịch chờ\n(trạng thái Chờ);
+
+|Admin|
+:Xem xác nhận đã hẹn;
+stop
+@enduml

@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Price schedule — Activity swimlanes</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px 14px 40px;
+      background: #e8e8e8;
+      font-family: "Segoe UI", Arial, sans-serif;
+      color: #111;
+    }
+    .page { max-width: 1100px; margin: 0 auto; }
+    h1 { margin: 0 0 6px; font-size: 1.25rem; }
+    .sub { margin: 0 0 16px; color: #444; font-size: 0.9rem; }
+    nav {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      margin-bottom: 18px;
+    }
+    nav a {
+      padding: 8px 12px;
+      background: #fff;
+      border: 1.5px solid #111;
+      text-decoration: none;
+      color: #111;
+      font-weight: 600;
+      font-size: 0.85rem;
+    }
+    section {
+      margin-bottom: 28px;
+      scroll-margin-top: 12px;
+    }
+    section h2 {
+      margin: 0 0 8px;
+      font-size: 1.05rem;
+    }
+    .frame {
+      background: #fff;
+      border: 2px solid #111;
+      overflow: auto;
+    }
+    .frame img {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+    .meta {
+      margin-top: 4px;
+      font-size: 0.78rem;
+      color: #555;
+    }
+    .meta a { color: #1d4ed8; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <h1>Quản lý giá &amp; lịch hẹn — Activity swimlane</h1>
+    <p class="sub">
+      4 diagram · lane Admin | Hệ thống · spec
+      <a href="../../superpowers/specs/2026-07-16-price-schedule-activity-design.md">2026-07-16-price-schedule-activity-design.md</a>
+    </p>
+    <nav>
+      <a href="#a">A. Đổi ngay</a>
+      <a href="#b">B. Đặt lịch</a>
+      <a href="#c">C. Hủy lịch</a>
+      <a href="#d">D. Áp dụng</a>
+      <a href="./price-schedule-flows.md">flows.md</a>
+    </nav>
+
+    <section id="a">
+      <h2>A. Đổi giá ngay</h2>
+      <div class="frame">
+        <img src="./price-a-immediate-swimlane.svg" alt="Activity A đổi giá ngay" />
+      </div>
+      <p class="meta"><a href="./price-a-immediate-swimlane.puml">.puml</a> · <a href="./price-a-immediate-swimlane.png">.png</a></p>
+    </section>
+
+    <section id="b">
+      <h2>B. Đặt lịch hẹn giá</h2>
+      <div class="frame">
+        <img src="./price-b-schedule-swimlane.svg" alt="Activity B đặt lịch hẹn giá" />
+      </div>
+      <p class="meta"><a href="./price-b-schedule-swimlane.puml">.puml</a> · <a href="./price-b-schedule-swimlane.png">.png</a></p>
+    </section>
+
+    <section id="c">
+      <h2>C. Hủy lịch chờ</h2>
+      <div class="frame">
+        <img src="./price-c-cancel-swimlane.svg" alt="Activity C hủy lịch chờ" />
+      </div>
+      <p class="meta"><a href="./price-c-cancel-swimlane.puml">.puml</a> · <a href="./price-c-cancel-swimlane.png">.png</a></p>
+    </section>
+
+    <section id="d">
+      <h2>D. Hệ thống áp dụng lịch</h2>
+      <div class="frame">
+        <img src="./price-d-apply-swimlane.svg" alt="Activity D hệ thống áp dụng lịch" />
+      </div>
+      <p class="meta"><a href="./price-d-apply-swimlane.puml">.puml</a> · <a href="./price-d-apply-swimlane.png">.png</a></p>
+    </section>
+  </div>
+</body>
+</html>
