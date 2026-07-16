@@ -1,0 +1,76 @@
+@model Fruitables.ViewModels.SalesHubVm
+@{
+    var c = Model.Cancellations;
+    string Money(decimal v) => v.ToString("N0") + " đ";
+    string DeltaHtml(MetricValue m)
+    {
+        if (m.DeltaPercent is null)
+        {
+            if (m.Previous is 0 or null && m.Value > 0) return "<span class=\"sa-delta-flat\">mới</span>";
+            return "<span class=\"sa-delta-flat\">—</span>";
+        }
+        var pct = m.DeltaPercent.Value;
+        if (pct > 0) return $"<span class=\"sa-delta-up\">↑ {pct:0.##}%</span>";
+        if (pct < 0) return $"<span class=\"sa-delta-down\">↓ {Math.Abs(pct):0.##}%</span>";
+        return "<span class=\"sa-delta-flat\">—</span>";
+    }
+}
+
+@if (c == null)
+{
+    <div class="sa-empty">Không có dữ liệu hủy &amp; hoàn cho kỳ này.</div>
+    return;
+}
+
+<div class="sa-kpi-grid four">
+    <div class="sa-card sa-kpi danger">
+        <span class="sa-k-label">Đơn hủy</span>
+        <span class="sa-k-value">@c.CancelledCount.Value.ToString("N0")</span>
+        @Html.Raw(DeltaHtml(c.CancelledCount))
+    </div>
+    <div class="sa-card sa-kpi">
+        <span class="sa-k-label">Tỷ lệ hủy</span>
+        <span class="sa-k-value">@c.CancelRate.Value.ToString("0.##")%</span>
+        @Html.Raw(DeltaHtml(c.CancelRate))
+    </div>
+    <div class="sa-card sa-kpi">
+        <span class="sa-k-label">Giá trị hủy</span>
+        <span class="sa-k-value sa-money">@Money(c.CancelledValue.Value)</span>
+        @Html.Raw(DeltaHtml(c.CancelledValue))
+    </div>
+    <div class="sa-card sa-kpi">
+        <span class="sa-k-label">Refund rate</span>
+        <span class="sa-k-value">@c.RefundRate.Value.ToString("0.##")%</span>
+        @Html.Raw(DeltaHtml(c.RefundRate))
+    </div>
+</div>
+
+<div class="sa-g sa-g-21">
+    <div class="sa-card">
+        <div class="sa-card-h">Xu hướng hủy</div>
+        <div class="sa-card-b">
+            <div class="sa-chart-box lg"><canvas id="sa-chart-cancel-trend" data-chart="cancelTrend"></canvas></div>
+        </div>
+    </div>
+    <div class="sa-card">
+        <div class="sa-card-h">Lý do hủy</div>
+        <div class="sa-card-b">
+            <div class="sa-chart-box lg"><canvas id="sa-chart-reasons" data-chart="reasons"></canvas></div>
+        </div>
+    </div>
+</div>
+
+<div class="sa-g sa-g-2">
+    <div class="sa-card">
+        <div class="sa-card-h">Giá trị hủy theo SP</div>
+        <div class="sa-card-b">
+            <div class="sa-chart-box md"><canvas id="sa-chart-value-by-product" data-chart="valueByProduct"></canvas></div>
+        </div>
+    </div>
+    <div class="sa-card">
+        <div class="sa-card-h">Hủy theo danh mục</div>
+        <div class="sa-card-b">
+            <div class="sa-chart-box md"><canvas id="sa-chart-value-by-category" data-chart="valueByCategory"></canvas></div>
+        </div>
+    </div>
+</div>

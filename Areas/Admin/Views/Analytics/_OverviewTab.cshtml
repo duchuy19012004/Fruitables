@@ -1,0 +1,223 @@
+@model Fruitables.ViewModels.SalesHubVm
+@{
+    var o = Model.Overview;
+    string Money(decimal v) => v.ToString("N0") + " đ";
+    string DeltaHtml(MetricValue m)
+    {
+        if (m.DeltaPercent is null)
+        {
+            if (m.Previous is 0 or null && m.Value > 0) return "<span class=\"sa-delta-flat\">mới</span>";
+            return "<span class=\"sa-delta-flat\">—</span>";
+        }
+        var pct = m.DeltaPercent.Value;
+        if (pct > 0) return $"<span class=\"sa-delta-up\">↑ {pct:0.##}%</span>";
+        if (pct < 0) return $"<span class=\"sa-delta-down\">↓ {Math.Abs(pct):0.##}%</span>";
+        return "<span class=\"sa-delta-flat\">—</span>";
+    }
+    string MerchUrl() => Url.Action("Index", "Analytics", new
+    {
+        area = "Admin",
+        preset = Model.Filter.Preset,
+        from = Model.Filter.From,
+        to = Model.Filter.To,
+        tab = "merch",
+        dimension = "product",
+        take = Model.Filter.Take
+    })!;
+}
+
+@if (o == null)
+{
+    <div class="sa-empty">Không có dữ liệu tổng quan cho kỳ này.</div>
+    return;
+}
+
+<div class="sa-kpi-grid six">
+    <div class="sa-card sa-kpi gross">
+        <span class="sa-k-label" title="Sum(Total) đơn Paid — theo ngày tạo đơn">Gross</span>
+        <span class="sa-k-value sa-money">@Money(o.Gross.Value)</span>
+        @Html.Raw(DeltaHtml(o.Gross))
+    </div>
+    <div class="sa-card sa-kpi net">
+        <span class="sa-k-label" title="Delivered+Paid − Refund — theo ngày tạo đơn">Net</span>
+        <span class="sa-k-value sa-money">@Money(o.Net.Value)</span>
+        @Html.Raw(DeltaHtml(o.Net))
+    </div>
+    <div class="sa-card sa-kpi">
+        <span class="sa-k-label">Δ Net</span>
+        <span class="sa-k-value sa-money" style="color:var(--sa-net)">
+            @(o.Net.Delta is null ? "—" : ((o.Net.Delta >= 0 ? "+" : "") + Money(o.Net.Delta.Value)))
+        </span>
+        @Html.Raw(DeltaHtml(o.Net))
+    </div>
+    <div class="sa-card sa-kpi">
+        <span class="sa-k-label">Đơn paid</span>
+        <span class="sa-k-value">@o.OrdersPaid.Value.ToString("N0")</span>
+        @Html.Raw(DeltaHtml(o.OrdersPaid))
+    </div>
+    <div class="sa-card sa-kpi">
+        <span class="sa-k-label">AOV net</span>
+        <span class="sa-k-value sa-money">@Money(o.AovNet.Value)</span>
+        @Html.Raw(DeltaHtml(o.AovNet))
+    </div>
+    <div class="sa-card sa-kpi">
+        <span class="sa-k-label">Cancel rate</span>
+        <span class="sa-k-value">@o.CancelRate.Value.ToString("0.##")%</span>
+        @Html.Raw(DeltaHtml(o.CancelRate))
+    </div>
+</div>
+
+<div class="sa-g sa-g-21">
+    <div class="sa-card">
+        <div class="sa-card-h">
+            <span>Xu hướng Gross / Net <span class="sa-sub">· VND</span></span>
+        </div>
+        <div class="sa-card-b">
+            <div class="sa-chart-box lg"><canvas id="sa-chart-trend" data-chart="trend"></canvas></div>
+        </div>
+    </div>
+    <div class="sa-card">
+        <div class="sa-card-h">Số đơn theo ngày <span class="sa-sub">paid vs cancelled</span></div>
+        <div class="sa-card-b">
+            <div class="sa-chart-box lg"><canvas id="sa-chart-orders" data-chart="ordersVolume"></canvas></div>
+        </div>
+    </div>
+</div>
+
+<div class="sa-g sa-g-3">
+    <div class="sa-card">
+        <div class="sa-card-h">Mix danh mục <span class="sa-sub">Net share</span></div>
+        <div class="sa-card-b">
+            <div class="sa-chart-box md"><canvas id="sa-chart-category-mix" data-chart="categoryMix"></canvas></div>
+        </div>
+    </div>
+    <div class="sa-card">
+        <div class="sa-card-h">AOV Gross vs Net</div>
+        <div class="sa-card-b">
+            <div class="sa-chart-box md"><canvas id="sa-chart-aov" data-chart="aovTrend"></canvas></div>
+        </div>
+    </div>
+    <div class="sa-card">
+        <div class="sa-card-h">Đơn vị bán (units) <span class="sa-sub">net</span></div>
+        <div class="sa-card-b">
+            <div class="sa-chart-box md"><canvas id="sa-chart-units" data-chart="unitsTrend"></canvas></div>
+        </div>
+    </div>
+</div>
+
+<div class="sa-g sa-g-2">
+    <div class="sa-card">
+        <div class="sa-card-h">Pipeline đơn trong kỳ <span class="sa-sub">số đơn theo status</span></div>
+        <div class="sa-card-b">
+            <div class="sa-chart-box md"><canvas id="sa-chart-pipeline" data-chart="pipeline"></canvas></div>
+        </div>
+    </div>
+    <div class="sa-card">
+        <div class="sa-card-h">So kỳ liền trước <span class="sa-sub">Gross / Net / Orders</span></div>
+        <div class="sa-card-b">
+            <div class="sa-chart-box md"><canvas id="sa-chart-compare" data-chart="periodCompare"></canvas></div>
+        </div>
+    </div>
+</div>
+
+<div class="sa-g sa-g-2">
+    <div class="sa-card">
+        <div class="sa-card-h">
+            <span>Top 5 SP (Net)</span>
+            <a class="sa-btn" style="font-size:.72rem;padding:.2rem .45rem" href="@MerchUrl()">
+                Xem tab merch
+            </a>
+        </div>
+        <div class="sa-card-b" style="padding:0">
+            @if (o.TopProducts.Count == 0)
+            {
+                <div class="sa-empty">Chưa có sản phẩm trong kỳ.</div>
+            }
+            else
+            {
+                <table class="sa-data">
+                    <thead>
+                        <tr><th>#</th><th>Sản phẩm</th><th class="num">Net</th><th class="num">Δ</th></tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var row in o.TopProducts)
+                    {
+                        <tr>
+                            <td><span class="rank @(row.Rank <= 2 ? "top" : "")">@row.Rank</span></td>
+                            <td>@row.Name</td>
+                            <td class="num sa-money">@Money(row.NetRevenue)</td>
+                            <td class="num">
+                                @if (row.DeltaPercent is null)
+                                {
+                                    <span class="sa-delta-flat">—</span>
+                                }
+                                else if (row.DeltaPercent > 0)
+                                {
+                                    <span class="sa-delta-up">↑ @row.DeltaPercent.Value.ToString("0.##")%</span>
+                                }
+                                else if (row.DeltaPercent < 0)
+                                {
+                                    <span class="sa-delta-down">↓ @Math.Abs(row.DeltaPercent.Value).ToString("0.##")%</span>
+                                }
+                                else
+                                {
+                                    <span class="sa-delta-flat">—</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            }
+        </div>
+    </div>
+    <div class="sa-card">
+        <div class="sa-card-h">Top SP — horizontal bar</div>
+        <div class="sa-card-b">
+            <div class="sa-chart-box md"><canvas id="sa-chart-top-hbar" data-chart="topProductsBar"></canvas></div>
+        </div>
+    </div>
+</div>
+
+@if (o.TopCategories.Count > 0)
+{
+    <div class="sa-card" style="margin-bottom:.9rem">
+        <div class="sa-card-h">Top 5 danh mục (Net)</div>
+        <div class="sa-card-b" style="padding:0">
+            <table class="sa-data">
+                <thead>
+                    <tr><th>#</th><th>Danh mục</th><th class="num">Net</th><th class="num">Share</th><th class="num">Δ</th></tr>
+                </thead>
+                <tbody>
+                @foreach (var row in o.TopCategories)
+                {
+                    <tr>
+                        <td><span class="rank @(row.Rank <= 2 ? "top" : "")">@row.Rank</span></td>
+                        <td>@row.Name</td>
+                        <td class="num sa-money">@Money(row.NetRevenue)</td>
+                        <td class="num">@row.SharePercent.ToString("0.##")%</td>
+                        <td class="num">
+                            @if (row.DeltaPercent is null)
+                            {
+                                <span class="sa-delta-flat">—</span>
+                            }
+                            else if (row.DeltaPercent > 0)
+                            {
+                                <span class="sa-delta-up">↑ @row.DeltaPercent.Value.ToString("0.##")%</span>
+                            }
+                            else if (row.DeltaPercent < 0)
+                            {
+                                <span class="sa-delta-down">↓ @Math.Abs(row.DeltaPercent.Value).ToString("0.##")%</span>
+                            }
+                            else
+                            {
+                                <span class="sa-delta-flat">—</span>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}

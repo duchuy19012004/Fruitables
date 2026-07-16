@@ -1,0 +1,74 @@
+@model Fruitables.ViewModels.SalesHubVm
+@{
+    var f = Model.Filter;
+    var tab = f.Tab switch
+    {
+        SalesAnalyticsTab.Merch => "merch",
+        SalesAnalyticsTab.Cancellations => "cancellations",
+        _ => "overview"
+    };
+    var dim = f.Dimension == MerchDimension.Category ? "category" : "product";
+
+    string PresetUrl(DateRangePreset p) => Url.Action("Index", "Analytics", new
+    {
+        area = "Admin",
+        preset = p,
+        tab,
+        dimension = dim,
+        sort = f.Sort,
+        dir = f.Dir,
+        take = f.Take
+    })!;
+
+    var presets = new (DateRangePreset Value, string Label)[]
+    {
+        (DateRangePreset.Today, "Hôm nay"),
+        (DateRangePreset.Yesterday, "Hôm qua"),
+        (DateRangePreset.Last7Days, "7 ngày"),
+        (DateRangePreset.Last30Days, "30 ngày"),
+        (DateRangePreset.ThisMonth, "Tháng này"),
+        (DateRangePreset.LastMonth, "Tháng trước"),
+        (DateRangePreset.ThisYear, "Năm nay"),
+        (DateRangePreset.AllTime, "Tất cả")
+    };
+
+    var fromVal = f.From?.ToString("yyyy-MM-dd") ?? "";
+    var toVal = f.To?.ToString("yyyy-MM-dd") ?? "";
+    var prevLabel = string.IsNullOrEmpty(Model.Periods.Previous.Label)
+        ? "kỳ liền trước"
+        : Model.Periods.Previous.Label;
+}
+
+<div class="sa-filter-bar">
+    <span class="sa-label">Kỳ</span>
+    @foreach (var p in presets)
+    {
+        <a class="sa-pill @(f.Preset == p.Value && f.Preset != DateRangePreset.Custom ? "active" : "")"
+           href="@PresetUrl(p.Value)">@p.Label</a>
+    }
+
+    <form method="get" asp-action="Index" asp-controller="Analytics" asp-area="Admin" class="sa-filter-custom">
+        <input type="hidden" name="preset" value="@DateRangePreset.Custom" />
+        <input type="hidden" name="tab" value="@tab" />
+        <input type="hidden" name="dimension" value="@dim" />
+        @if (!string.IsNullOrEmpty(f.Sort))
+        {
+            <input type="hidden" name="sort" value="@f.Sort" />
+        }
+        @if (!string.IsNullOrEmpty(f.Dir))
+        {
+            <input type="hidden" name="dir" value="@f.Dir" />
+        }
+        <input type="hidden" name="take" value="@f.Take" />
+        <input type="date" name="from" value="@fromVal" aria-label="Từ ngày" />
+        <span class="sa-muted" style="font-size:.72rem">–</span>
+        <input type="date" name="to" value="@toVal" aria-label="Đến ngày" />
+        <button type="submit" class="sa-btn @(f.Preset == DateRangePreset.Custom ? "sa-btn-primary" : "")">
+            <i class="fas fa-calendar-alt"></i> Tùy chọn
+        </button>
+    </form>
+
+    <span class="sa-compare-chip">
+        <i class="fas fa-exchange-alt"></i> So với @prevLabel
+    </span>
+</div>
