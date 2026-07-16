@@ -1,0 +1,1103 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PROTOTYPE — Sales Analytics Hub (charts-heavy)</title>
+  <!--
+    PROTOTYPE / THROW AWAY
+    Question: chart-dense merchandising analytics hub
+    Variants: ?variant=a|b|c
+  -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --green: #81c408;
+      --green-dark: #5a8a06;
+      --green-soft: #eef8d9;
+      --ink: #1c2430;
+      --muted: #6b7280;
+      --line: #e8ecf1;
+      --bg: #f4f6f9;
+      --surface: #fff;
+      --gross: #64748b;
+      --net: #15803d;
+      --danger: #b91c1c;
+      --sidebar: #1a1a2e;
+      --radius: 12px;
+      --shadow: 0 1px 2px rgba(28,36,48,.04), 0 8px 24px rgba(28,36,48,.05);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Be Vietnam Pro', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      min-height: 100dvh;
+      padding-bottom: 88px;
+    }
+    .proto-banner {
+      background: #1c2430;
+      color: #f8fafc;
+      font-size: .75rem;
+      padding: .45rem 1rem;
+      text-align: center;
+    }
+    .proto-banner strong { color: #b8e04a; }
+    .shell { display: flex; min-height: calc(100dvh - 32px); }
+    .sidebar {
+      width: 220px;
+      background: var(--sidebar);
+      color: rgba(255,255,255,.75);
+      padding: 1.25rem 0;
+      flex-shrink: 0;
+    }
+    .sidebar .brand {
+      padding: 0 1.1rem 1.1rem;
+      border-bottom: 1px solid rgba(255,255,255,.08);
+      margin-bottom: .85rem;
+    }
+    .sidebar .brand h1 { margin: 0; font-size: 1.1rem; font-weight: 800; color: #fff; }
+    .sidebar .brand h1 span { color: var(--green); }
+    .sidebar .brand small { color: rgba(255,255,255,.4); font-size: .68rem; }
+    .sidebar .nav-label {
+      font-size: .62rem; text-transform: uppercase; letter-spacing: .08em;
+      color: rgba(255,255,255,.35); padding: .45rem 1.1rem;
+    }
+    .sidebar a {
+      display: flex; align-items: center; gap: .55rem;
+      padding: .65rem 1.1rem; color: inherit; text-decoration: none;
+      border-left: 3px solid transparent; font-size: .84rem;
+    }
+    .sidebar a.active {
+      background: #16213e; color: var(--green); border-left-color: var(--green);
+    }
+    .main { flex: 1; min-width: 0; }
+    .topbar {
+      background: #fff; padding: .7rem 1.35rem;
+      box-shadow: 0 1px 0 var(--line);
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: .85rem;
+    }
+    .topbar .crumb { color: var(--muted); }
+    .topbar .crumb b { color: var(--ink); font-weight: 600; }
+    .content { padding: 1.15rem 1.35rem 2rem; max-width: 1440px; }
+
+    .page-head {
+      display: flex; flex-wrap: wrap; justify-content: space-between;
+      gap: .85rem; align-items: flex-start; margin-bottom: .9rem;
+    }
+    .page-head h2 {
+      margin: 0 0 .2rem; font-size: 1.3rem; font-weight: 700; letter-spacing: -.02em;
+    }
+    .page-head p { margin: 0; color: var(--muted); font-size: .88rem; }
+    .btn {
+      display: inline-flex; align-items: center; gap: .35rem;
+      border-radius: 8px; border: 1px solid var(--line); background: #fff;
+      padding: .42rem .8rem; font-size: .82rem; font-weight: 500;
+      cursor: pointer; font-family: inherit; color: var(--ink);
+    }
+    .btn-primary { background: var(--green); border-color: var(--green); color: #fff; }
+    .money { font-variant-numeric: tabular-nums; font-weight: 700; }
+    .muted { color: var(--muted); }
+    .delta-up { color: #15803d; font-weight: 600; font-size: .76rem; }
+    .delta-down { color: var(--danger); font-weight: 600; font-size: .76rem; }
+    .delta-flat { color: var(--muted); font-size: .76rem; }
+
+    .filter-bar {
+      background: var(--surface); border: 1px solid var(--line);
+      border-radius: var(--radius); box-shadow: var(--shadow);
+      padding: .65rem .9rem; display: flex; flex-wrap: wrap; gap: .5rem;
+      align-items: center; margin-bottom: .9rem; position: sticky; top: 0; z-index: 20;
+    }
+    .filter-bar .label {
+      font-size: .68rem; text-transform: uppercase; letter-spacing: .04em;
+      color: var(--muted); font-weight: 600;
+    }
+    .pill {
+      border: 1px solid var(--line); background: #fff; border-radius: 999px;
+      padding: .28rem .65rem; font-size: .76rem; font-weight: 500;
+      cursor: pointer; font-family: inherit;
+    }
+    .pill.active {
+      background: var(--green-soft); border-color: #c5df8a;
+      color: var(--green-dark); font-weight: 600;
+    }
+    .compare-chip {
+      margin-left: auto; font-size: .72rem; color: var(--muted);
+      background: #f8fafc; border: 1px solid var(--line);
+      border-radius: 999px; padding: .28rem .65rem;
+    }
+
+    .tabs {
+      display: flex; gap: .2rem; border-bottom: 1px solid var(--line); margin-bottom: 1rem;
+    }
+    .tabs button {
+      background: none; border: none; border-bottom: 2px solid transparent;
+      padding: .6rem .9rem; font-family: inherit; font-size: .85rem;
+      font-weight: 500; color: var(--muted); cursor: pointer; margin-bottom: -1px;
+    }
+    .tabs button.active {
+      color: var(--green-dark); border-bottom-color: var(--green); font-weight: 600;
+    }
+    .tabs button .badge {
+      font-size: .62rem; background: #f1f5f9; color: var(--muted);
+      padding: .08rem .32rem; border-radius: 4px; margin-left: .2rem; font-weight: 600;
+    }
+
+    .panel { display: none; }
+    .panel.active { display: block; }
+
+    .card {
+      background: var(--surface); border: 1px solid var(--line);
+      border-radius: var(--radius); box-shadow: var(--shadow);
+    }
+    .card-h {
+      padding: .7rem .95rem; border-bottom: 1px solid var(--line);
+      font-weight: 600; font-size: .86rem;
+      display: flex; justify-content: space-between; align-items: center; gap: .5rem;
+    }
+    .card-h .sub {
+      font-weight: 500; font-size: .72rem; color: var(--muted);
+    }
+    .card-b { padding: .85rem 1rem 1rem; }
+    .chart-box { position: relative; width: 100%; }
+    .chart-box.sm { height: 200px; }
+    .chart-box.md { height: 240px; }
+    .chart-box.lg { height: 280px; }
+    .chart-box canvas { width: 100% !important; height: 100% !important; }
+
+    .kpi-grid {
+      display: grid; grid-template-columns: repeat(2, 1fr);
+      gap: .7rem; margin-bottom: .9rem;
+    }
+    @media (min-width: 900px) {
+      .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+      .kpi-grid.six { grid-template-columns: repeat(6, 1fr); }
+    }
+    .kpi {
+      padding: .85rem .95rem; display: flex; flex-direction: column; gap: .15rem;
+    }
+    .kpi .k-label {
+      font-size: .68rem; color: var(--muted); font-weight: 600;
+      text-transform: uppercase; letter-spacing: .03em;
+    }
+    .kpi .k-value {
+      font-size: 1.25rem; font-weight: 700; letter-spacing: -.02em;
+      font-variant-numeric: tabular-nums;
+    }
+    .kpi.gross .k-value { color: var(--gross); }
+    .kpi.net .k-value { color: var(--net); }
+    .kpi .k-hint { font-size: .68rem; color: var(--muted); }
+
+    .g {
+      display: grid; gap: .85rem; margin-bottom: .9rem;
+    }
+    @media (min-width: 992px) {
+      .g-2 { grid-template-columns: 1fr 1fr; }
+      .g-21 { grid-template-columns: 1.55fr 1fr; }
+      .g-12 { grid-template-columns: 1fr 1.55fr; }
+      .g-3 { grid-template-columns: 1fr 1fr 1fr; }
+    }
+
+    table.data {
+      width: 100%; border-collapse: collapse; font-size: .82rem;
+    }
+    table.data th {
+      text-align: left; font-size: .66rem; text-transform: uppercase;
+      letter-spacing: .04em; color: var(--muted); padding: .5rem .6rem;
+      border-bottom: 1px solid var(--line); white-space: nowrap;
+    }
+    table.data td {
+      padding: .55rem .6rem; border-bottom: 1px solid #f1f3f6; vertical-align: middle;
+    }
+    table.data tr:last-child td { border-bottom: 0; }
+    table.data .num { text-align: right; font-variant-numeric: tabular-nums; }
+    table.data .rank {
+      width: 26px; height: 26px; border-radius: 7px; background: #f1f5f9;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: .72rem; color: #475569;
+    }
+    table.data .rank.top { background: var(--green-soft); color: var(--green-dark); }
+
+    .grain { display: flex; gap: .2rem; }
+    .grain button {
+      border: 1px solid var(--line); background: #fff; border-radius: 6px;
+      padding: .18rem .45rem; font-size: .7rem; font-family: inherit; cursor: pointer;
+    }
+    .grain button.active {
+      background: var(--green-soft); border-color: #c5df8a;
+      color: var(--green-dark); font-weight: 600;
+    }
+
+    .vb-layout { display: grid; gap: .85rem; }
+    @media (min-width: 1100px) {
+      .vb-layout { grid-template-columns: 200px 1fr; align-items: start; }
+    }
+    .vb-rail { display: flex; flex-direction: column; gap: .5rem; }
+    @media (max-width: 1099px) {
+      .vb-rail { display: grid; grid-template-columns: repeat(3, 1fr); }
+    }
+    .vb-rail .kpi { padding: .7rem; }
+    .vb-rail .kpi .k-value { font-size: 1.05rem; }
+    .vb-split-tabs {
+      display: inline-flex; background: #f1f5f9; border-radius: 8px; padding: 2px;
+    }
+    .vb-split-tabs button {
+      border: none; background: transparent; padding: .3rem .65rem; border-radius: 6px;
+      font-size: .76rem; font-family: inherit; cursor: pointer; color: var(--muted);
+    }
+    .vb-split-tabs button.active {
+      background: #fff; color: var(--ink); font-weight: 600;
+      box-shadow: 0 1px 2px rgba(0,0,0,.06);
+    }
+
+    .vc-shell {
+      display: grid; background: var(--surface); border: 1px solid var(--line);
+      border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; min-height: 70vh;
+    }
+    @media (min-width: 900px) { .vc-shell { grid-template-columns: 190px 1fr; } }
+    .vc-side {
+      background: #fafbfc; border-right: 1px solid var(--line); padding: .9rem .65rem;
+    }
+    .vc-side .sec {
+      font-size: .62rem; text-transform: uppercase; letter-spacing: .06em;
+      color: var(--muted); padding: .45rem .55rem; font-weight: 600;
+    }
+    .vc-side button {
+      display: block; width: 100%; text-align: left; border: none; background: none;
+      padding: .5rem .6rem; border-radius: 8px; font-family: inherit;
+      font-size: .82rem; color: var(--ink); cursor: pointer;
+    }
+    .vc-side button.active {
+      background: var(--green-soft); color: var(--green-dark); font-weight: 600;
+    }
+    .vc-main { padding: 1.1rem 1.25rem; }
+    .vc-meta {
+      display: flex; flex-wrap: wrap; gap: 1.25rem;
+      padding-bottom: .9rem; border-bottom: 1px solid var(--line); margin-bottom: 1rem;
+    }
+    .vc-meta .m-l {
+      font-size: .65rem; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--muted); font-weight: 600;
+    }
+    .vc-meta .m-v {
+      font-size: 1.35rem; font-weight: 700; font-variant-numeric: tabular-nums;
+    }
+    .vc-section-title {
+      font-size: .72rem; text-transform: uppercase; letter-spacing: .06em;
+      color: var(--muted); font-weight: 700; margin: 1rem 0 .55rem;
+    }
+
+    .switcher {
+      position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
+      z-index: 1000; background: #111827; color: #f9fafb; border-radius: 999px;
+      padding: .42rem .48rem .42rem .85rem; display: flex; align-items: center;
+      gap: .45rem; box-shadow: 0 12px 40px rgba(0,0,0,.28); font-size: .78rem;
+      max-width: calc(100vw - 24px);
+    }
+    .switcher span { white-space: nowrap; opacity: .7; font-size: .7rem; }
+    .switcher .opts { display: flex; gap: .2rem; }
+    .switcher a {
+      color: #e5e7eb; text-decoration: none; padding: .38rem .65rem;
+      border-radius: 999px; font-weight: 600; font-size: .76rem;
+    }
+    .switcher a.on { background: var(--green); color: #fff; }
+    .variant-root { display: none; }
+    .variant-root.on { display: block; }
+
+    .legend-row {
+      display: flex; flex-wrap: wrap; gap: .75rem; font-size: .72rem; color: var(--muted);
+      margin-bottom: .5rem;
+    }
+    .legend-row i {
+      display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: .3rem;
+    }
+
+    @media (max-width: 768px) {
+      .sidebar { display: none; }
+      .content { padding: 1rem; }
+      .compare-chip { margin-left: 0; width: 100%; }
+      .kpi-grid.six { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <div class="proto-banner">
+    <strong>PROTOTYPE · charts-heavy</strong>
+    — Thống kê bán hàng: nhiều chart merchandising. Mock data. Không phải production.
+  </div>
+
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <h1>Fruitables <span>Admin</span></h1>
+        <small>Prototype shell</small>
+      </div>
+      <div class="nav-label">Thống kê</div>
+      <a class="active" href="#"><i class="fas fa-chart-line"></i> Thống kê bán hàng</a>
+      <div class="nav-label">Cửa hàng</div>
+      <a href="#"><i class="fas fa-box"></i> Sản phẩm</a>
+      <a href="#"><i class="fas fa-tags"></i> Quản lý giá</a>
+      <a href="#"><i class="fas fa-shopping-cart"></i> Đơn hàng</a>
+    </aside>
+
+    <div class="main">
+      <div class="topbar">
+        <div class="crumb">Admin / <b>Thống kê bán hàng</b></div>
+        <div class="muted" style="font-size:.78rem">Admin User</div>
+      </div>
+
+      <!-- ========== VARIANT A ========== -->
+      <div id="variant-a" class="variant-root content">
+        <div class="page-head">
+          <div>
+            <h2>Thống kê bán hàng</h2>
+            <p>Variant A — Dashboard cổ điển, đầy chart (trend, mix, volume, funnel-ish)</p>
+          </div>
+          <button class="btn btn-primary"><i class="fas fa-download"></i> Xuất Excel</button>
+        </div>
+
+        <div class="filter-bar">
+          <span class="label">Kỳ</span>
+          <button class="pill">7 ngày</button>
+          <button class="pill active">30 ngày</button>
+          <button class="pill">Tháng này</button>
+          <button class="pill">Tùy chọn</button>
+          <span class="compare-chip"><i class="fas fa-exchange-alt"></i> So với kỳ 30 ngày liền trước</span>
+        </div>
+
+        <div class="tabs">
+          <button type="button" class="active" data-panel="a-overview">Tổng quan</button>
+          <button type="button" data-panel="a-merch">Sản phẩm &amp; danh mục</button>
+          <button type="button" data-panel="a-cancel">Hủy &amp; hoàn <span class="badge">phụ</span></button>
+        </div>
+
+        <div id="a-overview" class="panel active">
+          <div class="kpi-grid six">
+            <div class="card kpi gross"><span class="k-label">Gross</span><span class="k-value money">48.2tr</span><span class="delta-up">↑ 12.4%</span></div>
+            <div class="card kpi net"><span class="k-label">Net</span><span class="k-value money">41.6tr</span><span class="delta-up">↑ 9.1%</span></div>
+            <div class="card kpi"><span class="k-label">Δ Net</span><span class="k-value money" style="color:var(--net)">+3.5tr</span></div>
+            <div class="card kpi"><span class="k-label">Đơn paid</span><span class="k-value">186</span><span class="delta-up">↑ 8%</span></div>
+            <div class="card kpi"><span class="k-label">AOV net</span><span class="k-value money">268k</span><span class="delta-down">↓ 2.1%</span></div>
+            <div class="card kpi"><span class="k-label">Cancel rate</span><span class="k-value">6.4%</span><span class="delta-down">↑ 0.8pp</span></div>
+          </div>
+
+          <!-- Row: main trend + orders volume -->
+          <div class="g g-21">
+            <div class="card">
+              <div class="card-h">
+                <span>Xu hướng Gross / Net <span class="sub">· triệu đồng</span></span>
+                <div class="grain">
+                  <button class="active">Ngày</button><button>Tuần</button><button>Tháng</button>
+                </div>
+              </div>
+              <div class="card-b"><div class="chart-box lg"><canvas data-chart="a-trend"></canvas></div></div>
+            </div>
+            <div class="card">
+              <div class="card-h">Số đơn theo ngày <span class="sub">paid vs cancelled</span></div>
+              <div class="card-b"><div class="chart-box lg"><canvas data-chart="a-orders"></canvas></div></div>
+            </div>
+          </div>
+
+          <!-- Row: category doughnut + AOV + units -->
+          <div class="g g-3">
+            <div class="card">
+              <div class="card-h">Mix danh mục <span class="sub">Net share</span></div>
+              <div class="card-b"><div class="chart-box md"><canvas data-chart="a-cat-donut"></canvas></div></div>
+            </div>
+            <div class="card">
+              <div class="card-h">AOV Gross vs Net</div>
+              <div class="card-b"><div class="chart-box md"><canvas data-chart="a-aov"></canvas></div></div>
+            </div>
+            <div class="card">
+              <div class="card-h">Đơn vị bán (units) <span class="sub">net</span></div>
+              <div class="card-b"><div class="chart-box md"><canvas data-chart="a-units"></canvas></div></div>
+            </div>
+          </div>
+
+          <!-- Row: pipeline bar + period compare -->
+          <div class="g g-2">
+            <div class="card">
+              <div class="card-h">Pipeline đơn trong kỳ <span class="sub">số đơn theo status</span></div>
+              <div class="card-b"><div class="chart-box md"><canvas data-chart="a-pipeline"></canvas></div></div>
+            </div>
+            <div class="card">
+              <div class="card-h">So kỳ liền trước <span class="sub">Gross / Net / Orders</span></div>
+              <div class="card-b"><div class="chart-box md"><canvas data-chart="a-compare"></canvas></div></div>
+            </div>
+          </div>
+
+          <div class="g g-2">
+            <div class="card">
+              <div class="card-h"><span>Top 5 SP (Net)</span><button class="btn" style="font-size:.72rem;padding:.2rem .45rem">Xem tab merch</button></div>
+              <div class="card-b" style="padding:0">
+                <table class="data">
+                  <thead><tr><th>#</th><th>Sản phẩm</th><th class="num">Net</th><th class="num">Δ</th></tr></thead>
+                  <tbody>
+                    <tr><td><span class="rank top">1</span></td><td>Sầu riêng Ri6</td><td class="num money">8.4tr</td><td class="num delta-up">↑ 18%</td></tr>
+                    <tr><td><span class="rank top">2</span></td><td>Táo Fuji Mỹ</td><td class="num money">5.1tr</td><td class="num delta-up">↑ 6%</td></tr>
+                    <tr><td><span class="rank">3</span></td><td>Xoài Cát Hòa Lộc</td><td class="num money">4.2tr</td><td class="num delta-down">↓ 4%</td></tr>
+                    <tr><td><span class="rank">4</span></td><td>Nho xanh Úc</td><td class="num money">3.8tr</td><td class="num delta-up">↑ 11%</td></tr>
+                    <tr><td><span class="rank">5</span></td><td>Mãng cầu xiêm</td><td class="num money">2.9tr</td><td class="num delta-flat">—</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-h">Top SP — horizontal bar</div>
+              <div class="card-b"><div class="chart-box md"><canvas data-chart="a-top-hbar"></canvas></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="a-merch" class="panel">
+          <div class="g g-21">
+            <div class="card">
+              <div class="card-h">
+                <span>Top sản phẩm Net</span>
+                <div class="vb-split-tabs">
+                  <button class="active">Top</button><button>Yếu</button>
+                </div>
+              </div>
+              <div class="card-b"><div class="chart-box lg"><canvas data-chart="a-merch-hbar"></canvas></div></div>
+            </div>
+            <div class="card">
+              <div class="card-h">Share danh mục</div>
+              <div class="card-b"><div class="chart-box lg"><canvas data-chart="a-merch-cat"></canvas></div></div>
+            </div>
+          </div>
+          <div class="g g-2">
+            <div class="card">
+              <div class="card-h">Units vs Net (top SP)</div>
+              <div class="card-b"><div class="chart-box md"><canvas data-chart="a-merch-dual"></canvas></div></div>
+            </div>
+            <div class="card">
+              <div class="card-h">Tăng trưởng % vs kỳ trước</div>
+              <div class="card-b"><div class="chart-box md"><canvas data-chart="a-merch-growth"></canvas></div></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-h">Bảng ranking đầy đủ</div>
+            <div class="card-b" style="padding:0">
+              <table class="data">
+                <thead>
+                  <tr><th>#</th><th>Sản phẩm</th><th class="num">SL</th><th class="num">Net</th><th class="num">Share</th><th class="num">Δ</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td><span class="rank top">1</span></td><td><strong>Sầu riêng Ri6</strong></td><td class="num">142</td><td class="num money">8.4tr</td><td class="num">20.2%</td><td class="num delta-up">↑ 18%</td></tr>
+                  <tr><td><span class="rank top">2</span></td><td><strong>Táo Fuji Mỹ</strong></td><td class="num">210</td><td class="num money">5.1tr</td><td class="num">12.3%</td><td class="num delta-up">↑ 6%</td></tr>
+                  <tr><td><span class="rank">3</span></td><td><strong>Xoài Cát Hòa Lộc</strong></td><td class="num">98</td><td class="num money">4.2tr</td><td class="num">10.1%</td><td class="num delta-down">↓ 4%</td></tr>
+                  <tr><td><span class="rank">4</span></td><td><strong>Nho xanh Úc</strong></td><td class="num">76</td><td class="num money">3.8tr</td><td class="num">9.1%</td><td class="num delta-up">↑ 11%</td></tr>
+                  <tr><td><span class="rank">5</span></td><td><strong>Mãng cầu xiêm</strong></td><td class="num">54</td><td class="num money">2.9tr</td><td class="num">7.0%</td><td class="num delta-flat">—</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div id="a-cancel" class="panel">
+          <div class="kpi-grid">
+            <div class="card kpi"><span class="k-label">Đơn hủy</span><span class="k-value" style="color:var(--danger)">14</span></div>
+            <div class="card kpi"><span class="k-label">Tỷ lệ hủy</span><span class="k-value">6.4%</span></div>
+            <div class="card kpi"><span class="k-label">Giá trị hủy</span><span class="k-value money">2.1tr</span></div>
+            <div class="card kpi"><span class="k-label">Refund rate</span><span class="k-value">1.2%</span></div>
+          </div>
+          <div class="g g-21">
+            <div class="card">
+              <div class="card-h">Xu hướng hủy &amp; tỷ lệ hủy</div>
+              <div class="card-b"><div class="chart-box lg"><canvas data-chart="a-cancel-trend"></canvas></div></div>
+            </div>
+            <div class="card">
+              <div class="card-h">Lý do hủy</div>
+              <div class="card-b"><div class="chart-box lg"><canvas data-chart="a-cancel-reason"></canvas></div></div>
+            </div>
+          </div>
+          <div class="g g-2">
+            <div class="card">
+              <div class="card-h">Giá trị hủy theo SP</div>
+              <div class="card-b"><div class="chart-box md"><canvas data-chart="a-cancel-prod"></canvas></div></div>
+            </div>
+            <div class="card">
+              <div class="card-h">Hủy theo danh mục</div>
+              <div class="card-b"><div class="chart-box md"><canvas data-chart="a-cancel-cat"></canvas></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== VARIANT B merch-first ========== -->
+      <div id="variant-b" class="variant-root content">
+        <div class="page-head">
+          <div>
+            <h2>Thống kê bán hàng</h2>
+            <p>Variant B — Merch-first + wall of charts quanh ranking</p>
+          </div>
+          <button class="btn btn-primary"><i class="fas fa-download"></i> Xuất</button>
+        </div>
+
+        <div class="filter-bar">
+          <span class="label">Kỳ</span>
+          <button class="pill">7d</button>
+          <button class="pill active">30d</button>
+          <button class="pill">MTD</button>
+          <button class="pill">Custom</button>
+          <span class="compare-chip">vs previous 30d</span>
+        </div>
+
+        <div class="tabs">
+          <button type="button" data-panel="b-overview">Tổng quan</button>
+          <button type="button" class="active" data-panel="b-merch">Sản phẩm &amp; danh mục</button>
+          <button type="button" data-panel="b-cancel">Hủy &amp; hoàn</button>
+        </div>
+
+        <div id="b-overview" class="panel">
+          <div class="kpi-grid">
+            <div class="card kpi net"><span class="k-label">Net</span><span class="k-value money">41.6tr</span><span class="delta-up">↑ 9.1%</span></div>
+            <div class="card kpi gross"><span class="k-label">Gross</span><span class="k-value money">48.2tr</span><span class="delta-up">↑ 12.4%</span></div>
+            <div class="card kpi"><span class="k-label">Cancel rate</span><span class="k-value">6.4%</span></div>
+          </div>
+          <div class="g g-21">
+            <div class="card">
+              <div class="card-h">Gross / Net</div>
+              <div class="card-b"><div class="chart-box lg"><canvas data-chart="b-trend"></canvas></div></div>
+            </div>
+            <div class="card">
+              <div class="card-h">Category mix</div>
+              <div class="card-b"><div class="chart-box lg"><canvas data-chart="b-cat"></canvas></div></div>
+            </div>
+          </div>
+          <div class="g g-2">
+            <div class="card">
+              <div class="card-h">Orders volume</div>
+              <div class="card-b"><div class="chart-box md"><canvas data-chart="b-orders"></canvas></div></div>
+            </div>
+            <div class="card">
+              <div class="card-h">Period compare</div>
+              <div class="card-b"><div class="chart-box md"><canvas data-chart="b-compare"></canvas></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="b-merch" class="panel active">
+          <div class="vb-layout">
+            <aside class="vb-rail">
+              <div class="card kpi net"><span class="k-label">Net</span><span class="k-value money">41.6tr</span><span class="delta-up">↑ 9.1%</span></div>
+              <div class="card kpi gross"><span class="k-label">Gross</span><span class="k-value money">48.2tr</span></div>
+              <div class="card kpi"><span class="k-label">Units</span><span class="k-value">1,284</span></div>
+              <div class="card kpi"><span class="k-label">AOV net</span><span class="k-value money">268k</span></div>
+              <div class="card kpi"><span class="k-label">Đơn paid</span><span class="k-value">186</span></div>
+              <div class="card kpi"><span class="k-label">Cancel</span><span class="k-value" style="color:var(--danger)">6.4%</span></div>
+            </aside>
+            <div>
+              <div class="card" style="margin-bottom:.85rem">
+                <div class="card-h">
+                  <div>
+                    <div style="font-size:.68rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em">Hiệu quả bán</div>
+                    Ranking Net + charts
+                  </div>
+                  <div class="vb-split-tabs">
+                    <button class="active">Sản phẩm</button>
+                    <button>Danh mục</button>
+                  </div>
+                </div>
+                <div class="card-b" style="padding:0">
+                  <table class="data">
+                    <thead>
+                      <tr><th>#</th><th>Sản phẩm</th><th class="num">SL</th><th class="num">Net</th><th class="num">Share</th><th class="num">Δ</th></tr>
+                    </thead>
+                    <tbody>
+                      <tr><td><span class="rank top">1</span></td><td><strong>Sầu riêng Ri6</strong></td><td class="num">142</td><td class="num money" style="color:var(--net)">8.42tr</td><td class="num">20.2%</td><td class="num delta-up">↑ 18%</td></tr>
+                      <tr><td><span class="rank top">2</span></td><td><strong>Táo Fuji Mỹ</strong></td><td class="num">210</td><td class="num money" style="color:var(--net)">5.10tr</td><td class="num">12.3%</td><td class="num delta-up">↑ 6%</td></tr>
+                      <tr><td><span class="rank">3</span></td><td><strong>Xoài Cát Hòa Lộc</strong></td><td class="num">98</td><td class="num money" style="color:var(--net)">4.20tr</td><td class="num">10.1%</td><td class="num delta-down">↓ 4%</td></tr>
+                      <tr><td><span class="rank">4</span></td><td><strong>Nho xanh Úc</strong></td><td class="num">76</td><td class="num money" style="color:var(--net)">3.80tr</td><td class="num">9.1%</td><td class="num delta-up">↑ 11%</td></tr>
+                      <tr><td><span class="rank">5</span></td><td><strong>Mãng cầu xiêm</strong></td><td class="num">54</td><td class="num money" style="color:var(--net)">2.90tr</td><td class="num">7.0%</td><td class="num delta-flat">—</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="g g-2">
+                <div class="card">
+                  <div class="card-h">Horizontal ranking</div>
+                  <div class="card-b"><div class="chart-box md"><canvas data-chart="b-merch-hbar"></canvas></div></div>
+                </div>
+                <div class="card">
+                  <div class="card-h">Category share</div>
+                  <div class="card-b"><div class="chart-box md"><canvas data-chart="b-merch-cat"></canvas></div></div>
+                </div>
+              </div>
+              <div class="g g-2">
+                <div class="card">
+                  <div class="card-h">Units vs Net</div>
+                  <div class="card-b"><div class="chart-box md"><canvas data-chart="b-merch-dual"></canvas></div></div>
+                </div>
+                <div class="card">
+                  <div class="card-h">Growth % by product</div>
+                  <div class="card-b"><div class="chart-box md"><canvas data-chart="b-merch-growth"></canvas></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="b-cancel" class="panel">
+          <div class="g g-21">
+            <div class="card">
+              <div class="card-h">Cancel trend + rate</div>
+              <div class="card-b"><div class="chart-box lg"><canvas data-chart="b-cancel-trend"></canvas></div></div>
+            </div>
+            <div class="card">
+              <div class="card-h">Reasons</div>
+              <div class="card-b"><div class="chart-box lg"><canvas data-chart="b-cancel-reason"></canvas></div></div>
+            </div>
+          </div>
+          <div class="g g-2">
+            <div class="card">
+              <div class="card-h">Value lost by product</div>
+              <div class="card-b"><div class="chart-box md"><canvas data-chart="b-cancel-prod"></canvas></div></div>
+            </div>
+            <div class="card">
+              <div class="card-h">Cancel by category</div>
+              <div class="card-b"><div class="chart-box md"><canvas data-chart="b-cancel-cat"></canvas></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== VARIANT C report ========== -->
+      <div id="variant-c" class="variant-root content">
+        <div class="page-head">
+          <div>
+            <h2>Báo cáo bán hàng</h2>
+            <p>Variant C — Report + chart appendix đầy đủ</p>
+          </div>
+          <div style="display:flex;gap:.45rem">
+            <button class="btn">In / PDF</button>
+            <button class="btn btn-primary"><i class="fas fa-download"></i> Excel</button>
+          </div>
+        </div>
+        <div class="filter-bar">
+          <span class="label">Kỳ</span>
+          <button class="pill active">30 ngày gần nhất</button>
+          <button class="pill">Tháng này</button>
+          <button class="pill">Tùy chọn</button>
+          <span class="compare-chip">Đối chiếu: kỳ liền trước</span>
+        </div>
+
+        <div class="vc-shell">
+          <nav class="vc-side">
+            <div class="sec">Mục lục</div>
+            <button type="button" class="active" data-panel="c-overview">1. Tổng quan</button>
+            <button type="button" data-panel="c-merch">2. SP &amp; danh mục</button>
+            <button type="button" data-panel="c-cancel">3. Hủy &amp; hoàn</button>
+            <div class="sec" style="margin-top:1rem">Ghi chú</div>
+            <p style="font-size:.7rem;color:var(--muted);padding:.25rem .55rem;line-height:1.4;margin:0">
+              Gross = Paid<br />Net = Delivered − Refund
+            </p>
+          </nav>
+          <div class="vc-main">
+            <div id="c-overview" class="panel active">
+              <div class="vc-meta">
+                <div><div class="m-l">Gross</div><div class="m-v" style="color:var(--gross)">48.2tr</div></div>
+                <div><div class="m-l">Net</div><div class="m-v" style="color:var(--net)">41.6tr</div></div>
+                <div><div class="m-l">Đơn paid</div><div class="m-v">186</div></div>
+                <div><div class="m-l">AOV net</div><div class="m-v">268k</div></div>
+                <div><div class="m-l">Cancel rate</div><div class="m-v">6.4%</div></div>
+              </div>
+              <div class="vc-section-title">Biểu đồ xu hướng</div>
+              <div class="g g-2">
+                <div class="chart-box md"><canvas data-chart="c-trend"></canvas></div>
+                <div class="chart-box md"><canvas data-chart="c-orders"></canvas></div>
+              </div>
+              <div class="vc-section-title">Cơ cấu &amp; so sánh</div>
+              <div class="g g-3">
+                <div class="chart-box sm"><canvas data-chart="c-cat"></canvas></div>
+                <div class="chart-box sm"><canvas data-chart="c-compare"></canvas></div>
+                <div class="chart-box sm"><canvas data-chart="c-pipeline"></canvas></div>
+              </div>
+            </div>
+            <div id="c-merch" class="panel">
+              <div class="vc-section-title">Sản phẩm &amp; danh mục</div>
+              <div class="g g-2">
+                <div class="chart-box md"><canvas data-chart="c-merch-hbar"></canvas></div>
+                <div class="chart-box md"><canvas data-chart="c-merch-cat"></canvas></div>
+              </div>
+              <div class="g g-2">
+                <div class="chart-box md"><canvas data-chart="c-merch-dual"></canvas></div>
+                <div class="chart-box md"><canvas data-chart="c-merch-growth"></canvas></div>
+              </div>
+            </div>
+            <div id="c-cancel" class="panel">
+              <div class="vc-section-title">Hủy &amp; hoàn</div>
+              <div class="g g-2">
+                <div class="chart-box md"><canvas data-chart="c-cancel-trend"></canvas></div>
+                <div class="chart-box md"><canvas data-chart="c-cancel-reason"></canvas></div>
+              </div>
+              <div class="g g-2">
+                <div class="chart-box md"><canvas data-chart="c-cancel-prod"></canvas></div>
+                <div class="chart-box md"><canvas data-chart="c-cancel-cat"></canvas></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="switcher">
+    <span>Variant</span>
+    <div class="opts">
+      <a href="?variant=a" data-v="a">A Classic</a>
+      <a href="?variant=b" data-v="b">B Merch</a>
+      <a href="?variant=c" data-v="c">C Report</a>
+    </div>
+  </div>
+
+  <script>
+    const DAYS = ['18/06','21/06','24/06','27/06','30/06','03/07','06/07','09/07','12/07','16/07'];
+    const GROSS = [3.8,4.2,4.6,5.1,4.9,5.8,6.2,6.5,7.0,7.8];
+    const NET = [3.1,3.6,3.9,4.4,4.2,5.0,5.4,5.6,6.1,6.9];
+    const PAID = [12,14,15,18,16,19,21,20,22,24];
+    const CANCELLED = [1,0,2,1,1,2,0,1,2,1];
+    const UNITS = [38,42,45,52,48,58,61,59,66,72];
+    const AOV_G = [280,290,285,295,288,300,292,305,298,310];
+    const AOV_N = [255,260,258,265,262,270,268,272,269,275];
+    const PRODS = ['Sầu Ri6','Fuji Mỹ','Xoài CHL','Nho Úc','Mãng cầu'];
+    const PROD_NET = [8.4,5.1,4.2,3.8,2.9];
+    const PROD_UNITS = [142,210,98,76,54];
+    const PROD_GROWTH = [18,6,-4,11,0];
+    const CATS = ['Nội địa','Nhập khẩu','Rau củ','Đóng hộp','Khác'];
+    const CAT_NET = [15.8,12.1,7.5,3.7,2.5];
+    const CAT_COLORS = ['#81c408','#3b82f6','#f59e0b','#8b5cf6','#94a3b8'];
+    const REASONS = ['Đổi ý','Giao chậm','Sai SP','Khác'];
+    const REASON_N = [6,4,2,2];
+    const CANCEL_PROD = ['Nho Úc','Táo Gala','Mãng cầu','Xoài CHL'];
+    const CANCEL_VAL = [0.72,0.41,0.18,0.15];
+    const CANCEL_CAT = [0.9,0.85,0.25,0.1];
+    const PIPE_LABELS = ['Pending','Processing','Shipped','Delivered','Cancelled','Returned'];
+    const PIPE_DATA = [22,31,18,155,14,4];
+    const COMPARE_LABELS = ['Gross','Net','Đơn paid'];
+    const COMPARE_CUR = [48.2,41.6,186];
+    const COMPARE_PREV = [42.9,38.1,172];
+
+    const charts = {};
+    const palette = {
+      gross: '#64748b',
+      net: '#15803d',
+      paid: '#3b82f6',
+      cancel: '#ef4444',
+      unit: '#81c408',
+      soft: '#e2e8f0'
+    };
+
+    Chart.defaults.font.family = "'Be Vietnam Pro', system-ui, sans-serif";
+    Chart.defaults.font.size = 11;
+    Chart.defaults.color = '#6b7280';
+    Chart.defaults.plugins.legend.labels.boxWidth = 10;
+    Chart.defaults.plugins.legend.labels.usePointStyle = true;
+
+    function destroyAll() {
+      Object.keys(charts).forEach(k => { charts[k].destroy(); delete charts[k]; });
+    }
+
+    function make(canvas, config) {
+      if (!canvas || !canvas.isConnected) return;
+      const key = canvas.dataset.chart + '::' + (canvas.closest('.variant-root')?.id || '');
+      if (charts[key]) { charts[key].destroy(); delete charts[key]; }
+      // only if visible variant
+      const root = canvas.closest('.variant-root');
+      if (root && !root.classList.contains('on')) return;
+      charts[key] = new Chart(canvas, config);
+    }
+
+    function lineDual(id, labels, a, b, la, lb, ca, cb, fillB) {
+      document.querySelectorAll(`canvas[data-chart="${id}"]`).forEach(c => {
+        make(c, {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [
+              { label: la, data: a, borderColor: ca, backgroundColor: ca + '22', tension: .35, fill: false, borderWidth: 2, pointRadius: 2 },
+              { label: lb, data: b, borderColor: cb, backgroundColor: cb + '22', tension: .35, fill: !!fillB, borderWidth: 2, pointRadius: 2 }
+            ]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom' } },
+            scales: {
+              y: { grid: { color: '#f1f5f9' }, ticks: { callback: v => v } },
+              x: { grid: { display: false } }
+            }
+          }
+        });
+      });
+    }
+
+    function barGroup(id, labels, datasets, stacked) {
+      document.querySelectorAll(`canvas[data-chart="${id}"]`).forEach(c => {
+        make(c, {
+          type: 'bar',
+          data: { labels, datasets },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom' } },
+            scales: {
+              x: { stacked: !!stacked, grid: { display: false } },
+              y: { stacked: !!stacked, grid: { color: '#f1f5f9' } }
+            }
+          }
+        });
+      });
+    }
+
+    function doughnut(id, labels, data, colors) {
+      document.querySelectorAll(`canvas[data-chart="${id}"]`).forEach(c => {
+        make(c, {
+          type: 'doughnut',
+          data: {
+            labels,
+            datasets: [{ data, backgroundColor: colors, borderWidth: 0 }]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom', labels: { font: { size: 10 } } } },
+            cutout: '58%'
+          }
+        });
+      });
+    }
+
+    function hbar(id, labels, data, color, label) {
+      document.querySelectorAll(`canvas[data-chart="${id}"]`).forEach(c => {
+        make(c, {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [{ label: label || 'Net (tr)', data, backgroundColor: color, borderRadius: 6, barThickness: 16 }]
+          },
+          options: {
+            indexAxis: 'y',
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              x: { grid: { color: '#f1f5f9' } },
+              y: { grid: { display: false } }
+            }
+          }
+        });
+      });
+    }
+
+    function dualAxis(id, labels, barData, lineData, barLabel, lineLabel) {
+      document.querySelectorAll(`canvas[data-chart="${id}"]`).forEach(c => {
+        make(c, {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [
+              { type: 'bar', label: barLabel, data: barData, backgroundColor: palette.unit + 'cc', borderRadius: 4, yAxisID: 'y', order: 2 },
+              { type: 'line', label: lineLabel, data: lineData, borderColor: palette.net, backgroundColor: palette.net, tension: .3, yAxisID: 'y1', order: 1, pointRadius: 3 }
+            ]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom' } },
+            scales: {
+              y: { position: 'left', grid: { color: '#f1f5f9' }, title: { display: true, text: barLabel, font: { size: 10 } } },
+              y1: { position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: lineLabel, font: { size: 10 } } },
+              x: { grid: { display: false } }
+            }
+          }
+        });
+      });
+    }
+
+    function growthBar(id, labels, data) {
+      document.querySelectorAll(`canvas[data-chart="${id}"]`).forEach(c => {
+        make(c, {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [{
+              label: 'Δ %',
+              data,
+              backgroundColor: data.map(v => v >= 0 ? '#22c55e' : '#ef4444'),
+              borderRadius: 6
+            }]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              y: { grid: { color: '#f1f5f9' }, ticks: { callback: v => v + '%' } },
+              x: { grid: { display: false } }
+            }
+          }
+        });
+      });
+    }
+
+    function cancelCombo(id) {
+      document.querySelectorAll(`canvas[data-chart="${id}"]`).forEach(c => {
+        const rate = CANCELLED.map((x, i) => {
+          const t = PAID[i] + x;
+          return t ? +(x / t * 100).toFixed(1) : 0;
+        });
+        make(c, {
+          type: 'bar',
+          data: {
+            labels: DAYS,
+            datasets: [
+              { type: 'bar', label: 'Đơn hủy', data: CANCELLED, backgroundColor: '#fca5a5', borderRadius: 4, yAxisID: 'y' },
+              { type: 'line', label: 'Cancel rate %', data: rate, borderColor: '#b91c1c', tension: .3, yAxisID: 'y1', pointRadius: 2 }
+            ]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom' } },
+            scales: {
+              y: { position: 'left', grid: { color: '#f1f5f9' } },
+              y1: { position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } },
+              x: { grid: { display: false } }
+            }
+          }
+        });
+      });
+    }
+
+    function buildCharts() {
+      destroyAll();
+
+      // Overview trends
+      lineDual('a-trend', DAYS, GROSS, NET, 'Gross', 'Net', palette.gross, palette.net, true);
+      lineDual('b-trend', DAYS, GROSS, NET, 'Gross', 'Net', palette.gross, palette.net, true);
+      lineDual('c-trend', DAYS, GROSS, NET, 'Gross', 'Net', palette.gross, palette.net, true);
+
+      barGroup('a-orders', DAYS, [
+        { label: 'Paid', data: PAID, backgroundColor: palette.paid + 'cc', borderRadius: 3 },
+        { label: 'Cancelled', data: CANCELLED, backgroundColor: palette.cancel + 'aa', borderRadius: 3 }
+      ]);
+      barGroup('b-orders', DAYS, [
+        { label: 'Paid', data: PAID, backgroundColor: palette.paid + 'cc', borderRadius: 3 },
+        { label: 'Cancelled', data: CANCELLED, backgroundColor: palette.cancel + 'aa', borderRadius: 3 }
+      ]);
+      barGroup('c-orders', DAYS, [
+        { label: 'Paid', data: PAID, backgroundColor: palette.paid + 'cc', borderRadius: 3 },
+        { label: 'Cancelled', data: CANCELLED, backgroundColor: palette.cancel + 'aa', borderRadius: 3 }
+      ]);
+
+      doughnut('a-cat-donut', CATS, CAT_NET, CAT_COLORS);
+      doughnut('b-cat', CATS, CAT_NET, CAT_COLORS);
+      doughnut('c-cat', CATS, CAT_NET, CAT_COLORS);
+      doughnut('a-merch-cat', CATS, CAT_NET, CAT_COLORS);
+      doughnut('b-merch-cat', CATS, CAT_NET, CAT_COLORS);
+      doughnut('c-merch-cat', CATS, CAT_NET, CAT_COLORS);
+
+      lineDual('a-aov', DAYS, AOV_G, AOV_N, 'AOV Gross', 'AOV Net', palette.gross, palette.net, false);
+
+      barGroup('a-units', DAYS, [
+        { label: 'Units net', data: UNITS, backgroundColor: palette.unit + 'bb', borderRadius: 4 }
+      ]);
+
+      barGroup('a-pipeline', PIPE_LABELS, [
+        { label: 'Số đơn', data: PIPE_DATA, backgroundColor: ['#94a3b8','#60a5fa','#818cf8','#22c55e','#ef4444','#f59e0b'], borderRadius: 4 }
+      ]);
+      barGroup('c-pipeline', PIPE_LABELS, [
+        { label: 'Số đơn', data: PIPE_DATA, backgroundColor: ['#94a3b8','#60a5fa','#818cf8','#22c55e','#ef4444','#f59e0b'], borderRadius: 4 }
+      ]);
+
+      barGroup('a-compare', COMPARE_LABELS, [
+        { label: 'Kỳ trước', data: COMPARE_PREV, backgroundColor: palette.soft, borderRadius: 4 },
+        { label: 'Kỳ này', data: COMPARE_CUR, backgroundColor: palette.net + 'cc', borderRadius: 4 }
+      ]);
+      barGroup('b-compare', COMPARE_LABELS, [
+        { label: 'Kỳ trước', data: COMPARE_PREV, backgroundColor: palette.soft, borderRadius: 4 },
+        { label: 'Kỳ này', data: COMPARE_CUR, backgroundColor: palette.net + 'cc', borderRadius: 4 }
+      ]);
+      barGroup('c-compare', COMPARE_LABELS, [
+        { label: 'Kỳ trước', data: COMPARE_PREV, backgroundColor: palette.soft, borderRadius: 4 },
+        { label: 'Kỳ này', data: COMPARE_CUR, backgroundColor: palette.net + 'cc', borderRadius: 4 }
+      ]);
+
+      hbar('a-top-hbar', PRODS, PROD_NET, palette.net + 'cc', 'Net (tr)');
+      hbar('a-merch-hbar', PRODS, PROD_NET, palette.net + 'cc', 'Net (tr)');
+      hbar('b-merch-hbar', PRODS, PROD_NET, palette.net + 'cc', 'Net (tr)');
+      hbar('c-merch-hbar', PRODS, PROD_NET, palette.net + 'cc', 'Net (tr)');
+
+      dualAxis('a-merch-dual', PRODS, PROD_UNITS, PROD_NET, 'Units', 'Net (tr)');
+      dualAxis('b-merch-dual', PRODS, PROD_UNITS, PROD_NET, 'Units', 'Net (tr)');
+      dualAxis('c-merch-dual', PRODS, PROD_UNITS, PROD_NET, 'Units', 'Net (tr)');
+
+      growthBar('a-merch-growth', PRODS, PROD_GROWTH);
+      growthBar('b-merch-growth', PRODS, PROD_GROWTH);
+      growthBar('c-merch-growth', PRODS, PROD_GROWTH);
+
+      cancelCombo('a-cancel-trend');
+      cancelCombo('b-cancel-trend');
+      cancelCombo('c-cancel-trend');
+
+      doughnut('a-cancel-reason', REASONS, REASON_N, ['#f87171','#fb923c','#fbbf24','#94a3b8']);
+      doughnut('b-cancel-reason', REASONS, REASON_N, ['#f87171','#fb923c','#fbbf24','#94a3b8']);
+      doughnut('c-cancel-reason', REASONS, REASON_N, ['#f87171','#fb923c','#fbbf24','#94a3b8']);
+
+      hbar('a-cancel-prod', CANCEL_PROD, CANCEL_VAL, '#ef4444aa', 'tr');
+      hbar('b-cancel-prod', CANCEL_PROD, CANCEL_VAL, '#ef4444aa', 'tr');
+      hbar('c-cancel-prod', CANCEL_PROD, CANCEL_VAL, '#ef4444aa', 'tr');
+
+      barGroup('a-cancel-cat', ['Nội địa','Nhập khẩu','Rau củ','Khác'], [
+        { label: 'Giá trị hủy (tr)', data: CANCEL_CAT, backgroundColor: '#f87171', borderRadius: 4 }
+      ]);
+      barGroup('b-cancel-cat', ['Nội địa','Nhập khẩu','Rau củ','Khác'], [
+        { label: 'Giá trị hủy (tr)', data: CANCEL_CAT, backgroundColor: '#f87171', borderRadius: 4 }
+      ]);
+      barGroup('c-cancel-cat', ['Nội địa','Nhập khẩu','Rau củ','Khác'], [
+        { label: 'Giá trị hủy (tr)', data: CANCEL_CAT, backgroundColor: '#f87171', borderRadius: 4 }
+      ]);
+    }
+
+    // Tabs
+    document.querySelectorAll('.tabs button, .vc-side button[data-panel]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const panelId = btn.dataset.panel;
+        if (!panelId) return;
+        const prefix = panelId.split('-')[0];
+        const root = document.getElementById('variant-' + prefix);
+        if (!root) return;
+        root.querySelectorAll('.tabs button, .vc-side button[data-panel]').forEach(b => {
+          if (b.dataset.panel && b.dataset.panel.startsWith(prefix + '-')) b.classList.remove('active');
+        });
+        btn.classList.add('active');
+        root.querySelectorAll('.panel').forEach(p => {
+          if (p.id && p.id.startsWith(prefix + '-')) p.classList.toggle('active', p.id === panelId);
+        });
+        // rebuild charts when switching panels so hidden canvases size correctly
+        setTimeout(buildCharts, 30);
+      });
+    });
+
+    function showVariant(v) {
+      document.querySelectorAll('.variant-root').forEach(el => el.classList.remove('on'));
+      document.getElementById('variant-' + v)?.classList.add('on');
+      document.querySelectorAll('.switcher a').forEach(a => a.classList.toggle('on', a.dataset.v === v));
+      const url = new URL(location.href);
+      url.searchParams.set('variant', v);
+      history.replaceState(null, '', url);
+      setTimeout(buildCharts, 40);
+    }
+
+    document.querySelectorAll('.switcher a').forEach(a => {
+      a.addEventListener('click', e => {
+        e.preventDefault();
+        showVariant(a.dataset.v);
+      });
+    });
+
+    let variant = (new URLSearchParams(location.search).get('variant') || 'a').toLowerCase();
+    if (!['a','b','c'].includes(variant)) variant = 'a';
+    showVariant(variant);
+  </script>
+</body>
+</html>
