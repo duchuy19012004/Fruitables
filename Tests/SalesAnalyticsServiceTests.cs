@@ -426,7 +426,186 @@ public class SalesAnalyticsServiceTests
         Assert.Equal(120m, c.ValueByProduct.Datasets[0].Data[0]); // 80 + 40 line nets
 
         Assert.NotEmpty(c.CancelTrend.Labels);
+        Assert.Equal(2, c.CancelTrend.Datasets.Count);
+        Assert.Equal("Cancelled", c.CancelTrend.Datasets[0].Label);
+        Assert.Equal("Cancel rate %", c.CancelTrend.Datasets[1].Label);
         Assert.NotEmpty(c.ValueByCategory.Labels);
+    }
+
+    [Fact]
+    public async Task GetHubAsync_Merch_SortByUnitsAsc_OrdersAscending()
+    {
+        var options = TestDbContextFactory.CreateSqliteOptions();
+        await using var ctx = new ApplicationDbContext(options);
+
+        ctx.Categories.Add(new Category { Id = 1, Name = "Fruits", Slug = "fruits" });
+        ctx.Products.AddRange(
+            new Product { Id = 10, CategoryId = 1, Name = "HighUnits", Slug = "high", Price = 5m },
+            new Product { Id = 11, CategoryId = 1, Name = "LowUnits",  Slug = "low",  Price = 50m });
+
+        var day = new DateTime(2026, 7, 5, 12, 0, 0);
+        ctx.Orders.Add(new Order
+        {
+            Id = 1,
+            OrderNumber = "ORD-1",
+            CreatedAt = day,
+            Total = 160m,
+            Subtotal = 160m,
+            PaymentStatus = PaymentStatus.Paid,
+            Status = OrderStatus.Delivered
+        });
+        // HighUnits: 10 × 5 = 50 net, LowUnits: 2 × 50 = 100 net → default net order puts LowUnits first
+        ctx.OrderItems.AddRange(
+            new OrderItem { OrderId = 1, ProductId = 10, ProductName = "HighUnits", Quantity = 10, Price = 5m, Total = 50m },
+            new OrderItem { OrderId = 1, ProductId = 11, ProductName = "LowUnits",  Quantity = 2,  Price = 50m, Total = 100m });
+        await ctx.SaveChangesAsync();
+
+        var filter = new SalesAnalyticsFilterVm
+        {
+            Preset = DateRangePreset.Custom,
+            From = new DateTime(2026, 7, 1),
+            To = new DateTime(2026, 7, 16),
+            Tab = SalesAnalyticsTab.Merch,
+            Dimension = MerchDimension.Product,
+            Sort = "units",
+            Dir = "asc",
+            Take = 50
+        };
+
+        var hub = await new SalesAnalyticsService(new UnitOfWork(ctx)).GetHubAsync(filter);
+
+        Assert.Null(hub.Error);
+        Assert.NotNull(hub.Merch);
+        Assert.Equal(2, hub.Merch!.Rows.Count);
+        Assert.Equal("LowUnits", hub.Merch.Rows[0].Name);
+        Assert.Equal(2, hub.Merch.Rows[0].Units);
+        Assert.Equal("HighUnits", hub.Merch.Rows[1].Name);
+        Assert.Equal(10, hub.Merch.Rows[1].Units);
+    }
+
+    [Fact]
+    public async Task GetHubAsync_Cancellations_CancelTrend_HasCountAndRateDatasets()
+    {
+        var options = TestDbContextFactory.CreateSqliteOptions();
+        await using var ctx = new ApplicationDbContext(options);
+
+        var day = new DateTime(2026, 7, 5, 12, 0, 0);
+        ctx.Orders.AddRange(
+            new Order
+            {
+                Id = 1,
+                OrderNumber = "ORD-OK",
+                CreatedAt = day,
+                Total = 100m,
+                Subtotal = 100m,
+                PaymentStatus = PaymentStatus.Paid,
+                Status = OrderStatus.Delivered
+            },
+            new Order
+            {
+                Id = 2,
+                OrderNumber = "ORD-CAN",
+                CreatedAt = day,
+                Total = 50m,
+                Subtotal = 50m,
+                PaymentStatus = PaymentStatus.Pending,
+                Status = OrderStatus.Cancelled
+            });
+        await ctx.SaveChangesAsync();
+
+        var filter = new SalesAnalyticsFilterVm
+        {
+            Preset = DateRangePreset.Custom,
+            From = new DateTime(2026, 7, 5),
+            To = new DateTime(2026, 7, 5),
+            Tab = SalesAnalyticsTab.Cancellations
+        };
+
+        var hub = await new SalesAnalyticsService(new UnitOfWork(ctx)).GetHubAsync(filter);
+
+        Assert.NotNull(hub.Cancellations);
+        var trend = hub.Cancellations!.CancelTrend;
+        Assert.Equal(2, trend.Datasets.Count);
+        Assert.Equal("Cancelled", trend.Datasets[0].Label);
+        Assert.Equal("Cancel rate %", trend.Datasets[1].Label);
+        Assert.Single(trend.Labels);
+        Assert.Equal(1m, trend.Datasets[0].Data[0]); // 1 cancelled
+        Assert.Equal(50m, trend.Datasets[1].Data[0]); // 1/2 * 100
+    }
+
+    [Fact]
+    public async Task GetHubAsync_Merch_GrowthChart_SkipsNullDeltaProducts()
+    {
+        var options = TestDbContextFactory.CreateSqliteOptions();
+        await using var ctx = new ApplicationDbContext(options);
+
+        ctx.Categories.Add(new Category { Id = 1, Name = "Fruits", Slug = "fruits" });
+        ctx.Products.Add(new Product
+        {
+            Id = 10,
+            CategoryId = 1,
+            Name = "BrandNew",
+            Slug = "brand-new",
+            Price = 10m
+        });
+
+        // Only current period sales → previous = 0 → DeltaPercent null
+        ctx.Orders.Add(new Order
+        {
+            Id = 1,
+            OrderNumber = "ORD-CUR",
+            CreatedAt = new DateTime(2026, 7, 5, 10, 0, 0),
+            Total = 100m,
+            Subtotal = 100m,
+            PaymentStatus = PaymentStatus.Paid,
+            Status = OrderStatus.Delivered
+        });
+        ctx.OrderItems.Add(new OrderItem
+        {
+            OrderId = 1,
+            ProductId = 10,
+            ProductName = "BrandNew",
+            Quantity = 10,
+            Price = 10m,
+            Total = 100m
+        });
+        await ctx.SaveChangesAsync();
+
+        var filter = new SalesAnalyticsFilterVm
+        {
+            Preset = DateRangePreset.Custom,
+            From = new DateTime(2026, 7, 1),
+            To = new DateTime(2026, 7, 15),
+            Tab = SalesAnalyticsTab.Merch,
+            Dimension = MerchDimension.Product
+        };
+
+        var hub = await new SalesAnalyticsService(new UnitOfWork(ctx)).GetHubAsync(filter);
+
+        Assert.NotNull(hub.Merch);
+        Assert.Single(hub.Merch!.Rows);
+        Assert.Null(hub.Merch.Rows[0].DeltaPercent);
+        // Growth chart must omit null-delta rows (not plot as 0)
+        Assert.Empty(hub.Merch.Growth.Labels);
+        Assert.Empty(hub.Merch.Growth.Datasets[0].Data);
+    }
+
+    [Fact]
+    public async Task ExportExcelAsync_InvalidRange_ThrowsArgumentException()
+    {
+        var options = TestDbContextFactory.CreateSqliteOptions();
+        await using var ctx = new ApplicationDbContext(options);
+        var sut = new SalesAnalyticsService(new UnitOfWork(ctx));
+
+        var filter = new SalesAnalyticsFilterVm
+        {
+            Preset = DateRangePreset.Custom,
+            From = new DateTime(2025, 1, 1),
+            To = new DateTime(2026, 2, 2),
+            Tab = SalesAnalyticsTab.Overview
+        };
+
+        await Assert.ThrowsAsync<ArgumentException>(() => sut.ExportExcelAsync(filter));
     }
 
     [Fact]

@@ -37,7 +37,7 @@ namespace Fruitables.Areas.Admin.Controllers
         }
 
         /// <summary>
-        /// Export hub data to Excel (implemented in a later task; wired for bookmarks).
+        /// Export hub data (current tab + KPI definitions) to Excel.
         /// GET: /Admin/Analytics/Export
         /// </summary>
         [HttpGet]
@@ -52,12 +52,23 @@ namespace Fruitables.Areas.Admin.Controllers
             int take = 50)
         {
             var filter = BuildFilter(preset, from, to, tab, dimension, sort, dir, take);
-            var bytes = await _analytics.ExportExcelAsync(filter);
-            var fromPart = filter.From?.ToString("yyyyMMdd") ?? filter.Preset.ToString();
-            var toPart = filter.To?.ToString("yyyyMMdd") ?? DateTime.Now.ToString("yyyyMMdd");
-            var tabPart = filter.Tab.ToString().ToLowerInvariant();
-            var fileName = $"ThongKeBanHang_{tabPart}_{fromPart}_{toPart}.xlsx";
-            return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
+            try
+            {
+                var bytes = await _analytics.ExportExcelAsync(filter);
+                var fromPart = filter.From?.ToString("yyyyMMdd") ?? filter.Preset.ToString();
+                var toPart = filter.To?.ToString("yyyyMMdd") ?? DateTime.Now.ToString("yyyyMMdd");
+                var tabPart = filter.Tab.ToString().ToLowerInvariant();
+                var fileName = $"ThongKeBanHang_{tabPart}_{fromPart}_{toPart}.xlsx";
+                return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
 
         private static SalesAnalyticsFilterVm BuildFilter(

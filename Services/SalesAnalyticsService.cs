@@ -82,7 +82,7 @@ public class SalesAnalyticsService : ISalesAnalyticsService
     {
         var hub = await GetHubAsync(filter);
         if (!string.IsNullOrEmpty(hub.Error))
-            throw new InvalidOperationException(hub.Error);
+            throw new ArgumentException(hub.Error);
 
         // Always include overview KPIs even when exporting merch/cancel tabs.
         SalesOverviewVm? overview = hub.Overview;
@@ -397,8 +397,8 @@ public class SalesAnalyticsService : ISalesAnalyticsService
         var prevLines = lineItems.Where(i => AnalyticsPeriodHelper.InRange(i.OrderCreatedAt, pair.Previous)).ToList();
 
         var rows = filter.Dimension == MerchDimension.Category
-            ? BuildCategoryRanks(curLines, prevLines, filter.Take)
-            : BuildProductRanks(curLines, prevLines, filter.Take);
+            ? BuildCategoryRanks(curLines, prevLines, filter.Take, filter.Sort, filter.Dir)
+            : BuildProductRanks(curLines, prevLines, filter.Take, filter.Sort, filter.Dir);
 
         return new SalesMerchVm
         {
@@ -491,7 +491,9 @@ public class SalesAnalyticsService : ISalesAnalyticsService
     private static List<MerchRankRowVm> BuildProductRanks(
         IReadOnlyList<LineItemRow> current,
         IReadOnlyList<LineItemRow> previous,
-        int take)
+        int take,
+        string? sort = null,
+        string? dir = null)
     {
         var prevNet = previous
             .GroupBy(i => i.ProductId)
@@ -513,16 +515,12 @@ public class SalesAnalyticsService : ISalesAnalyticsService
                     OrderCount = g.Select(x => x.OrderId).Distinct().Count()
                 };
             })
-            .OrderByDescending(g => g.Net)
-            .ThenBy(g => g.Name)
             .ToList();
 
         var totalNet = groups.Sum(g => g.Net);
-        return groups
-            .Take(take)
-            .Select((g, idx) => new MerchRankRowVm
+        var rows = groups
+            .Select(g => new MerchRankRowVm
             {
-                Rank = idx + 1,
                 ProductId = g.ProductId,
                 CategoryId = g.CategoryId,
                 Name = g.Name,
@@ -534,12 +532,16 @@ public class SalesAnalyticsService : ISalesAnalyticsService
                 DeltaPercent = MetricValue.From(g.Net, prevNet.GetValueOrDefault(g.ProductId)).DeltaPercent
             })
             .ToList();
+
+        return ApplyMerchSort(rows, sort, dir, take);
     }
 
     private static List<MerchRankRowVm> BuildCategoryRanks(
         IReadOnlyList<LineItemRow> current,
         IReadOnlyList<LineItemRow> previous,
-        int take)
+        int take,
+        string? sort = null,
+        string? dir = null)
     {
         var prevNet = previous
             .GroupBy(i => i.CategoryId)
@@ -559,16 +561,12 @@ public class SalesAnalyticsService : ISalesAnalyticsService
                     OrderCount = g.Select(x => x.OrderId).Distinct().Count()
                 };
             })
-            .OrderByDescending(g => g.Net)
-            .ThenBy(g => g.Name)
             .ToList();
 
         var totalNet = groups.Sum(g => g.Net);
-        return groups
-            .Take(take)
-            .Select((g, idx) => new MerchRankRowVm
+        var rows = groups
+            .Select(g => new MerchRankRowVm
             {
-                Rank = idx + 1,
                 ProductId = null,
                 CategoryId = g.CategoryId,
                 Name = g.Name,
@@ -578,6 +576,53 @@ public class SalesAnalyticsService : ISalesAnalyticsService
                 SharePercent = SharePercent(g.Net, totalNet),
                 OrderCount = g.OrderCount,
                 DeltaPercent = MetricValue.From(g.Net, prevNet.GetValueOrDefault(g.CategoryId)).DeltaPercent
+            })
+            .ToList();
+
+        return ApplyMerchSort(rows, sort, dir, take);
+    }
+
+    /// <summary>
+    /// Sort merch ranking by filter key then take top N and assign ranks.
+    /// Keys: net (default), units, share, orders, delta, name. Dir: asc|desc (default desc).
+    /// </summary>
+    private static List<MerchRankRowVm> ApplyMerchSort(
+        IReadOnlyList<MerchRankRowVm> rows,
+        string? sort,
+        string? dir,
+        int take)
+    {
+        var key = (sort ?? "net").Trim().ToLowerInvariant();
+        var asc = string.Equals(dir, "asc", StringComparison.OrdinalIgnoreCase);
+
+        IEnumerable<MerchRankRowVm> ordered = key switch
+        {
+            "units" => asc
+                ? rows.OrderBy(r => r.Units).ThenBy(r => r.Name)
+                : rows.OrderByDescending(r => r.Units).ThenBy(r => r.Name),
+            "share" => asc
+                ? rows.OrderBy(r => r.SharePercent).ThenBy(r => r.Name)
+                : rows.OrderByDescending(r => r.SharePercent).ThenBy(r => r.Name),
+            "orders" => asc
+                ? rows.OrderBy(r => r.OrderCount).ThenBy(r => r.Name)
+                : rows.OrderByDescending(r => r.OrderCount).ThenBy(r => r.Name),
+            "delta" => asc
+                ? rows.OrderBy(r => r.DeltaPercent ?? decimal.MaxValue).ThenBy(r => r.Name)
+                : rows.OrderByDescending(r => r.DeltaPercent ?? decimal.MinValue).ThenBy(r => r.Name),
+            "name" => asc
+                ? rows.OrderBy(r => r.Name)
+                : rows.OrderByDescending(r => r.Name),
+            _ => asc
+                ? rows.OrderBy(r => r.NetRevenue).ThenBy(r => r.Name)
+                : rows.OrderByDescending(r => r.NetRevenue).ThenBy(r => r.Name)
+        };
+
+        return ordered
+            .Take(take)
+            .Select((r, idx) =>
+            {
+                r.Rank = idx + 1;
+                return r;
             })
             .ToList();
     }
@@ -640,19 +685,23 @@ public class SalesAnalyticsService : ISalesAnalyticsService
             }
         };
 
-    private static ChartSeriesDto BuildGrowthChart(IReadOnlyList<MerchRankRowVm> rows) =>
-        new()
+    private static ChartSeriesDto BuildGrowthChart(IReadOnlyList<MerchRankRowVm> rows)
+    {
+        // Skip new products (null delta) — do not plot as 0% growth.
+        var plotted = rows.Where(r => r.DeltaPercent.HasValue).ToList();
+        return new ChartSeriesDto
         {
-            Labels = rows.Select(r => r.Name).ToList(),
+            Labels = plotted.Select(r => r.Name).ToList(),
             Datasets =
             {
                 new ChartDatasetDto
                 {
                     Label = "Delta %",
-                    Data = rows.Select(r => r.DeltaPercent ?? 0m).ToList()
+                    Data = plotted.Select(r => r.DeltaPercent!.Value).ToList()
                 }
             }
         };
+    }
 
     private static ChartSeriesDto BuildUnitsTrend(AnalyticsDateRange current, IReadOnlyList<LineItemRow> curLines)
     {
@@ -678,12 +727,17 @@ public class SalesAnalyticsService : ISalesAnalyticsService
     private static ChartSeriesDto BuildCancelTrend(AnalyticsDateRange current, IReadOnlyList<OrderRow> curRows)
     {
         var labels = new List<string>();
-        var data = new List<decimal>();
+        var countData = new List<decimal>();
+        var rateData = new List<decimal>();
 
         for (var day = current.StartInclusive.Date; day < current.EndExclusive.Date; day = day.AddDays(1))
         {
             labels.Add(day.ToString("dd/MM"));
-            data.Add(curRows.Count(o => o.CreatedAt.Date == day && o.Status == OrderStatus.Cancelled));
+            var dayOrders = curRows.Where(o => o.CreatedAt.Date == day).ToList();
+            var cancelled = dayOrders.Count(o => o.Status == OrderStatus.Cancelled);
+            var all = dayOrders.Count;
+            countData.Add(cancelled);
+            rateData.Add(all == 0 ? 0m : Math.Round(cancelled / (decimal)all * 100m, 2));
         }
 
         return new ChartSeriesDto
@@ -691,7 +745,8 @@ public class SalesAnalyticsService : ISalesAnalyticsService
             Labels = labels,
             Datasets =
             {
-                new ChartDatasetDto { Label = "Cancelled", Data = data }
+                new ChartDatasetDto { Label = "Cancelled", Data = countData },
+                new ChartDatasetDto { Label = "Cancel rate %", Data = rateData }
             }
         };
     }

@@ -4,6 +4,9 @@
     var f = Model.Filter;
     string Money(decimal v) => v.ToString("N0") + " đ";
 
+    var currentSort = string.IsNullOrWhiteSpace(f.Sort) ? "net" : f.Sort.Trim().ToLowerInvariant();
+    var currentDir = string.IsNullOrWhiteSpace(f.Dir) ? "desc" : f.Dir.Trim().ToLowerInvariant();
+
     string DimUrl(string dimension) => Url.Action("Index", "Analytics", new
     {
         area = "Admin",
@@ -16,6 +19,34 @@
         dir = f.Dir,
         take = f.Take
     })!;
+
+    string SortUrl(string sortKey)
+    {
+        var nextDir = "desc";
+        if (currentSort == sortKey)
+            nextDir = currentDir == "desc" ? "asc" : "desc";
+        else if (sortKey == "name")
+            nextDir = "asc";
+
+        return Url.Action("Index", "Analytics", new
+        {
+            area = "Admin",
+            preset = f.Preset,
+            from = f.From,
+            to = f.To,
+            tab = "merch",
+            dimension = f.Dimension == MerchDimension.Category ? "category" : "product",
+            sort = sortKey,
+            dir = nextDir,
+            take = f.Take
+        })!;
+    }
+
+    string SortLabel(string label, string sortKey)
+    {
+        if (currentSort != sortKey) return label;
+        return label + (currentDir == "asc" ? " ↑" : " ↓");
+    }
 
     var isProduct = f.Dimension != MerchDimension.Category;
     var dimLabel = isProduct ? "sản phẩm" : "danh mục";
@@ -79,16 +110,16 @@
                 <thead>
                     <tr>
                         <th>#</th>
-                        <th>@(isProduct ? "Sản phẩm" : "Danh mục")</th>
+                        <th><a href="@SortUrl("name")">@SortLabel(isProduct ? "Sản phẩm" : "Danh mục", "name")</a></th>
                         @if (isProduct)
                         {
                             <th>Danh mục</th>
                         }
-                        <th class="num">SL</th>
-                        <th class="num">Net</th>
-                        <th class="num">Share</th>
-                        <th class="num">Đơn</th>
-                        <th class="num">Δ</th>
+                        <th class="num"><a href="@SortUrl("units")">@SortLabel("SL", "units")</a></th>
+                        <th class="num"><a href="@SortUrl("net")">@SortLabel("Net", "net")</a></th>
+                        <th class="num"><a href="@SortUrl("share")">@SortLabel("Share", "share")</a></th>
+                        <th class="num"><a href="@SortUrl("orders")">@SortLabel("Đơn", "orders")</a></th>
+                        <th class="num"><a href="@SortUrl("delta")">@SortLabel("Δ", "delta")</a></th>
                     </tr>
                 </thead>
                 <tbody>

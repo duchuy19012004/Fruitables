@@ -31,6 +31,34 @@ public class AnalyticsPeriodHelperTests
     }
 
     [Fact]
+    public void ResolvePair_AllTime_LongHistory_ClampsToLast366Days_DoesNotThrow()
+    {
+        var today = new DateTime(2026, 7, 16);
+        var firstOrder = new DateTime(2020, 1, 1);
+
+        var pair = AnalyticsPeriodHelper.ResolvePair(
+            DateRangePreset.AllTime, null, null, today, firstOrder);
+
+        var days = (pair.Current.EndExclusive - pair.Current.StartInclusive).TotalDays;
+        Assert.Equal(AnalyticsPeriodHelper.MaxRangeDays, days);
+        Assert.Equal(today.AddDays(1), pair.Current.EndExclusive.Date);
+        Assert.Equal(today.AddDays(1).AddDays(-AnalyticsPeriodHelper.MaxRangeDays), pair.Current.StartInclusive.Date);
+    }
+
+    [Fact]
+    public void ResolvePair_AllTime_NoFirstOrder_ClampsToLast366Days()
+    {
+        var today = new DateTime(2026, 7, 16);
+
+        var pair = AnalyticsPeriodHelper.ResolvePair(
+            DateRangePreset.AllTime, null, null, today, firstOrderDate: null);
+
+        var days = (pair.Current.EndExclusive - pair.Current.StartInclusive).TotalDays;
+        Assert.Equal(AnalyticsPeriodHelper.MaxRangeDays, days);
+        Assert.Equal(today.AddDays(1), pair.Current.EndExclusive.Date);
+    }
+
+    [Fact]
     public void MetricValue_From_PreviousZeroCurrentPositive_DeltaPercentNull()
     {
         var m = MetricValue.From(100, 0);

@@ -40,8 +40,19 @@ public static class AnalyticsPeriodHelper
         }
 
         var days = (endExclusive - start).TotalDays;
-        if (days > MaxRangeDays)
+        // AllTime is offered in the UI: clamp to last MaxRangeDays instead of throwing
+        // (stores older than 366 days, or empty DB → MinValue first order).
+        if (preset == DateRangePreset.AllTime && (days > MaxRangeDays || days <= 0 || start == DateTime.MinValue.Date))
+        {
+            endExclusive = today.AddDays(1);
+            start = endExclusive.AddDays(-MaxRangeDays);
+            days = MaxRangeDays;
+        }
+        else if (days > MaxRangeDays)
+        {
             throw new ArgumentException($"Khoảng thời gian tối đa {MaxRangeDays} ngày.");
+        }
+
         if (days <= 0)
             throw new ArgumentException("Khoảng thời gian không hợp lệ.");
 
