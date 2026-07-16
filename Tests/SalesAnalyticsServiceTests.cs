@@ -503,5 +503,323 @@ public class SalesAnalyticsServiceTests
         Assert.Equal(30m, row.NetRevenue);
         Assert.Equal(3, row.Units);
     }
+
+    // ── Period boundary guardrails (migrated from legacy Revenue/Cancel services) ──
+    // Order.CreatedAt is stored Vietnam local time. Custom ranges use half-open
+    // [From.Date, To.Date+1day); evening orders on the end date must be included.
+
+    [Fact]
+    public async Task GetHubAsync_CustomSingleDay_IncludesEveningVietnamOrders()
+    {
+        var options = TestDbContextFactory.CreateSqliteOptions();
+        await using var ctx = new ApplicationDbContext(options);
+
+        ctx.Orders.AddRange(
+            new Order
+            {
+                Id = 1,
+                OrderNumber = "ORD-EVE",
+                CreatedAt = new DateTime(2026, 6, 3, 20, 0, 0),
+                Status = OrderStatus.Delivered,
+                PaymentStatus = PaymentStatus.Paid,
+                Subtotal = 100m,
+                Discount = 0m,
+                Total = 100m
+            },
+            new Order
+            {
+                Id = 2,
+                OrderNumber = "ORD-EAR",
+                CreatedAt = new DateTime(2026, 6, 3, 2, 0, 0),
+                Status = OrderStatus.Delivered,
+                PaymentStatus = PaymentStatus.Paid,
+                Subtotal = 50m,
+                Discount = 0m,
+                Total = 50m
+            },
+            new Order
+            {
+                Id = 3,
+                OrderNumber = "ORD-NXT",
+                CreatedAt = new DateTime(2026, 6, 4, 1, 0, 0),
+                Status = OrderStatus.Delivered,
+                PaymentStatus = PaymentStatus.Paid,
+                Subtotal = 30m,
+                Discount = 0m,
+                Total = 30m
+            });
+        await ctx.SaveChangesAsync();
+
+        var filter = new SalesAnalyticsFilterVm
+        {
+            Preset = DateRangePreset.Custom,
+            From = new DateTime(2026, 6, 3),
+            To = new DateTime(2026, 6, 3),
+            Tab = SalesAnalyticsTab.Overview
+        };
+
+        var hub = await new SalesAnalyticsService(new UnitOfWork(ctx)).GetHubAsync(filter);
+
+        Assert.Null(hub.Error);
+        Assert.NotNull(hub.Overview);
+        // Net = delivered paid − refunded; both Jun 3 orders only (not Jun 4).
+        Assert.Equal(150m, hub.Overview!.Net.Value);
+        Assert.Equal(150m, hub.Overview.Gross.Value);
+    }
+
+    [Fact]
+    public async Task GetHubAsync_CustomRange_ExcludesOrdersOutsideRange()
+    {
+        var options = TestDbContextFactory.CreateSqliteOptions();
+        await using var ctx = new ApplicationDbContext(options);
+
+        ctx.Orders.AddRange(
+            new Order
+            {
+                Id = 1,
+                OrderNumber = "ORD-IN",
+                CreatedAt = new DateTime(2026, 6, 3, 12, 0, 0),
+                Status = OrderStatus.Delivered,
+                PaymentStatus = PaymentStatus.Paid,
+                Subtotal = 100m,
+                Discount = 0m,
+                Total = 100m
+            },
+            new Order
+            {
+                Id = 2,
+                OrderNumber = "ORD-BEFORE",
+                CreatedAt = new DateTime(2026, 5, 31, 23, 0, 0),
+                Status = OrderStatus.Delivered,
+                PaymentStatus = PaymentStatus.Paid,
+                Subtotal = 200m,
+                Discount = 0m,
+                Total = 200m
+            },
+            new Order
+            {
+                Id = 3,
+                OrderNumber = "ORD-AFTER",
+                CreatedAt = new DateTime(2026, 6, 5, 1, 0, 0),
+                Status = OrderStatus.Delivered,
+                PaymentStatus = PaymentStatus.Paid,
+                Subtotal = 300m,
+                Discount = 0m,
+                Total = 300m
+            });
+        await ctx.SaveChangesAsync();
+
+        var filter = new SalesAnalyticsFilterVm
+        {
+            Preset = DateRangePreset.Custom,
+            From = new DateTime(2026, 6, 2),
+            To = new DateTime(2026, 6, 4),
+            Tab = SalesAnalyticsTab.Overview
+        };
+
+        var hub = await new SalesAnalyticsService(new UnitOfWork(ctx)).GetHubAsync(filter);
+
+        Assert.Null(hub.Error);
+        Assert.Equal(100m, hub.Overview!.Net.Value);
+        Assert.Equal(100m, hub.Overview.Gross.Value);
+    }
+
+    [Fact]
+    public async Task GetHubAsync_Overview_GrossTrend_BucketsEveningOrderOnSameDay()
+    {
+        var options = TestDbContextFactory.CreateSqliteOptions();
+        await using var ctx = new ApplicationDbContext(options);
+
+        ctx.Orders.AddRange(
+            new Order
+            {
+                Id = 1,
+                OrderNumber = "ORD-EVE",
+                CreatedAt = new DateTime(2026, 6, 3, 20, 0, 0),
+                Status = OrderStatus.Delivered,
+                PaymentStatus = PaymentStatus.Paid,
+                Subtotal = 100m,
+                Discount = 0m,
+                Total = 100m
+            },
+            new Order
+            {
+                Id = 2,
+                OrderNumber = "ORD-NXT",
+                CreatedAt = new DateTime(2026, 6, 4, 2, 0, 0),
+                Status = OrderStatus.Delivered,
+                PaymentStatus = PaymentStatus.Paid,
+                Subtotal = 50m,
+                Discount = 0m,
+                Total = 50m
+            });
+        await ctx.SaveChangesAsync();
+
+        var filter = new SalesAnalyticsFilterVm
+        {
+            Preset = DateRangePreset.Custom,
+            From = new DateTime(2026, 6, 3),
+            To = new DateTime(2026, 6, 4),
+            Tab = SalesAnalyticsTab.Overview
+        };
+
+        var hub = await new SalesAnalyticsService(new UnitOfWork(ctx)).GetHubAsync(filter);
+
+        Assert.NotNull(hub.Overview);
+        var trend = hub.Overview!.Trend;
+        Assert.Equal(new[] { "03/06", "04/06" }, trend.Labels);
+        Assert.Equal(2, trend.Datasets.Count);
+        // Gross series: evening 20:00 stays on 03/06, not spilled to 04/06.
+        Assert.Equal(100m, trend.Datasets[0].Data[0]);
+        Assert.Equal(50m, trend.Datasets[0].Data[1]);
+    }
+
+    [Fact]
+    public async Task GetHubAsync_Cancellations_CustomSingleDay_IncludesEveningOrders()
+    {
+        var options = TestDbContextFactory.CreateSqliteOptions();
+        await using var ctx = new ApplicationDbContext(options);
+
+        ctx.Orders.AddRange(
+            new Order
+            {
+                Id = 10,
+                OrderNumber = "ORD-EVE",
+                CreatedAt = new DateTime(2026, 6, 3, 20, 0, 0),
+                Status = OrderStatus.Cancelled,
+                PaymentStatus = PaymentStatus.Pending,
+                Total = 80m,
+                Subtotal = 80m
+            },
+            new Order
+            {
+                Id = 11,
+                OrderNumber = "ORD-EAR",
+                CreatedAt = new DateTime(2026, 6, 3, 2, 0, 0),
+                Status = OrderStatus.Cancelled,
+                PaymentStatus = PaymentStatus.Pending,
+                Total = 40m,
+                Subtotal = 40m
+            },
+            new Order
+            {
+                Id = 12,
+                OrderNumber = "ORD-NXT",
+                CreatedAt = new DateTime(2026, 6, 4, 1, 0, 0),
+                Status = OrderStatus.Pending,
+                PaymentStatus = PaymentStatus.Pending,
+                Total = 10m,
+                Subtotal = 10m
+            });
+        await ctx.SaveChangesAsync();
+
+        var filter = new SalesAnalyticsFilterVm
+        {
+            Preset = DateRangePreset.Custom,
+            From = new DateTime(2026, 6, 3),
+            To = new DateTime(2026, 6, 3),
+            Tab = SalesAnalyticsTab.Cancellations
+        };
+
+        var hub = await new SalesAnalyticsService(new UnitOfWork(ctx)).GetHubAsync(filter);
+
+        Assert.Null(hub.Error);
+        Assert.NotNull(hub.Cancellations);
+        Assert.Equal(2, hub.Cancellations!.CancelledCount.Value);
+        Assert.Equal(120m, hub.Cancellations.CancelledValue.Value);
+        Assert.Equal(100m, hub.Cancellations.CancelRate.Value); // 2/2 in range cancelled
+    }
+
+    [Fact]
+    public async Task GetHubAsync_Cancellations_GroupsNullEmptyWhitespaceAsUnknownReason()
+    {
+        var options = TestDbContextFactory.CreateSqliteOptions();
+        await using var ctx = new ApplicationDbContext(options);
+
+        var day = new DateTime(2026, 6, 3, 12, 0, 0);
+        ctx.Orders.AddRange(
+            new Order
+            {
+                Id = 1,
+                OrderNumber = "ORD-1",
+                Status = OrderStatus.Cancelled,
+                CancelReason = null,
+                CreatedAt = day,
+                Total = 10m,
+                Subtotal = 10m
+            },
+            new Order
+            {
+                Id = 2,
+                OrderNumber = "ORD-2",
+                Status = OrderStatus.Cancelled,
+                CancelReason = "",
+                CreatedAt = day,
+                Total = 10m,
+                Subtotal = 10m
+            },
+            new Order
+            {
+                Id = 3,
+                OrderNumber = "ORD-3",
+                Status = OrderStatus.Cancelled,
+                CancelReason = "   ",
+                CreatedAt = day,
+                Total = 10m,
+                Subtotal = 10m
+            },
+            new Order
+            {
+                Id = 4,
+                OrderNumber = "ORD-4",
+                Status = OrderStatus.Cancelled,
+                CancelReason = "Khách hàng đổi ý",
+                CreatedAt = day,
+                Total = 10m,
+                Subtotal = 10m
+            },
+            new Order
+            {
+                Id = 5,
+                OrderNumber = "ORD-5",
+                Status = OrderStatus.Cancelled,
+                CancelReason = "Khách hàng đổi ý",
+                CreatedAt = day,
+                Total = 10m,
+                Subtotal = 10m
+            },
+            new Order
+            {
+                Id = 6,
+                OrderNumber = "ORD-6",
+                Status = OrderStatus.Pending,
+                CancelReason = null,
+                CreatedAt = day,
+                Total = 10m,
+                Subtotal = 10m
+            });
+        await ctx.SaveChangesAsync();
+
+        var filter = new SalesAnalyticsFilterVm
+        {
+            Preset = DateRangePreset.Custom,
+            From = new DateTime(2026, 6, 3),
+            To = new DateTime(2026, 6, 3),
+            Tab = SalesAnalyticsTab.Cancellations
+        };
+
+        var hub = await new SalesAnalyticsService(new UnitOfWork(ctx)).GetHubAsync(filter);
+
+        Assert.NotNull(hub.Cancellations);
+        var reasons = hub.Cancellations!.Reasons;
+        Assert.Equal(5, hub.Cancellations.CancelledCount.Value);
+        Assert.Contains("Không ghi rõ", reasons.Labels);
+        Assert.Contains("Khách hàng đổi ý", reasons.Labels);
+
+        var unknownIdx = reasons.Labels.IndexOf("Không ghi rõ");
+        var doiYIdx = reasons.Labels.IndexOf("Khách hàng đổi ý");
+        Assert.Equal(3m, reasons.Datasets[0].Data[unknownIdx]); // null + empty + whitespace
+        Assert.Equal(2m, reasons.Datasets[0].Data[doiYIdx]);
+    }
 }
 
