@@ -26,13 +26,17 @@ B  Đặt lịch ──(Chờ)──► D Áp dụng ─────► giá hi�
 C  Hủy lịch ──► hết Chờ (D không còn gì cho variant đó)
 ```
 
-**Regen:**
+**Regen + đóng khung StarUML (header ô + viền ngoài):**
 
 ```bash
 node .agents/scripts/plantuml-render.mjs docs/price-schedule/srs/price-a-immediate-swimlane.puml --png
+node docs/chatbox/srs/frame-svg.mjs docs/price-schedule/srs/price-a-immediate-swimlane.svg --lanes "Admin,Hệ thống"
 node .agents/scripts/plantuml-render.mjs docs/price-schedule/srs/price-b-schedule-swimlane.puml --png
+node docs/chatbox/srs/frame-svg.mjs docs/price-schedule/srs/price-b-schedule-swimlane.svg --lanes "Admin,Hệ thống"
 node .agents/scripts/plantuml-render.mjs docs/price-schedule/srs/price-c-cancel-swimlane.puml --png
+node docs/chatbox/srs/frame-svg.mjs docs/price-schedule/srs/price-c-cancel-swimlane.svg --lanes "Admin,Hệ thống"
 node .agents/scripts/plantuml-render.mjs docs/price-schedule/srs/price-d-apply-swimlane.puml --png
+node docs/chatbox/srs/frame-svg.mjs docs/price-schedule/srs/price-d-apply-swimlane.svg --lanes "Hệ thống"
 ```
 
 ---
