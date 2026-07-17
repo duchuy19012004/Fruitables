@@ -169,7 +169,7 @@
       data: {
         labels: s.labels,
         datasets: [{
-          label: d.label || 'Net',
+          label: d.label || 'Doanh thu thuần',
           data: d.data,
           backgroundColor: color || (palette.net + 'cc'),
           borderRadius: 6,
@@ -280,7 +280,7 @@
       data: {
         labels: s.labels,
         datasets: [{
-          label: d.label || 'Cancelled',
+          label: d.label || 'Đơn hủy',
           data: d.data,
           backgroundColor: '#fca5a5',
           borderRadius: 4
@@ -302,7 +302,7 @@
       data: {
         labels: s.labels,
         datasets: [{
-          label: s.datasets[0].label || 'Orders',
+          label: s.datasets[0].label || 'Số đơn',
           data: data,
           backgroundColor: bg,
           borderRadius: 4

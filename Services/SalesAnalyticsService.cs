@@ -119,27 +119,32 @@ public class SalesAnalyticsService : ISalesAnalyticsService
     private static void WriteMetricDefinitionsSheet(XLWorkbook wb, SalesHubVm hub)
     {
         var ws = wb.Worksheets.Add("Định nghĩa metric");
-        ws.Cell(1, 1).Value = "Metric";
+        ws.Cell(1, 1).Value = "Chỉ số";
         ws.Cell(1, 2).Value = "Định nghĩa (v1)";
         ws.Range(1, 1, 1, 2).Style.Font.Bold = true;
 
         var rows = new (string Metric, string Def)[]
         {
-            ("Gross revenue", "Sum(Total) của đơn Paid (PaymentStatus == Paid)"),
-            ("Net revenue", "Sum(Total) Delivered+Paid − Sum(Total) Refunded"),
-            ("Orders paid", "Số đơn thuộc Paid set"),
-            ("AOV gross", "Gross / count(Paid); 0 nếu không có đơn"),
-            ("AOV net", "Net / count(Delivered); 0 nếu không có đơn"),
-            ("Cancel rate", "count(Cancelled) / count(All orders) × 100"),
-            ("Cancelled value", "Sum(Total) của đơn Cancelled"),
-            ("Refund rate", "count(Refund) / count(Paid) × 100; 0 nếu Paid = 0"),
-            ("Merch Net (line)", "Price × Quantity trên dòng OrderItem của đơn Delivered+Paid"),
-            ("Share %", "Line Net / tổng Line Net trong kỳ"),
-            ("Time basis", "Order.CreatedAt (giờ cửa hàng VN); không dùng ngày paid/delivered"),
+            ("Doanh thu gộp", "Tổng tiền đơn đã thanh toán (PaymentStatus = Paid)"),
+            ("Doanh thu thuần", "Tổng tiền đơn đã giao & đã thanh toán trừ đơn đã hoàn tiền"),
+            ("Đơn đã thanh toán", "Số đơn thuộc tập đã thanh toán"),
+            ("GTB đơn gộp", "Doanh thu gộp / số đơn đã thanh toán; 0 nếu không có đơn"),
+            ("GTB đơn thuần", "Doanh thu thuần / số đơn đã giao; 0 nếu không có đơn"),
+            ("Tỷ lệ hủy", "Số đơn hủy / tổng đơn trong kỳ × 100"),
+            ("Giá trị hủy", "Tổng tiền các đơn đã hủy"),
+            ("Tỷ lệ hoàn tiền", "Số đơn hoàn / số đơn đã thanh toán × 100; 0 nếu không có đơn paid"),
+            ("Doanh thu thuần theo dòng", "Giá × số lượng trên dòng hàng của đơn đã giao & đã thanh toán"),
+            ("Tỷ trọng %", "Doanh thu thuần dòng / tổng doanh thu thuần dòng trong kỳ"),
+            ("Mốc thời gian", "Ngày tạo đơn (giờ VN); không dùng ngày thanh toán/giao hàng"),
             ("Kỳ hiện tại", hub.Periods.Current.Label),
             ("Kỳ so sánh", hub.Periods.Previous.Label),
-            ("Tab xuất", hub.Filter.Tab.ToString()),
-            ("Dimension", hub.Filter.Dimension.ToString())
+            ("Tab xuất", hub.Filter.Tab switch
+            {
+                SalesAnalyticsTab.Merch => "Sản phẩm & danh mục",
+                SalesAnalyticsTab.Cancellations => "Hủy & hoàn",
+                _ => "Tổng quan"
+            }),
+            ("Chiều xếp hạng", hub.Filter.Dimension == MerchDimension.Category ? "Danh mục" : "Sản phẩm")
         };
 
         for (var i = 0; i < rows.Length; i++)
@@ -182,19 +187,19 @@ public class SalesAnalyticsService : ISalesAnalyticsService
 
         if (overview is not null)
         {
-            WriteMetric("Gross", overview.Gross);
-            WriteMetric("Net", overview.Net);
-            WriteMetric("Orders paid", overview.OrdersPaid);
-            WriteMetric("AOV net", overview.AovNet);
-            WriteMetric("Cancel rate %", overview.CancelRate);
+            WriteMetric("Doanh thu gộp", overview.Gross);
+            WriteMetric("Doanh thu thuần", overview.Net);
+            WriteMetric("Đơn đã thanh toán", overview.OrdersPaid);
+            WriteMetric("GTB đơn thuần", overview.AovNet);
+            WriteMetric("Tỷ lệ hủy %", overview.CancelRate);
         }
 
         if (hub.Cancellations is { } c)
         {
-            WriteMetric("Cancelled count", c.CancelledCount);
-            WriteMetric("Cancel rate % (tab)", c.CancelRate);
-            WriteMetric("Cancelled value", c.CancelledValue);
-            WriteMetric("Refund rate %", c.RefundRate);
+            WriteMetric("Số đơn hủy", c.CancelledCount);
+            WriteMetric("Tỷ lệ hủy % (tab)", c.CancelRate);
+            WriteMetric("Giá trị hủy", c.CancelledValue);
+            WriteMetric("Tỷ lệ hoàn tiền %", c.RefundRate);
         }
 
         ws.Columns().AdjustToContents();
@@ -218,8 +223,8 @@ public class SalesAnalyticsService : ISalesAnalyticsService
 
     private static void WriteMerchSheet(XLWorkbook wb, SalesMerchVm merch)
     {
-        var ws = wb.Worksheets.Add("Merch ranking");
-        var headers = new[] { "#", "Name", "Category", "Units", "Net", "Share %", "Orders", "Δ %" };
+        var ws = wb.Worksheets.Add("Xếp hạng");
+        var headers = new[] { "#", "Tên", "Danh mục", "SL", "Thuần", "Tỷ trọng %", "Đơn", "Δ %" };
         for (var c = 0; c < headers.Length; c++)
             ws.Cell(1, c + 1).Value = headers[c];
         ws.Range(1, 1, 1, headers.Length).Style.Font.Bold = true;
@@ -246,9 +251,9 @@ public class SalesAnalyticsService : ISalesAnalyticsService
 
     private static void WriteCancelReasonsSheet(XLWorkbook wb, SalesCancellationsVm cancel)
     {
-        var ws = wb.Worksheets.Add("Cancel reasons");
-        ws.Cell(1, 1).Value = "Reason";
-        ws.Cell(1, 2).Value = "Count";
+        var ws = wb.Worksheets.Add("Lý do hủy");
+        ws.Cell(1, 1).Value = "Lý do";
+        ws.Cell(1, 2).Value = "Số đơn";
         ws.Range(1, 1, 1, 2).Style.Font.Bold = true;
 
         var labels = cancel.Reasons.Labels;
@@ -260,9 +265,9 @@ public class SalesAnalyticsService : ISalesAnalyticsService
         }
 
         // Also dump value-by-product for depth
-        var ws2 = wb.Worksheets.Add("Cancel by product");
-        ws2.Cell(1, 1).Value = "Product";
-        ws2.Cell(1, 2).Value = "Value";
+        var ws2 = wb.Worksheets.Add("Hủy theo sản phẩm");
+        ws2.Cell(1, 1).Value = "Sản phẩm";
+        ws2.Cell(1, 2).Value = "Giá trị";
         ws2.Range(1, 1, 1, 2).Style.Font.Bold = true;
         var pLabels = cancel.ValueByProduct.Labels;
         var pData = cancel.ValueByProduct.Datasets.FirstOrDefault()?.Data ?? new List<decimal>();
@@ -278,13 +283,13 @@ public class SalesAnalyticsService : ISalesAnalyticsService
 
     private static void WriteOverviewTablesSheet(XLWorkbook wb, SalesOverviewVm? overview)
     {
-        var ws = wb.Worksheets.Add("Top products");
+        var ws = wb.Worksheets.Add("Top sản phẩm");
         ws.Cell(1, 1).Value = "#";
-        ws.Cell(1, 2).Value = "Product";
-        ws.Cell(1, 3).Value = "Category";
-        ws.Cell(1, 4).Value = "Units";
-        ws.Cell(1, 5).Value = "Net";
-        ws.Cell(1, 6).Value = "Share %";
+        ws.Cell(1, 2).Value = "Sản phẩm";
+        ws.Cell(1, 3).Value = "Danh mục";
+        ws.Cell(1, 4).Value = "SL";
+        ws.Cell(1, 5).Value = "Thuần";
+        ws.Cell(1, 6).Value = "Tỷ trọng %";
         ws.Cell(1, 7).Value = "Δ %";
         ws.Range(1, 1, 1, 7).Style.Font.Bold = true;
 
@@ -306,12 +311,12 @@ public class SalesAnalyticsService : ISalesAnalyticsService
                 r++;
             }
 
-            var wsCat = wb.Worksheets.Add("Top categories");
+            var wsCat = wb.Worksheets.Add("Top danh mục");
             wsCat.Cell(1, 1).Value = "#";
-            wsCat.Cell(1, 2).Value = "Category";
-            wsCat.Cell(1, 3).Value = "Units";
-            wsCat.Cell(1, 4).Value = "Net";
-            wsCat.Cell(1, 5).Value = "Share %";
+            wsCat.Cell(1, 2).Value = "Danh mục";
+            wsCat.Cell(1, 3).Value = "SL";
+            wsCat.Cell(1, 4).Value = "Thuần";
+            wsCat.Cell(1, 5).Value = "Tỷ trọng %";
             wsCat.Cell(1, 6).Value = "Δ %";
             wsCat.Range(1, 1, 1, 6).Style.Font.Bold = true;
             var cr = 2;
@@ -382,7 +387,7 @@ public class SalesAnalyticsService : ISalesAnalyticsService
             UnitsTrend = BuildUnitsTrend(pair.Current, curLines),
             Pipeline = BuildPipeline(curRows),
             PeriodCompare = BuildPeriodCompare(gross, prevGross, net, prevNet, paid, prevPaid),
-            TopProductsBar = BuildRankBar(topProducts, "Net"),
+            TopProductsBar = BuildRankBar(topProducts, "Thuần"),
             TopProducts = topProducts,
             TopCategories = topCategories
         };
@@ -404,7 +409,7 @@ public class SalesAnalyticsService : ISalesAnalyticsService
         {
             Dimension = filter.Dimension,
             Rows = rows,
-            RankBar = BuildRankBar(rows, "Net"),
+            RankBar = BuildRankBar(rows, "Thuần"),
             CategoryMix = BuildCategoryMixChart(curLines),
             UnitsVsNet = BuildUnitsVsNet(rows),
             Growth = BuildGrowthChart(rows)
@@ -659,7 +664,7 @@ public class SalesAnalyticsService : ISalesAnalyticsService
             {
                 new ChartDatasetDto
                 {
-                    Label = "Net",
+                    Label = "Doanh thu thuần",
                     Data = groups.Select(g => g.Net).ToList()
                 }
             }
@@ -674,12 +679,12 @@ public class SalesAnalyticsService : ISalesAnalyticsService
             {
                 new ChartDatasetDto
                 {
-                    Label = "Units",
+                    Label = "Số lượng",
                     Data = rows.Select(r => (decimal)r.Units).ToList()
                 },
                 new ChartDatasetDto
                 {
-                    Label = "Net",
+                    Label = "Doanh thu thuần",
                     Data = rows.Select(r => r.NetRevenue).ToList()
                 }
             }
@@ -696,7 +701,7 @@ public class SalesAnalyticsService : ISalesAnalyticsService
             {
                 new ChartDatasetDto
                 {
-                    Label = "Delta %",
+                    Label = "Δ %",
                     Data = plotted.Select(r => r.DeltaPercent!.Value).ToList()
                 }
             }
@@ -719,7 +724,7 @@ public class SalesAnalyticsService : ISalesAnalyticsService
             Labels = labels,
             Datasets =
             {
-                new ChartDatasetDto { Label = "Units", Data = data }
+                new ChartDatasetDto { Label = "Số lượng", Data = data }
             }
         };
     }
@@ -745,8 +750,8 @@ public class SalesAnalyticsService : ISalesAnalyticsService
             Labels = labels,
             Datasets =
             {
-                new ChartDatasetDto { Label = "Cancelled", Data = countData },
-                new ChartDatasetDto { Label = "Cancel rate %", Data = rateData }
+                new ChartDatasetDto { Label = "Đơn hủy", Data = countData },
+                new ChartDatasetDto { Label = "Tỷ lệ hủy %", Data = rateData }
             }
         };
     }
@@ -768,7 +773,7 @@ public class SalesAnalyticsService : ISalesAnalyticsService
             {
                 new ChartDatasetDto
                 {
-                    Label = "Count",
+                    Label = "Số đơn",
                     Data = groups.Select(g => (decimal)g.Count).ToList()
                 }
             }
@@ -791,7 +796,7 @@ public class SalesAnalyticsService : ISalesAnalyticsService
             {
                 new ChartDatasetDto
                 {
-                    Label = "Value",
+                    Label = "Giá trị",
                     Data = groups.Select(g => g.Net).ToList()
                 }
             }
@@ -814,7 +819,7 @@ public class SalesAnalyticsService : ISalesAnalyticsService
             {
                 new ChartDatasetDto
                 {
-                    Label = "Value",
+                    Label = "Giá trị",
                     Data = groups.Select(g => g.Net).ToList()
                 }
             }
@@ -840,8 +845,8 @@ public class SalesAnalyticsService : ISalesAnalyticsService
             Labels = labels,
             Datasets =
             {
-                new ChartDatasetDto { Label = "Gross", Data = grossData },
-                new ChartDatasetDto { Label = "Net", Data = netData }
+                new ChartDatasetDto { Label = "Doanh thu gộp", Data = grossData },
+                new ChartDatasetDto { Label = "Doanh thu thuần", Data = netData }
             }
         };
     }
@@ -865,8 +870,8 @@ public class SalesAnalyticsService : ISalesAnalyticsService
             Labels = labels,
             Datasets =
             {
-                new ChartDatasetDto { Label = "Paid", Data = paidData },
-                new ChartDatasetDto { Label = "Cancelled", Data = cancelData }
+                new ChartDatasetDto { Label = "Đã thanh toán", Data = paidData },
+                new ChartDatasetDto { Label = "Đã hủy", Data = cancelData }
             }
         };
     }
@@ -894,8 +899,8 @@ public class SalesAnalyticsService : ISalesAnalyticsService
             Labels = labels,
             Datasets =
             {
-                new ChartDatasetDto { Label = "AOV Gross", Data = aovGross },
-                new ChartDatasetDto { Label = "AOV Net", Data = aovNet }
+                new ChartDatasetDto { Label = "GTB gộp", Data = aovGross },
+                new ChartDatasetDto { Label = "GTB thuần", Data = aovNet }
             }
         };
     }
@@ -903,7 +908,7 @@ public class SalesAnalyticsService : ISalesAnalyticsService
     private static ChartSeriesDto BuildPipeline(IReadOnlyList<OrderRow> curRows)
     {
         var statuses = Enum.GetValues<OrderStatus>();
-        var labels = statuses.Select(s => s.ToString()).ToList();
+        var labels = statuses.Select(StatusDisplayName).ToList();
         var data = statuses.Select(s => (decimal)curRows.Count(o => o.Status == s)).ToList();
 
         return new ChartSeriesDto
@@ -911,10 +916,21 @@ public class SalesAnalyticsService : ISalesAnalyticsService
             Labels = labels,
             Datasets =
             {
-                new ChartDatasetDto { Label = "Orders", Data = data }
+                new ChartDatasetDto { Label = "Số đơn", Data = data }
             }
         };
     }
+
+    private static string StatusDisplayName(OrderStatus status) => status switch
+    {
+        OrderStatus.Pending => "Chờ xử lý",
+        OrderStatus.Processing => "Đang xử lý",
+        OrderStatus.Shipped => "Đang giao",
+        OrderStatus.Delivered => "Đã giao",
+        OrderStatus.Cancelled => "Đã hủy",
+        OrderStatus.Returned => "Đã trả",
+        _ => status.ToString()
+    };
 
     private static ChartSeriesDto BuildPeriodCompare(
         decimal gross, decimal prevGross,
@@ -923,17 +939,17 @@ public class SalesAnalyticsService : ISalesAnalyticsService
     {
         return new ChartSeriesDto
         {
-            Labels = new List<string> { "Gross", "Net", "Orders" },
+            Labels = new List<string> { "Doanh thu gộp", "Doanh thu thuần", "Đơn" },
             Datasets =
             {
                 new ChartDatasetDto
                 {
-                    Label = "Current",
+                    Label = "Kỳ này",
                     Data = new List<decimal> { gross, net, paid }
                 },
                 new ChartDatasetDto
                 {
-                    Label = "Previous",
+                    Label = "Kỳ trước",
                     Data = new List<decimal> { prevGross, prevNet, prevPaid }
                 }
             }

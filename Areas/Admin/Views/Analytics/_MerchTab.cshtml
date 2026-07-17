@@ -54,14 +54,14 @@
 
 @if (m == null)
 {
-    <div class="sa-empty">Không có dữ liệu merchandising cho kỳ này.</div>
+    <div class="sa-empty">Không có dữ liệu xếp hạng sản phẩm/danh mục cho kỳ này.</div>
     return;
 }
 
 <div class="sa-g sa-g-21">
     <div class="sa-card">
         <div class="sa-card-h">
-            <span>Top @dimLabel Net</span>
+            <span>Top @dimLabel (doanh thu thuần)</span>
             <div class="sa-split-tabs">
                 <a class="@(isProduct ? "active" : "")" href="@DimUrl("product")">Sản phẩm</a>
                 <a class="@(!isProduct ? "active" : "")" href="@DimUrl("category")">Danh mục</a>
@@ -72,7 +72,7 @@
         </div>
     </div>
     <div class="sa-card">
-        <div class="sa-card-h">Share danh mục</div>
+        <div class="sa-card-h">Tỷ trọng danh mục</div>
         <div class="sa-card-b">
             <div class="sa-chart-box lg"><canvas id="sa-chart-merch-cat" data-chart="categoryMix"></canvas></div>
         </div>
@@ -81,13 +81,13 @@
 
 <div class="sa-g sa-g-2">
     <div class="sa-card">
-        <div class="sa-card-h">Units vs Net (top)</div>
+        <div class="sa-card-h">Số lượng vs doanh thu thuần</div>
         <div class="sa-card-b">
             <div class="sa-chart-box md"><canvas id="sa-chart-units-vs-net" data-chart="unitsVsNet"></canvas></div>
         </div>
     </div>
     <div class="sa-card">
-        <div class="sa-card-h">Tăng trưởng % vs kỳ trước</div>
+        <div class="sa-card-h">Tăng trưởng % so kỳ trước</div>
         <div class="sa-card-b">
             <div class="sa-chart-box md"><canvas id="sa-chart-growth" data-chart="growth"></canvas></div>
         </div>
@@ -96,13 +96,13 @@
 
 <div class="sa-card">
     <div class="sa-card-h">
-        <span>Bảng ranking đầy đủ</span>
+        <span>Bảng xếp hạng đầy đủ</span>
         <span class="sa-sub">Top @f.Take · @dimLabel</span>
     </div>
     <div class="sa-card-b" style="padding:0">
         @if (m.Rows.Count == 0)
         {
-            <div class="sa-empty">Chưa có dữ liệu ranking trong kỳ.</div>
+            <div class="sa-empty">Chưa có dữ liệu xếp hạng trong kỳ.</div>
         }
         else
         {
@@ -116,8 +116,8 @@
                             <th>Danh mục</th>
                         }
                         <th class="num"><a href="@SortUrl("units")">@SortLabel("SL", "units")</a></th>
-                        <th class="num"><a href="@SortUrl("net")">@SortLabel("Net", "net")</a></th>
-                        <th class="num"><a href="@SortUrl("share")">@SortLabel("Share", "share")</a></th>
+                        <th class="num"><a href="@SortUrl("net")">@SortLabel("Thuần", "net")</a></th>
+                        <th class="num"><a href="@SortUrl("share")">@SortLabel("Tỷ trọng", "share")</a></th>
                         <th class="num"><a href="@SortUrl("orders")">@SortLabel("Đơn", "orders")</a></th>
                         <th class="num"><a href="@SortUrl("delta")">@SortLabel("Δ", "delta")</a></th>
                     </tr>

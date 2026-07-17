@@ -427,8 +427,8 @@ public class SalesAnalyticsServiceTests
 
         Assert.NotEmpty(c.CancelTrend.Labels);
         Assert.Equal(2, c.CancelTrend.Datasets.Count);
-        Assert.Equal("Cancelled", c.CancelTrend.Datasets[0].Label);
-        Assert.Equal("Cancel rate %", c.CancelTrend.Datasets[1].Label);
+        Assert.Equal("Đơn hủy", c.CancelTrend.Datasets[0].Label);
+        Assert.Equal("Tỷ lệ hủy %", c.CancelTrend.Datasets[1].Label);
         Assert.NotEmpty(c.ValueByCategory.Labels);
     }
 
@@ -526,8 +526,8 @@ public class SalesAnalyticsServiceTests
         Assert.NotNull(hub.Cancellations);
         var trend = hub.Cancellations!.CancelTrend;
         Assert.Equal(2, trend.Datasets.Count);
-        Assert.Equal("Cancelled", trend.Datasets[0].Label);
-        Assert.Equal("Cancel rate %", trend.Datasets[1].Label);
+        Assert.Equal("Đơn hủy", trend.Datasets[0].Label);
+        Assert.Equal("Tỷ lệ hủy %", trend.Datasets[1].Label);
         Assert.Single(trend.Labels);
         Assert.Equal(1m, trend.Datasets[0].Data[0]); // 1 cancelled
         Assert.Equal(50m, trend.Datasets[1].Data[0]); // 1/2 * 100

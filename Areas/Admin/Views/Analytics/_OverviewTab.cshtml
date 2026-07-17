@@ -34,34 +34,34 @@
 
 <div class="sa-kpi-grid six">
     <div class="sa-card sa-kpi gross">
-        <span class="sa-k-label" title="Sum(Total) đơn Paid — theo ngày tạo đơn">Gross</span>
+        <span class="sa-k-label" title="Tổng tiền đơn đã thanh toán — theo ngày tạo đơn">Doanh thu gộp</span>
         <span class="sa-k-value sa-money">@Money(o.Gross.Value)</span>
         @Html.Raw(DeltaHtml(o.Gross))
     </div>
     <div class="sa-card sa-kpi net">
-        <span class="sa-k-label" title="Delivered+Paid − Refund — theo ngày tạo đơn">Net</span>
+        <span class="sa-k-label" title="Đơn đã giao &amp; đã thanh toán trừ hoàn tiền — theo ngày tạo đơn">Doanh thu thuần</span>
         <span class="sa-k-value sa-money">@Money(o.Net.Value)</span>
         @Html.Raw(DeltaHtml(o.Net))
     </div>
     <div class="sa-card sa-kpi">
-        <span class="sa-k-label">Δ Net</span>
+        <span class="sa-k-label">Chênh lệch thuần</span>
         <span class="sa-k-value sa-money" style="color:var(--sa-net)">
             @(o.Net.Delta is null ? "—" : ((o.Net.Delta >= 0 ? "+" : "") + Money(o.Net.Delta.Value)))
         </span>
         @Html.Raw(DeltaHtml(o.Net))
     </div>
     <div class="sa-card sa-kpi">
-        <span class="sa-k-label">Đơn paid</span>
+        <span class="sa-k-label">Đơn đã thanh toán</span>
         <span class="sa-k-value">@o.OrdersPaid.Value.ToString("N0")</span>
         @Html.Raw(DeltaHtml(o.OrdersPaid))
     </div>
     <div class="sa-card sa-kpi">
-        <span class="sa-k-label">AOV net</span>
+        <span class="sa-k-label">GTB đơn thuần</span>
         <span class="sa-k-value sa-money">@Money(o.AovNet.Value)</span>
         @Html.Raw(DeltaHtml(o.AovNet))
     </div>
     <div class="sa-card sa-kpi">
-        <span class="sa-k-label">Cancel rate</span>
+        <span class="sa-k-label">Tỷ lệ hủy</span>
         <span class="sa-k-value">@o.CancelRate.Value.ToString("0.##")%</span>
         @Html.Raw(DeltaHtml(o.CancelRate))
     </div>
@@ -70,14 +70,14 @@
 <div class="sa-g sa-g-21">
     <div class="sa-card">
         <div class="sa-card-h">
-            <span>Xu hướng Gross / Net <span class="sa-sub">· VND</span></span>
+            <span>Xu hướng doanh thu <span class="sa-sub">· gộp / thuần · VND</span></span>
         </div>
         <div class="sa-card-b">
             <div class="sa-chart-box lg"><canvas id="sa-chart-trend" data-chart="trend"></canvas></div>
         </div>
     </div>
     <div class="sa-card">
-        <div class="sa-card-h">Số đơn theo ngày <span class="sa-sub">paid vs cancelled</span></div>
+        <div class="sa-card-h">Số đơn theo ngày <span class="sa-sub">đã thanh toán vs đã hủy</span></div>
         <div class="sa-card-b">
             <div class="sa-chart-box lg"><canvas id="sa-chart-orders" data-chart="ordersVolume"></canvas></div>
         </div>
@@ -86,19 +86,19 @@
 
 <div class="sa-g sa-g-3">
     <div class="sa-card">
-        <div class="sa-card-h">Mix danh mục <span class="sa-sub">Net share</span></div>
+        <div class="sa-card-h">Tỷ trọng danh mục <span class="sa-sub">theo doanh thu thuần</span></div>
         <div class="sa-card-b">
             <div class="sa-chart-box md"><canvas id="sa-chart-category-mix" data-chart="categoryMix"></canvas></div>
         </div>
     </div>
     <div class="sa-card">
-        <div class="sa-card-h">AOV Gross vs Net</div>
+        <div class="sa-card-h">GTB đơn gộp vs thuần</div>
         <div class="sa-card-b">
             <div class="sa-chart-box md"><canvas id="sa-chart-aov" data-chart="aovTrend"></canvas></div>
         </div>
     </div>
     <div class="sa-card">
-        <div class="sa-card-h">Đơn vị bán (units) <span class="sa-sub">net</span></div>
+        <div class="sa-card-h">Số lượng bán <span class="sa-sub">theo đơn đã giao</span></div>
         <div class="sa-card-b">
             <div class="sa-chart-box md"><canvas id="sa-chart-units" data-chart="unitsTrend"></canvas></div>
         </div>
@@ -107,13 +107,13 @@
 
 <div class="sa-g sa-g-2">
     <div class="sa-card">
-        <div class="sa-card-h">Pipeline đơn trong kỳ <span class="sa-sub">số đơn theo status</span></div>
+        <div class="sa-card-h">Luồng trạng thái đơn <span class="sa-sub">số đơn theo trạng thái</span></div>
         <div class="sa-card-b">
             <div class="sa-chart-box md"><canvas id="sa-chart-pipeline" data-chart="pipeline"></canvas></div>
         </div>
     </div>
     <div class="sa-card">
-        <div class="sa-card-h">So kỳ liền trước <span class="sa-sub">Gross / Net / Orders</span></div>
+        <div class="sa-card-h">So kỳ liền trước <span class="sa-sub">doanh thu &amp; đơn</span></div>
         <div class="sa-card-b">
             <div class="sa-chart-box md"><canvas id="sa-chart-compare" data-chart="periodCompare"></canvas></div>
         </div>
@@ -123,9 +123,9 @@
 <div class="sa-g sa-g-2">
     <div class="sa-card">
         <div class="sa-card-h">
-            <span>Top 5 SP (Net)</span>
+            <span>Top 5 sản phẩm (thuần)</span>
             <a class="sa-btn" style="font-size:.72rem;padding:.2rem .45rem" href="@MerchUrl()">
-                Xem tab merch
+                Xem bảng xếp hạng
             </a>
         </div>
         <div class="sa-card-b" style="padding:0">
@@ -137,7 +137,7 @@
             {
                 <table class="sa-data">
                     <thead>
-                        <tr><th>#</th><th>Sản phẩm</th><th class="num">Net</th><th class="num">Δ</th></tr>
+                        <tr><th>#</th><th>Sản phẩm</th><th class="num">Thuần</th><th class="num">Δ</th></tr>
                     </thead>
                     <tbody>
                     @foreach (var row in o.TopProducts)
@@ -172,7 +172,7 @@
         </div>
     </div>
     <div class="sa-card">
-        <div class="sa-card-h">Top SP — horizontal bar</div>
+        <div class="sa-card-h">Top sản phẩm (biểu đồ)</div>
         <div class="sa-card-b">
             <div class="sa-chart-box md"><canvas id="sa-chart-top-hbar" data-chart="topProductsBar"></canvas></div>
         </div>
@@ -182,11 +182,11 @@
 @if (o.TopCategories.Count > 0)
 {
     <div class="sa-card" style="margin-bottom:.9rem">
-        <div class="sa-card-h">Top 5 danh mục (Net)</div>
+        <div class="sa-card-h">Top 5 danh mục (thuần)</div>
         <div class="sa-card-b" style="padding:0">
             <table class="sa-data">
                 <thead>
-                    <tr><th>#</th><th>Danh mục</th><th class="num">Net</th><th class="num">Share</th><th class="num">Δ</th></tr>
+                    <tr><th>#</th><th>Danh mục</th><th class="num">Thuần</th><th class="num">Tỷ trọng</th><th class="num">Δ</th></tr>
                 </thead>
                 <tbody>
                 @foreach (var row in o.TopCategories)
