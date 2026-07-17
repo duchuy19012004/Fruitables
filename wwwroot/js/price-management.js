@@ -1,12 +1,24 @@
-/* Quản lý giá (Admin) — tách từ Areas/Admin/Views/Price/Index.cshtml
-   Toàn bộ logic trang giá: toast, chọn dòng/bulk, modal lịch, timeline Gantt,
-   sửa giá inline, sort phía client, realtime. Khởi tạo qua PricePage.init(config). */
+/* Quản lý giá (Admin) — toàn bộ logic trang giá: toast, combobox đối tượng,
+   bulk 3 bước, modal lịch (fetch + lỗi in-modal), timeline Gantt, sửa giá inline,
+   realtime. Khởi tạo qua PricePage.init(config) với config { urls, targets }. */
 (function () {
     'use strict';
 
-    let config = { urls: {} };
+    let config = { urls: {}, targets: [] };
 
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    const getToken = () => document.querySelector('#priceAjaxTokens input[name="__RequestVerificationToken"]')?.value
+        || document.querySelector('input[name="__RequestVerificationToken"]')?.value || '';
+
+    async function postForm(url, formData) {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: formData
+        });
+        return res.json();
+    }
 
     /** Toast popup (thay alert) - dùng toast-container của admin layout */
     function showPriceToast(type, message, title) {
@@ -46,6 +58,135 @@
         toast.show();
     }
 
+    /* ---- Combobox đối tượng (tìm theo tên/SKU, bỏ dấu tiếng Việt) ---- */
+    const foldVi = s => String(s ?? '')
+        .replace(/đ/g, 'd').replace(/Đ/g, 'D')
+        .normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .toLowerCase();
+
+    function createCombo(root, items) {
+        const input = root.querySelector('#scheduleTargetInput');
+        const panel = root.querySelector('#scheduleTargetPanel');
+        const clearBtn = root.querySelector('#scheduleTargetClear');
+        const productField = document.getElementById('scheduleProductId');
+        const variantField = document.getElementById('scheduleVariantId');
+        let activeIdx = -1;
+        let currentList = [];
+        let disabled = false;
+
+        const label = it => it.productName + (it.variantName ? ' - ' + it.variantName : '');
+
+        function render(filterText) {
+            const q = foldVi(filterText || '');
+            currentList = items.filter(it => !q || foldVi(label(it) + ' ' + (it.sku || '')).includes(q));
+            activeIdx = currentList.length ? 0 : -1;
+            if (!currentList.length) {
+                panel.innerHTML = '<div class="pp-combo-empty">Không tìm thấy sản phẩm phù hợp.</div>';
+                return;
+            }
+            let html = '';
+            let lastProduct = null;
+            currentList.forEach((it, idx) => {
+                if (it.productName !== lastProduct) {
+                    html += `<div class="pp-combo-group">${esc(it.productName)}</div>`;
+                    lastProduct = it.productName;
+                }
+                html += `<div class="pp-combo-item${idx === activeIdx ? ' is-active' : ''}" role="option" data-idx="${idx}">
+                    <span>${esc(it.variantName || 'Sản phẩm gốc')}</span>
+                    ${it.sku ? `<span class="sku-hint">${esc(it.sku)}</span>` : ''}
+                </div>`;
+            });
+            panel.innerHTML = html;
+        }
+
+        function open() {
+            if (disabled) return;
+            render(input.value && root.classList.contains('has-value') ? '' : input.value);
+            panel.classList.remove('d-none');
+        }
+        function close() {
+            panel.classList.add('d-none');
+            activeIdx = -1;
+        }
+        function select(it) {
+            if (!it) return;
+            productField.value = it.productId;
+            variantField.value = it.productVariantId ?? '';
+            input.value = label(it);
+            root.classList.add('has-value');
+            clearBtn.classList.remove('d-none');
+            close();
+        }
+        function clear() {
+            productField.value = '';
+            variantField.value = '';
+            input.value = '';
+            root.classList.remove('has-value');
+            clearBtn.classList.add('d-none');
+        }
+        function markActive(idx) {
+            activeIdx = idx;
+            panel.querySelectorAll('.pp-combo-item').forEach(el => {
+                el.classList.toggle('is-active', Number(el.dataset.idx) === activeIdx);
+            });
+            panel.querySelector(`.pp-combo-item[data-idx="${activeIdx}"]`)?.scrollIntoView({ block: 'nearest' });
+        }
+
+        input.addEventListener('focus', open);
+        input.addEventListener('input', () => {
+            if (root.classList.contains('has-value')) clear();
+            open();
+        });
+        input.addEventListener('keydown', e => {
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (panel.classList.contains('d-none')) { open(); return; }
+                if (!currentList.length) return;
+                const delta = e.key === 'ArrowDown' ? 1 : -1;
+                markActive((activeIdx + delta + currentList.length) % currentList.length);
+            } else if (e.key === 'Enter') {
+                if (!panel.classList.contains('d-none') && activeIdx >= 0) {
+                    e.preventDefault();
+                    select(currentList[activeIdx]);
+                }
+            } else if (e.key === 'Escape') {
+                if (!panel.classList.contains('d-none')) {
+                    e.stopPropagation();
+                    close();
+                }
+            }
+        });
+        panel.addEventListener('mousedown', e => {
+            const item = e.target.closest('.pp-combo-item');
+            if (item) {
+                e.preventDefault();
+                select(currentList[Number(item.dataset.idx)]);
+            }
+        });
+        clearBtn.addEventListener('click', () => {
+            clear();
+            input.focus();
+        });
+        document.addEventListener('click', e => {
+            if (!root.contains(e.target)) close();
+        });
+
+        return {
+            clear,
+            setValue(productId, variantId) {
+                const it = items.find(x => String(x.productId) === String(productId)
+                    && String(x.productVariantId ?? '') === String(variantId ?? ''));
+                if (it) select(it);
+            },
+            setDisabled(value) {
+                disabled = value;
+                input.disabled = value;
+                clearBtn.classList.toggle('d-none', value || !root.classList.contains('has-value'));
+                if (value) close();
+            }
+        };
+    }
+
     /* ---- Hủy lịch ---- */
     function openCancelSchedule(id, label) {
         const form = document.getElementById('cancelScheduleForm');
@@ -54,7 +195,30 @@
         new bootstrap.Modal(document.getElementById('cancelScheduleModal')).show();
     }
 
-    /* ---- Chọn dòng / bulk ---- */
+    function bindCancelForm() {
+        const form = document.getElementById('cancelScheduleForm');
+        form?.addEventListener('submit', async e => {
+            e.preventDefault();
+            const btn = document.getElementById('cancelScheduleConfirmBtn');
+            btn.disabled = true;
+            try {
+                const json = await postForm(form.action, new FormData(form));
+                if (json.success) {
+                    bootstrap.Modal.getInstance(document.getElementById('cancelScheduleModal'))?.hide();
+                    showPriceToast('success', 'Đã hủy lịch giảm giá.');
+                    window.location.reload();
+                } else {
+                    showPriceToast('error', json.error || 'Không hủy được lịch.');
+                }
+            } catch {
+                showPriceToast('error', 'Lỗi kết nối, thử lại.');
+            } finally {
+                btn.disabled = false;
+            }
+        });
+    }
+
+    /* ---- Chọn dòng / bulk 3 bước ---- */
     const updateSelection = () => {
         const n = document.querySelectorAll('.row-check:checked').length;
         const countEl = document.getElementById('selectedCount');
@@ -62,6 +226,7 @@
         const previewBtn = document.getElementById('bulkPreviewBtn');
         if (previewBtn) previewBtn.disabled = n === 0;
         document.getElementById('selChip')?.classList.toggle('has-sel', n > 0);
+        document.getElementById('bulkBar')?.classList.toggle('has-selection', n > 0);
     };
 
     function bindSelection() {
@@ -73,15 +238,17 @@
         updateSelection();
     }
 
-    function bindBulkForm() {
-        document.getElementById('bulkForm')?.addEventListener('submit', e => {
-            e.preventDefault();
+    function bindBulk() {
+        document.getElementById('bulkPreviewBtn')?.addEventListener('click', () => {
             const rows = [...document.querySelectorAll('.row-check:checked')];
             if (!rows.length) return;
-            const form = e.currentTarget;
-            const value = Number(form.elements.value.value);
-            const percent = form.elements.adjustmentType.value === 'Percentage';
-            const increase = form.elements.direction.value === 'Increase';
+            const value = Number(document.getElementById('bulkValue').value);
+            if (!value || value <= 0) {
+                showPriceToast('warning', 'Nhập mức điều chỉnh lớn hơn 0 ở bước 2.');
+                return;
+            }
+            const percent = document.getElementById('bulkAdjustmentType').value === 'Percentage';
+            const increase = document.getElementById('bulkDirection').value === 'Increase';
             let invalid = 0;
             document.getElementById('bulkPreviewBody').innerHTML = rows.map(row => {
                 const current = Number(row.dataset.price);
@@ -91,15 +258,48 @@
                 return `<tr${next <= 0 ? ' class="table-danger"' : ''}><td>${esc(row.dataset.label)}</td><td class="text-end">${current.toLocaleString('vi-VN')}đ</td><td class="text-end fw-bold${next <= 0 ? ' text-danger' : ''}">${next.toLocaleString('vi-VN')}đ</td></tr>`;
             }).join('');
             document.getElementById('bulkInvalidWarning').classList.toggle('d-none', invalid === 0);
+            document.getElementById('bulkServerError').classList.add('d-none');
             const applyBtn = document.getElementById('bulkApplyBtn');
             applyBtn.innerHTML = `<i class="fas fa-check me-1"></i>Áp dụng cho ${rows.length} dòng`;
             applyBtn.disabled = invalid > 0;
             new bootstrap.Modal(document.getElementById('bulkPreviewModal')).show();
         });
-        document.getElementById('bulkApplyBtn')?.addEventListener('click', () => document.getElementById('bulkForm').submit());
+
+        document.getElementById('bulkApplyBtn')?.addEventListener('click', async () => {
+            const rows = [...document.querySelectorAll('.row-check:checked')];
+            if (!rows.length) return;
+            const fd = new FormData();
+            rows.forEach(r => fd.append('selectedTargets', r.value));
+            fd.append('adjustmentType', document.getElementById('bulkAdjustmentType').value);
+            fd.append('direction', document.getElementById('bulkDirection').value);
+            fd.append('value', document.getElementById('bulkValue').value);
+            fd.append('__RequestVerificationToken', getToken());
+            const btn = document.getElementById('bulkApplyBtn');
+            btn.disabled = true;
+            try {
+                const json = await postForm(config.urls.bulkUpdate, fd);
+                if (json.success) {
+                    bootstrap.Modal.getInstance(document.getElementById('bulkPreviewModal'))?.hide();
+                    showPriceToast('success', 'Đã cập nhật giá hàng loạt.');
+                    window.location.reload();
+                } else {
+                    const errBox = document.getElementById('bulkServerError');
+                    errBox.innerHTML = `<i class="fas fa-exclamation-circle me-1"></i>${esc(json.error || 'Không cập nhật được.')}`;
+                    errBox.classList.remove('d-none');
+                }
+            } catch {
+                const errBox = document.getElementById('bulkServerError');
+                errBox.textContent = 'Lỗi kết nối, thử lại.';
+                errBox.classList.remove('d-none');
+            } finally {
+                btn.disabled = false;
+            }
+        });
     }
 
     /* ---- Modal lịch (tạo / sửa / nhân bản) ---- */
+    let targetCombo = null;
+
     function updateValueHint() {
         const percent = document.getElementById('scheduleType').value === 'Percentage';
         document.getElementById('scheduleValue').max = percent ? 99 : '';
@@ -112,8 +312,10 @@
         const form = document.getElementById('scheduleForm');
         form.reset();
         form.action = config.urls.createSchedule;
+        document.getElementById('scheduleFormError').classList.add('d-none');
         document.getElementById('scheduleModalTitle').innerHTML = '<i class="fas fa-calendar-plus"></i> Tạo lịch giảm giá';
-        document.getElementById('scheduleTarget').disabled = false;
+        targetCombo?.clear();
+        targetCombo?.setDisabled(false);
         document.getElementById('scheduleStart').min = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
         updateValueHint();
     }
@@ -125,20 +327,13 @@
 
     function openCreateScheduleFor(productId, variantId) {
         resetScheduleForm();
-        if (productId) {
-            const sel = document.getElementById('scheduleTarget');
-            sel.value = `${productId}:${variantId || ''}`;
-            document.getElementById('scheduleProductId').value = productId;
-            document.getElementById('scheduleVariantId').value = variantId || '';
-        }
+        if (productId) targetCombo?.setValue(productId, variantId || '');
         new bootstrap.Modal(document.getElementById('scheduleModal')).show();
     }
 
     function openSchedule(data) {
         resetScheduleForm();
-        document.getElementById('scheduleTarget').value = `${data.product}:${data.variant || ''}`;
-        document.getElementById('scheduleProductId').value = data.product;
-        document.getElementById('scheduleVariantId').value = data.variant || '';
+        targetCombo?.setValue(data.product, data.variant || '');
         document.getElementById('scheduleType').value = data.type;
         document.getElementById('scheduleValue').value = data.value;
         document.getElementById('scheduleStart').value = data.start || '';
@@ -146,7 +341,7 @@
         if (data.mode === 'edit') {
             document.getElementById('scheduleForm').action = config.urls.updateSchedule + '/' + data.id;
             document.getElementById('scheduleModalTitle').innerHTML = '<i class="fas fa-pen"></i> Sửa lịch giảm giá';
-            document.getElementById('scheduleTarget').disabled = true;
+            targetCombo?.setDisabled(true);
         } else {
             document.getElementById('scheduleModalTitle').innerHTML = '<i class="fas fa-copy"></i> Nhân bản lịch giảm giá';
         }
@@ -157,28 +352,45 @@
     function bindScheduleModal() {
         document.getElementById('createScheduleBtn')?.addEventListener('click', openCreateSchedule);
         document.getElementById('scheduleType')?.addEventListener('change', updateValueHint);
-        document.getElementById('scheduleTarget')?.addEventListener('change', e => {
-            const p = e.target.value.split(':');
-            document.getElementById('scheduleProductId').value = p[0] || '';
-            document.getElementById('scheduleVariantId').value = p[1] || '';
-        });
         document.querySelectorAll('.schedule-action').forEach(button => button.addEventListener('click', () => openSchedule(button.dataset)));
         document.querySelectorAll('.cancel-schedule-btn').forEach(btn => {
             btn.addEventListener('click', () => openCancelSchedule(btn.dataset.id, btn.dataset.label));
         });
+        document.querySelectorAll('.schedule-create-btn').forEach(btn => {
+            btn.addEventListener('click', () => openCreateScheduleFor(btn.dataset.product, btn.dataset.variant));
+        });
     }
 
-    /* ---- Modal sửa giá gốc ---- */
-    function bindBasePriceModal() {
-        document.querySelectorAll('.base-price-action').forEach(button => button.addEventListener('click', () => {
-            const d = button.dataset;
-            document.getElementById('baseProductId').value = d.product;
-            document.getElementById('baseVariantId').value = d.variant || '';
-            document.getElementById('newPrice').value = d.price;
-            document.getElementById('basePriceLabel').textContent = d.label;
-            document.getElementById('basePriceCurrent').textContent = Number(d.price).toLocaleString('vi-VN') + 'đ';
-            new bootstrap.Modal(document.getElementById('basePriceModal')).show();
-        }));
+    function bindScheduleFormSubmit() {
+        const form = document.getElementById('scheduleForm');
+        form?.addEventListener('submit', async e => {
+            e.preventDefault();
+            const errBox = document.getElementById('scheduleFormError');
+            errBox.classList.add('d-none');
+            if (!document.getElementById('scheduleProductId').value) {
+                errBox.innerHTML = '<i class="fas fa-exclamation-circle me-1"></i>Vui lòng chọn sản phẩm / biến thể.';
+                errBox.classList.remove('d-none');
+                return;
+            }
+            const submitBtn = form.querySelector('button[type="submit"]');
+            submitBtn.disabled = true;
+            try {
+                const json = await postForm(form.action, new FormData(form));
+                if (json.success) {
+                    bootstrap.Modal.getInstance(document.getElementById('scheduleModal'))?.hide();
+                    showPriceToast('success', 'Đã lưu lịch giảm giá.');
+                    window.location.reload();
+                } else {
+                    errBox.innerHTML = `<i class="fas fa-exclamation-circle me-1"></i>${esc(json.error || 'Không lưu được lịch.')}`;
+                    errBox.classList.remove('d-none');
+                }
+            } catch {
+                errBox.textContent = 'Lỗi kết nối, thử lại.';
+                errBox.classList.remove('d-none');
+            } finally {
+                submitBtn.disabled = false;
+            }
+        });
     }
 
     /* ---- Nhóm biến thể ---- */
@@ -518,7 +730,6 @@
                 if (!newPrice || newPrice <= 0) { showError('Giá phải lớn hơn 0.'); return; }
                 input.disabled = true;
                 try {
-                    const token = document.querySelector('#bulkForm input[name="__RequestVerificationToken"]').value;
                     const body = new URLSearchParams({
                         productId: cell.dataset.product,
                         productVariantId: cell.dataset.variant || '',
@@ -528,7 +739,7 @@
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/x-www-form-urlencoded',
-                            'RequestVerificationToken': token,
+                            'RequestVerificationToken': getToken(),
                             'X-Requested-With': 'XMLHttpRequest'
                         },
                         body
@@ -538,7 +749,6 @@
                         cell.dataset.price = newPrice;
                         cell.innerHTML = `<span class="base-price-value">${newPrice.toLocaleString('vi-VN')}đ</span><i class="fas fa-pen edit-hint"></i>`;
                         const row = cell.closest('tr');
-                        row.querySelector('.base-price-action').dataset.price = newPrice;
                         row.querySelector('.row-check').dataset.price = newPrice;
                         showPriceToast('success', 'Đã cập nhật giá gốc.');
                     } else {
@@ -558,61 +768,6 @@
         }));
     }
 
-    /* ---- Sort phía client (group-aware) ---- */
-    function bindSorting() {
-        document.querySelectorAll('th.sortable').forEach(th => th.addEventListener('click', () => {
-            const key = th.dataset.sort;
-            const dir = th.dataset.dir === 'asc' ? 'desc' : 'asc';
-            document.querySelectorAll('th.sortable').forEach(x => {
-                delete x.dataset.dir;
-                x.querySelector('.sort-arrow').className = 'fas fa-sort sort-arrow';
-            });
-            th.dataset.dir = dir;
-            th.querySelector('.sort-arrow').className = `fas fa-sort-${dir === 'asc' ? 'up' : 'down'} sort-arrow active`;
-            const tbody = document.getElementById('priceTbody');
-            const blocks = [];
-            let current = null;
-            for (const tr of [...tbody.children]) {
-                if (tr.classList.contains('group-parent')) {
-                    current = {
-                        parent: tr,
-                        rows: [],
-                        name: (tr.dataset.name || '').toLowerCase(),
-                        base: Number(tr.dataset.base),
-                        effective: Number(tr.dataset.effective)
-                    };
-                    blocks.push(current);
-                } else if (tr.classList.contains('price-row')) {
-                    if (!tr.dataset.group) {
-                        current = {
-                            parent: null,
-                            rows: [],
-                            name: (tr.dataset.name || '').toLowerCase(),
-                            base: Number(tr.dataset.base),
-                            effective: Number(tr.dataset.effective)
-                        };
-                        blocks.push(current);
-                    }
-                    current.rows.push(tr);
-                } else if (tr.classList.contains('timeline-row')) {
-                    current?.rows.push(tr);
-                } else {
-                    blocks.push({ parent: null, rows: [tr], name: '', base: 0, effective: 0, fixed: true });
-                }
-            }
-            const cmp = (a, b) => {
-                const av = key === 'name' ? a.name : key === 'base' ? a.base : a.effective;
-                const bv = key === 'name' ? b.name : key === 'base' ? b.base : b.effective;
-                const r = typeof av === 'string' ? av.localeCompare(bv, 'vi') : av - bv;
-                return dir === 'asc' ? r : -r;
-            };
-            blocks.filter(b => !b.fixed).sort(cmp).forEach(b => {
-                if (b.parent) tbody.appendChild(b.parent);
-                b.rows.forEach(tr => tbody.appendChild(tr));
-            });
-        }));
-    }
-
     /* ---- Realtime ---- */
     function bindRealtime() {
         if (window.ecommerceHub) {
@@ -626,10 +781,13 @@
 
     function init(cfg) {
         config = Object.assign(config, cfg || {});
+        const comboRoot = document.getElementById('scheduleTargetCombo');
+        if (comboRoot) targetCombo = createCombo(comboRoot, config.targets || []);
         bindSelection();
-        bindBulkForm();
+        bindBulk();
         bindScheduleModal();
-        bindBasePriceModal();
+        bindScheduleFormSubmit();
+        bindCancelForm();
         bindGroupToggles();
         bindTimelineToggles();
         bindInlineEditor();

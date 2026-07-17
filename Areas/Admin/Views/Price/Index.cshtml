@@ -1,10 +1,14 @@
 @using Fruitables.ViewModels
+@using System.Text.Json
 @model PriceManagementViewModel
 @{
     ViewData["Title"] = "Quản lý giá";
     Layout = "~/Areas/Admin/Views/Shared/_AdminDashboardLayout.cshtml";
 
     string TabUrl(string tab) => Url.Action("Index", "Price", new { area = "Admin", tab })!;
+
+    var targetsJson = JsonSerializer.Serialize(Model.ScheduleTargets,
+        new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
 }
 
 @section Styles {
@@ -61,7 +65,8 @@
                     cancelSchedule: '@Url.Action("CancelSchedule", "Price", new { area = "Admin" })',
                     updateBasePrice: '@Url.Action("UpdateBasePrice", "Price", new { area = "Admin" })',
                     bulkUpdate: '@Url.Action("BulkUpdate", "Price", new { area = "Admin" })'
-                }
+                },
+                targets: @Html.Raw(targetsJson)
             });
         });
     </script>

@@ -9,6 +9,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
             </div>
             <div class="modal-body">
+                <div class="alert alert-danger small d-none mb-3" id="bulkServerError" role="alert"></div>
                 <div class="alert alert-warning small d-none mb-3" id="bulkInvalidWarning">
                     <i class="fas fa-exclamation-triangle me-1"></i>
                     Có dòng có giá mới không hợp lệ (≤ 0đ). Hãy điều chỉnh lại mức thay đổi.
@@ -48,17 +49,16 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
             </div>
             <div class="modal-body">
+                <div class="alert alert-danger small d-none" id="scheduleFormError" role="alert"></div>
                 <div class="field-block">
-                    <label class="form-label" for="scheduleTarget">Đối tượng</label>
-                    <select id="scheduleTarget" class="form-select" required>
-                        <option value="">Chọn sản phẩm / biến thể</option>
-                        @foreach (var t in Model.ScheduleTargets)
-                        {
-                            <option value="@t.ProductId:@t.ProductVariantId">
-                                @t.ProductName@(t.VariantName == null ? "" : " - " + t.VariantName)@(t.SKU == null ? "" : $" ({t.SKU})")
-                            </option>
-                        }
-                    </select>
+                    <label class="form-label" for="scheduleTargetInput">Đối tượng</label>
+                    <div class="pp-combo" id="scheduleTargetCombo">
+                        <input type="text" id="scheduleTargetInput" class="form-control" placeholder="Tìm theo tên sản phẩm hoặc SKU..." autocomplete="off" />
+                        <button type="button" class="pp-combo-clear d-none" id="scheduleTargetClear" aria-label="Xóa lựa chọn">
+                            <i class="fas fa-times"></i>
+                        </button>
+                        <div class="pp-combo-panel d-none" id="scheduleTargetPanel" role="listbox"></div>
+                    </div>
                 </div>
                 <input type="hidden" name="ProductId" id="scheduleProductId" />
                 <input type="hidden" name="ProductVariantId" id="scheduleVariantId" />
@@ -92,36 +92,6 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-light" data-bs-dismiss="modal">Đóng</button>
                 <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i>Lưu lịch</button>
-            </div>
-        </form>
-    </div>
-</div>
-
-<div class="modal fade price-page-modal" id="basePriceModal" tabindex="-1">
-    <div class="modal-dialog">
-        <form asp-action="UpdateBasePrice" method="post" class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title"><i class="fas fa-tags"></i> Cập nhật giá gốc</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
-            </div>
-            <div class="modal-body">
-                <div class="target-summary">
-                    <div class="fw-bold" id="basePriceLabel"></div>
-                    <div class="small text-muted mt-1">Giá hiện tại: <span id="basePriceCurrent" class="fw-semibold text-dark"></span></div>
-                </div>
-                <div class="field-block">
-                    <label class="form-label" for="newPrice">Giá gốc mới</label>
-                    <div class="input-group">
-                        <input type="number" name="newPrice" id="newPrice" min="1" step="0.01" class="form-control" required />
-                        <span class="input-group-text">đ</span>
-                    </div>
-                </div>
-                <input type="hidden" name="productId" id="baseProductId" />
-                <input type="hidden" name="productVariantId" id="baseVariantId" />
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Đóng</button>
-                <button type="submit" class="btn btn-primary"><i class="fas fa-check me-1"></i>Cập nhật</button>
             </div>
         </form>
     </div>

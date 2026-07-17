@@ -37,34 +37,23 @@ public class PriceController : Controller
     public async Task<IActionResult> CreateSchedule(SavePriceScheduleRequest request)
     {
         NormalizeVietnamTime(request);
-        SetMessage(await _prices.CreateScheduleAsync(request, CurrentAdminId()));
-        return RedirectToAction(nameof(Index));
+        return ResultResponse(await _prices.CreateScheduleAsync(request, CurrentAdminId()));
     }
 
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> UpdateSchedule(int id, SavePriceScheduleRequest request)
     {
         NormalizeVietnamTime(request);
-        SetMessage(await _prices.UpdateScheduleAsync(id, request, CurrentAdminId()));
-        return RedirectToAction(nameof(Index));
+        return ResultResponse(await _prices.UpdateScheduleAsync(id, request, CurrentAdminId()));
     }
 
     [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> CancelSchedule(int id)
-    {
-        SetMessage(await _prices.CancelScheduleAsync(id, CurrentAdminId()));
-        return RedirectToAction(nameof(Index));
-    }
+    public async Task<IActionResult> CancelSchedule(int id) =>
+        ResultResponse(await _prices.CancelScheduleAsync(id, CurrentAdminId()));
 
     [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> UpdateBasePrice(int productId, int? productVariantId, decimal newPrice)
-    {
-        var result = await _prices.UpdateBasePriceAsync(new PriceTargetKey(productId, productVariantId), newPrice, CurrentAdminId());
-        if (Request.Headers["X-Requested-With"] == "XMLHttpRequest")
-            return Json(new { success = result.Success, error = result.Error });
-        SetMessage(result);
-        return RedirectToAction(nameof(Index));
-    }
+    public async Task<IActionResult> UpdateBasePrice(int productId, int? productVariantId, decimal newPrice) =>
+        ResultResponse(await _prices.UpdateBasePriceAsync(new PriceTargetKey(productId, productVariantId), newPrice, CurrentAdminId()));
 
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> BulkUpdate(List<string>? selectedTargets, PriceAdjustmentType adjustmentType,
@@ -72,8 +61,7 @@ public class PriceController : Controller
     {
         var targets = (selectedTargets ?? []).Select(ParseTarget).Where(t => t.HasValue).Select(t => t!.Value).ToList();
         var request = new BulkPriceUpdateRequest { Targets = targets, AdjustmentType = adjustmentType, Direction = direction, Value = value };
-        SetMessage(await _prices.BulkUpdateBasePricesAsync(request, CurrentAdminId()));
-        return RedirectToAction(nameof(Index));
+        return ResultResponse(await _prices.BulkUpdateBasePricesAsync(request, CurrentAdminId()));
     }
 
     private static PriceTargetKey? ParseTarget(string value)
@@ -97,5 +85,14 @@ public class PriceController : Controller
     {
         if (result.Success) TempData["Success"] = "Cập nhật giá thành công.";
         else TempData["Error"] = result.Error;
+    }
+
+    /// <summary>AJAX (fetch từ trang giá) nhận JSON {success,error}; form thường (no-JS) redirect + TempData.</summary>
+    private IActionResult ResultResponse(PriceManagementResult result)
+    {
+        if (Request.Headers["X-Requested-With"] == "XMLHttpRequest")
+            return Json(new { success = result.Success, error = result.Error });
+        SetMessage(result);
+        return RedirectToAction(nameof(Index));
     }
 }

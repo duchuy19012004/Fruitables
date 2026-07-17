@@ -156,6 +156,14 @@
             <td class="text-end">
                 <div class="row-actions">
                     <button type="button"
+                            class="btn-icon primary-soft schedule-create-btn"
+                            data-product="@row.ProductId"
+                            data-variant="@row.ProductVariantId"
+                            title="Tạo lịch giảm giá"
+                            aria-label="Tạo lịch giảm giá">
+                        <i class="fas fa-calendar-plus"></i>
+                    </button>
+                    <button type="button"
                             class="btn-icon timeline-toggle"
                             data-target="tl-@row.ProductId-@(row.ProductVariantId ?? 0)"
                             data-group="@(isChild ? row.ProductId.ToString() : null)"
@@ -164,9 +172,6 @@
                             aria-expanded="false"
                             aria-controls="tl-@row.ProductId-@(row.ProductVariantId ?? 0)">
                         <i class="fas fa-chart-line"></i><i class="fas fa-chevron-down tl-chevron"></i>
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary btn-text-sm base-price-action" data-product="@row.ProductId" data-variant="@row.ProductVariantId" data-price="@row.BasePrice" data-label="@row.ProductName @(row.VariantName ?? "")" title="Sửa giá gốc">
-                        <i class="fas fa-pen me-1"></i>Sửa
                     </button>
                 </div>
             </td>

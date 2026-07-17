@@ -185,15 +185,38 @@
     border-color: #b8d96a;
 }
 
-/* Bulk toolbar */
+/* Bulk toolbar — ẩn cho tới khi có dòng được chọn */
 .price-page .bulk-bar {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: .6rem;
-    padding: .7rem 1.15rem;
+    max-height: 0;
+    padding: 0 1.15rem;
+    opacity: 0;
+    overflow: hidden;
     background: var(--pp-soft);
-    border-bottom: 1px solid var(--pp-line);
+    border-bottom: 0 solid var(--pp-line);
+    transition: max-height .22s ease, opacity .18s ease, padding .22s ease, border-width .05s ease;
+}
+.price-page .bulk-bar.has-selection {
+    max-height: 140px;
+    padding: .7rem 1.15rem;
+    opacity: 1;
+    border-bottom-width: 1px;
+}
+.price-page .bulk-step-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 17px;
+    height: 17px;
+    border-radius: 50%;
+    background: var(--pp-primary);
+    color: #fff;
+    font-size: .64rem;
+    font-weight: 700;
+    margin-right: .15rem;
 }
 .price-page .bulk-bar .sel-chip {
     display: inline-flex;
@@ -431,8 +454,6 @@
 }
 
 /* Sort */
-.price-page th.sortable { cursor: pointer; user-select: none; }
-.price-page th.sortable:hover { color: var(--pp-ink); }
 .price-page th .sort-arrow {
     font-size: .65rem;
     margin-left: .3rem;
@@ -454,7 +475,7 @@
 }
 .price-page .base-price-cell:hover .edit-hint { opacity: 1; }
 .price-page .edit-hint {
-    opacity: 0;
+    opacity: .45;
     transition: opacity .15s ease;
     color: var(--pp-primary-dark);
     font-size: .72rem;
@@ -912,6 +933,71 @@
     margin-bottom: 1rem;
 }
 .price-page-modal .target-summary .fw-bold { font-weight: 600 !important; }
+
+/* Combobox chọn đối tượng lịch */
+.price-page-modal .pp-combo { position: relative; }
+.price-page-modal .pp-combo input[disabled] { background: #f1f2f4; color: var(--pp-muted); }
+.price-page-modal .pp-combo .pp-combo-clear {
+    position: absolute;
+    right: .5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    border: 0;
+    background: transparent;
+    color: var(--pp-muted);
+    padding: .25rem .4rem;
+    font-size: .8rem;
+}
+.price-page-modal .pp-combo .pp-combo-clear:hover { color: var(--pp-ink); }
+.price-page-modal .pp-combo.has-value input { font-weight: 600; }
+.price-page-modal .pp-combo-panel {
+    position: absolute;
+    z-index: 1060;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    max-height: 260px;
+    overflow-y: auto;
+    background: #fff;
+    border: 1px solid var(--pp-line);
+    border-radius: 10px;
+    box-shadow: 0 12px 32px rgba(28,36,48,.14);
+}
+.price-page-modal .pp-combo-group {
+    padding: .4rem .75rem .25rem;
+    font-size: .68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--pp-muted);
+    background: #fafbfc;
+    position: sticky;
+    top: 0;
+    border-top: 1px solid #f1f3f6;
+}
+.price-page-modal .pp-combo-group:first-child { border-top: 0; }
+.price-page-modal .pp-combo-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: .5rem;
+    padding: .45rem .75rem;
+    font-size: .875rem;
+    cursor: pointer;
+}
+.price-page-modal .pp-combo-item .sku-hint {
+    font-size: .72rem;
+    color: var(--pp-muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.price-page-modal .pp-combo-item:hover,
+.price-page-modal .pp-combo-item.is-active { background: var(--pp-primary-soft); }
+.price-page-modal .pp-combo-empty {
+    padding: .85rem .75rem;
+    font-size: .82rem;
+    color: var(--pp-muted);
+    text-align: center;
+}
 
 /* Task tabs (bắt chước sa-tabs của trang Analytics) */
 .price-page .pp-tabs {

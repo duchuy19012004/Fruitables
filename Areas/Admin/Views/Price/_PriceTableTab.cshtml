@@ -89,77 +89,76 @@
     </div>
 </form>
 
-<form asp-action="BulkUpdate" method="post" id="bulkForm">
-    @Html.AntiForgeryToken()
-    <div class="pp-card mb-4">
-        <div class="pp-card-head">
-            <h5 class="pp-card-title"><i class="fas fa-list-ul"></i> Bảng giá</h5>
-            <span class="text-muted small ms-auto d-none d-md-inline">Chọn dòng để điều chỉnh hàng loạt · nhấn giá gốc để sửa nhanh</span>
-        </div>
-
-        <div class="bulk-bar">
-            <span class="sel-chip" id="selChip">
-                <i class="fas fa-check-square"></i>
-                Đã chọn: <span id="selectedCount">0</span>
-            </span>
-            <div class="bulk-fields">
-                <span class="field-label d-none d-lg-inline">Điều chỉnh</span>
-                <select name="adjustmentType" class="form-select form-select-sm" style="width:auto" title="Kiểu điều chỉnh">
-                    <option value="Amount">Số tiền</option>
-                    <option value="Percentage">Phần trăm</option>
-                </select>
-                <select name="direction" class="form-select form-select-sm" style="width:auto" title="Chiều điều chỉnh">
-                    <option value="Increase">Tăng</option>
-                    <option value="Decrease">Giảm</option>
-                </select>
-                <input name="value" type="number" min="0.01" step="0.01" class="form-control form-control-sm" style="width:140px" placeholder="Mức điều chỉnh" required />
-                <button type="submit" id="bulkPreviewBtn" class="btn btn-sm btn-primary" disabled>
-                    <i class="fas fa-eye me-1"></i>Xem trước
-                </button>
-            </div>
-        </div>
-
-        <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0 price-table">
-                <thead>
-                    <tr>
-                        <th style="width:40px"><input type="checkbox" id="selectAll" class="form-check-input" title="Chọn tất cả" /></th>
-                        <th><a class="sort-link" href="@SortUrl("name")">Sản phẩm / biến thể <i class="fas @SortIcon("name") @SortCls("name")"></i></a></th>
-                        <th>SKU</th>
-                        <th class="text-end"><a class="sort-link" href="@SortUrl("base")">Giá gốc <i class="fas @SortIcon("base") @SortCls("base")"></i></a></th>
-                        <th class="text-end"><a class="sort-link" href="@SortUrl("effective")">Giá hiện tại <i class="fas @SortIcon("effective") @SortCls("effective")"></i></a></th>
-                        <th>Lịch đang chạy</th>
-                        <th>Lịch sắp tới</th>
-                        <th class="text-end" style="width:120px">Thao tác</th>
-                    </tr>
-                </thead>
-                <tbody id="priceTbody">
-                    @await Html.PartialAsync("_PriceTableRows", Model)
-                </tbody>
-            </table>
-        </div>
-
-        @if (Model.TotalPages > 1)
-        {
-            <div class="pp-pager">
-                <span class="pp-pager-info">Trang @Model.Page / @Model.TotalPages · @Model.TotalGroups nhóm sản phẩm</span>
-                <nav aria-label="Phân trang bảng giá">
-                    <ul class="pagination pagination-sm">
-                        <li class="page-item @(Model.Page == 1 ? "disabled" : "")">
-                            <a class="page-link" href="@PageUrl(Model.Page - 1)">Trước</a>
-                        </li>
-                        @for (var i = 1; i <= Model.TotalPages; i++)
-                        {
-                            <li class="page-item @(Model.Page == i ? "active" : "")">
-                                <a class="page-link" href="@PageUrl(i)">@i</a>
-                            </li>
-                        }
-                        <li class="page-item @(Model.Page == Model.TotalPages ? "disabled" : "")">
-                            <a class="page-link" href="@PageUrl(Model.Page + 1)">Sau</a>
-                        </li>
-                    </ul>
-                </nav>
-            </div>
-        }
+<div class="pp-card mb-4">
+    <div class="pp-card-head">
+        <h5 class="pp-card-title"><i class="fas fa-list-ul"></i> Bảng giá</h5>
+        <span class="text-muted small ms-auto d-none d-md-inline">Tick chọn dòng để chỉnh hàng loạt · nhấn giá gốc để sửa nhanh · <i class="fas fa-calendar-plus"></i> trên dòng để tạo lịch</span>
     </div>
-</form>
+
+    <div id="priceAjaxTokens" class="d-none">@Html.AntiForgeryToken()</div>
+
+    <div class="bulk-bar" id="bulkBar" aria-live="polite">
+        <span class="sel-chip" id="selChip">
+            <i class="fas fa-check-square"></i>
+            <span class="bulk-step-num">1</span> Đã chọn: <span id="selectedCount">0</span>
+        </span>
+        <div class="bulk-fields">
+            <span class="field-label d-none d-lg-inline"><span class="bulk-step-num">2</span> Điều chỉnh</span>
+            <select id="bulkAdjustmentType" class="form-select form-select-sm" style="width:auto" title="Kiểu điều chỉnh">
+                <option value="Amount">Số tiền</option>
+                <option value="Percentage">Phần trăm</option>
+            </select>
+            <select id="bulkDirection" class="form-select form-select-sm" style="width:auto" title="Chiều điều chỉnh">
+                <option value="Increase">Tăng</option>
+                <option value="Decrease">Giảm</option>
+            </select>
+            <input id="bulkValue" type="number" min="0.01" step="0.01" class="form-control form-control-sm" style="width:140px" placeholder="Mức điều chỉnh" />
+            <button type="button" id="bulkPreviewBtn" class="btn btn-sm btn-primary" disabled>
+                <i class="fas fa-eye me-1"></i><span class="bulk-step-num">3</span> Xem trước
+            </button>
+        </div>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 price-table">
+            <thead>
+                <tr>
+                    <th style="width:40px"><input type="checkbox" id="selectAll" class="form-check-input" title="Chọn tất cả" /></th>
+                    <th><a class="sort-link" href="@SortUrl("name")">Sản phẩm / biến thể <i class="fas @SortIcon("name") @SortCls("name")"></i></a></th>
+                    <th>SKU</th>
+                    <th class="text-end"><a class="sort-link" href="@SortUrl("base")">Giá gốc <i class="fas @SortIcon("base") @SortCls("base")"></i></a></th>
+                    <th class="text-end"><a class="sort-link" href="@SortUrl("effective")">Giá hiện tại <i class="fas @SortIcon("effective") @SortCls("effective")"></i></a></th>
+                    <th>Lịch đang chạy</th>
+                    <th>Lịch sắp tới</th>
+                    <th class="text-end" style="width:120px">Thao tác</th>
+                </tr>
+            </thead>
+            <tbody id="priceTbody">
+                @await Html.PartialAsync("_PriceTableRows", Model)
+            </tbody>
+        </table>
+    </div>
+
+    @if (Model.TotalPages > 1)
+    {
+        <div class="pp-pager">
+            <span class="pp-pager-info">Trang @Model.Page / @Model.TotalPages · @Model.TotalGroups nhóm sản phẩm</span>
+            <nav aria-label="Phân trang bảng giá">
+                <ul class="pagination pagination-sm">
+                    <li class="page-item @(Model.Page == 1 ? "disabled" : "")">
+                        <a class="page-link" href="@PageUrl(Model.Page - 1)">Trước</a>
+                    </li>
+                    @for (var i = 1; i <= Model.TotalPages; i++)
+                    {
+                        <li class="page-item @(Model.Page == i ? "active" : "")">
+                            <a class="page-link" href="@PageUrl(i)">@i</a>
+                        </li>
+                    }
+                    <li class="page-item @(Model.Page == Model.TotalPages ? "disabled" : "")">
+                        <a class="page-link" href="@PageUrl(Model.Page + 1)">Sau</a>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+    }
+</div>
