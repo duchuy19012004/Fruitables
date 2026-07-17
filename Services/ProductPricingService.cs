@@ -59,48 +59,59 @@ public sealed class ProductPricingService : IProductPricingService
         return result;
     }
 
-    public IQueryable<ProductPriceProjection> ProjectCatalogPrices(IQueryable<Product> products, DateTimeOffset? at = null)
+    public IEnumerable<ProductPriceProjection> ProjectCatalogPrices(IQueryable<Product> products, DateTimeOffset? at = null)
     {
         var instant = at ?? _timeProvider.GetUtcNow();
-        return products.Select(product => new ProductPriceProjection
+        // Materialize and compute prices in memory: EF Core cannot translate Min/Max over
+        // a subquery that selects the active PriceSchedule (SqlException 130).
+        return products
+            .AsNoTracking()
+            .Include(p => p.Variants.Where(v => v.IsActive)).ThenInclude(v => v.PriceSchedules)
+            .Include(p => p.PriceSchedules)
+            .AsEnumerable()
+            .Select(product => new ProductPriceProjection
+            {
+                ProductId = product.Id,
+                Name = product.Name,
+                CreatedAt = product.CreatedAt,
+                IsFeatured = product.IsFeatured,
+                MinPrice = ComputeCatalogMinPrice(product, instant),
+                MaxPrice = ComputeCatalogMaxPrice(product, instant)
+            });
+    }
+
+    private static decimal ComputeCatalogMinPrice(Product product, DateTimeOffset instant)
+    {
+        var activeVariants = product.Variants.Where(v => v.IsActive).ToList();
+        if (activeVariants.Count > 0)
         {
-            ProductId = product.Id,
-            Name = product.Name,
-            CreatedAt = product.CreatedAt,
-            IsFeatured = product.IsFeatured,
-            MinPrice = product.Variants.Any(v => v.IsActive)
-                ? product.Variants.Where(v => v.IsActive).Min(variant =>
-                    variant.PriceSchedules
-                        .Where(schedule => !schedule.IsCancelled && schedule.StartsAt <= instant &&
-                            (!schedule.EndsAt.HasValue || instant < schedule.EndsAt.Value))
-                        .Select(schedule => schedule.DiscountType == DiscountType.FixedPrice
-                            ? (decimal?)schedule.Value
-                            : Math.Round(variant.Price * (100m - schedule.Value) / 100m, 0))
-                        .FirstOrDefault() ?? variant.Price)
-                : product.PriceSchedules
-                    .Where(schedule => !schedule.IsCancelled && schedule.StartsAt <= instant &&
-                        (!schedule.EndsAt.HasValue || instant < schedule.EndsAt.Value))
-                    .Select(schedule => schedule.DiscountType == DiscountType.FixedPrice
-                        ? (decimal?)schedule.Value
-                        : Math.Round(product.Price * (100m - schedule.Value) / 100m, 0))
-                    .FirstOrDefault() ?? product.Price,
-            MaxPrice = product.Variants.Any(v => v.IsActive)
-                ? product.Variants.Where(v => v.IsActive).Max(variant =>
-                    variant.PriceSchedules
-                        .Where(schedule => !schedule.IsCancelled && schedule.StartsAt <= instant &&
-                            (!schedule.EndsAt.HasValue || instant < schedule.EndsAt.Value))
-                        .Select(schedule => schedule.DiscountType == DiscountType.FixedPrice
-                            ? (decimal?)schedule.Value
-                            : Math.Round(variant.Price * (100m - schedule.Value) / 100m, 0))
-                        .FirstOrDefault() ?? variant.Price)
-                : product.PriceSchedules
-                    .Where(schedule => !schedule.IsCancelled && schedule.StartsAt <= instant &&
-                        (!schedule.EndsAt.HasValue || instant < schedule.EndsAt.Value))
-                    .Select(schedule => schedule.DiscountType == DiscountType.FixedPrice
-                        ? (decimal?)schedule.Value
-                        : Math.Round(product.Price * (100m - schedule.Value) / 100m, 0))
-                    .FirstOrDefault() ?? product.Price
-        });
+            return activeVariants.Min(variant =>
+                ComputeEffectivePrice(variant.Price, variant.PriceSchedules, instant));
+        }
+        return ComputeEffectivePrice(product.Price, product.PriceSchedules, instant);
+    }
+
+    private static decimal ComputeCatalogMaxPrice(Product product, DateTimeOffset instant)
+    {
+        var activeVariants = product.Variants.Where(v => v.IsActive).ToList();
+        if (activeVariants.Count > 0)
+        {
+            return activeVariants.Max(variant =>
+                ComputeEffectivePrice(variant.Price, variant.PriceSchedules, instant));
+        }
+        return ComputeEffectivePrice(product.Price, product.PriceSchedules, instant);
+    }
+
+    private static decimal ComputeEffectivePrice(decimal basePrice, IEnumerable<PriceSchedule> schedules, DateTimeOffset instant)
+    {
+        var price = schedules
+            .Where(schedule => !schedule.IsCancelled && schedule.StartsAt <= instant &&
+                (!schedule.EndsAt.HasValue || instant < schedule.EndsAt.Value))
+            .Select(schedule => schedule.DiscountType == DiscountType.FixedPrice
+                ? (decimal?)schedule.Value
+                : Math.Round(basePrice * (100m - schedule.Value) / 100m, 0))
+            .FirstOrDefault();
+        return price ?? basePrice;
     }
 
     public static PriceQuote CalculateQuote(decimal basePrice, IEnumerable<PriceSchedule> schedules, DateTimeOffset instant)

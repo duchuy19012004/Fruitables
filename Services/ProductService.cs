@@ -102,12 +102,12 @@ public class ProductService : IProductService
             "newest" => priced.OrderByDescending(p => p.CreatedAt),
             _ => priced.OrderByDescending(p => p.IsFeatured).ThenByDescending(p => p.CreatedAt)
         };
-        var totalItems = await priced.CountAsync();
+        var totalItems = priced.Count();
         var totalPages = (int)Math.Ceiling(totalItems / (double)pageSize);
-        var pagePrices = await priced
+        var pagePrices = priced
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .ToListAsync();
+            .ToList();
         var pageIds = pagePrices.Select(p => p.ProductId).ToList();
         var loaded = await PricedQuery().Where(p => pageIds.Contains(p.Id))
             .Include(p => p.Category).Include(p => p.Images).ToListAsync();

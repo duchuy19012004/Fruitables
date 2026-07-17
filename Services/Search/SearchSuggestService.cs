@@ -89,8 +89,8 @@ public sealed class SearchSuggestService : ISearchSuggestService
                 .ToDictionary(x => x.Key, x => x.Value);
         var catalogPrices = _pricing == null || topIds.Count == 0
             ? new Dictionary<int, ProductPriceProjection>()
-            : await _pricing.ProjectCatalogPrices(_db.Products.Where(p => topIds.Contains(p.Id)))
-                .ToDictionaryAsync(p => p.ProductId, ct);
+            : _pricing.ProjectCatalogPrices(_db.Products.Where(p => topIds.Contains(p.Id)))
+                .ToDictionary(p => p.ProductId);
 
         response.Products = rankedProducts
             .Select(x => new SearchSuggestProductDto
