@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Http;
 
 namespace Fruitables.ViewModels;
 
@@ -33,6 +34,10 @@ public class ComboFormViewModel
 
     [Display(Name = "Hình ảnh (URL)")]
     public string? ImageUrl { get; set; }
+
+    [Display(Name = "Hình ảnh")]
+    [DataType(DataType.Upload)]
+    public IFormFile? ImageFile { get; set; }
 
     [Display(Name = "Kích hoạt")]
     public bool IsActive { get; set; } = true;
