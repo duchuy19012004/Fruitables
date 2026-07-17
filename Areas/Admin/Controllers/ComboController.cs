@@ -10,10 +10,12 @@ namespace Fruitables.Areas.Admin.Controllers;
 public class ComboController : Controller
 {
     private readonly IComboService _comboService;
+    private readonly IImageUploadService _imageUploadService;
 
-    public ComboController(IComboService comboService)
+    public ComboController(IComboService comboService, IImageUploadService imageUploadService)
     {
         _comboService = comboService;
+        _imageUploadService = imageUploadService;
     }
 
     public async Task<IActionResult> Index()
