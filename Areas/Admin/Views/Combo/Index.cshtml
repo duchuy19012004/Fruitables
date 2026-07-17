@@ -1,0 +1,82 @@
+@model Fruitables.ViewModels.ComboListViewModel
+@{
+    ViewData["Title"] = "Combo món ăn";
+    Layout = "~/Areas/Admin/Views/Shared/_AdminDashboardLayout.cshtml";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="mb-1">Combo món ăn</h4>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-0">
+                <li class="breadcrumb-item active">Combo món ăn</li>
+            </ol>
+        </nav>
+    </div>
+    <a asp-action="Create" class="btn btn-primary">
+        <i class="fas fa-plus me-2"></i>Thêm combo
+    </a>
+</div>
+
+<div class="admin-card">
+    <div class="card-header">
+        <i class="fas fa-utensils me-2"></i>Danh sách combo
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover admin-table mb-0">
+                <thead>
+                    <tr>
+                        <th style="width:80px">Ảnh</th>
+                        <th>Tên combo</th>
+                        <th>Số món</th>
+                        <th>Tổng giá hiện tại</th>
+                        <th>Trạng thái</th>
+                        <th style="width:140px">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in Model.Items)
+                    {
+                        <tr>
+                            <td>
+                                @if (!string.IsNullOrEmpty(item.ImageUrl))
+                                {
+                                    <img src="@item.ImageUrl" alt="@item.Name" class="img-thumbnail" style="width:60px;height:60px;object-fit:cover" />
+                                }
+                                else
+                                {
+                                    <span class="text-muted">—</span>
+                                }
+                            </td>
+                            <td>@item.Name</td>
+                            <td>@item.ItemCount món</td>
+                            <td>@item.TotalPrice.ToString("N0") đ</td>
+                            <td>
+                                @if (item.IsActive)
+                                {
+                                    <span class="badge bg-success">Kích hoạt</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-secondary">Tắt</span>
+                                }
+                            </td>
+                            <td>
+                                <a asp-action="Edit" asp-route-id="@item.Id" class="btn btn-sm btn-outline-primary">
+                                    <i class="fas fa-edit"></i>
+                                </a>
+                                <form asp-action="Delete" asp-route-id="@item.Id" method="post" class="d-inline" onsubmit="return confirm('Xóa combo này?');">
+                                    @Html.AntiForgeryToken()
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

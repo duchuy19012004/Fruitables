@@ -65,6 +65,13 @@
             </a>
         </li>
         <li class="sidebar-nav-item">
+            <a asp-action="Index" asp-controller="Combo" asp-area="Admin"
+               class="sidebar-nav-link @(controller == "Combo" ? "active" : "")">
+                <i class="fas fa-utensils"></i>
+                <span>Combo món ăn</span>
+            </a>
+        </li>
+        <li class="sidebar-nav-item">
             <a asp-action="Index" asp-controller="Price" asp-area="Admin"
                class="sidebar-nav-link @(controller == "Price" ? "active" : "")">
                 <i class="fas fa-tags"></i>

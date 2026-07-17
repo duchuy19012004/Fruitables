@@ -1,0 +1,138 @@
+@model Fruitables.ViewModels.ComboFormViewModel
+
+<form asp-action="@(Model.Id == 0 ? "Create" : "Edit")" method="post">
+    <input type="hidden" asp-for="Id" />
+    <div asp-validation-summary="ModelOnly" class="alert alert-danger" role="alert"></div>
+
+    <div class="row">
+        <div class="col-md-6 mb-3">
+            <label asp-for="Name" class="form-label">Tên combo <span class="text-danger">*</span></label>
+            <input asp-for="Name" class="form-control" placeholder="Ví dụ: Canh chua cá" />
+            <span asp-validation-for="Name" class="text-danger"></span>
+        </div>
+        <div class="col-md-6 mb-3">
+            <label asp-for="Slug" class="form-label">Slug</label>
+            <input asp-for="Slug" class="form-control" placeholder="Tự động tạo nếu để trống" />
+            <span asp-validation-for="Slug" class="text-danger"></span>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6 mb-3">
+            <label asp-for="ImageUrl" class="form-label">Hình ảnh (URL)</label>
+            <input asp-for="ImageUrl" class="form-control" placeholder="URL hình ảnh combo" />
+        </div>
+        <div class="col-md-3 mb-3">
+            <label asp-for="SortOrder" class="form-label">Thứ tự hiển thị</label>
+            <input asp-for="SortOrder" class="form-control" type="number" min="0" />
+        </div>
+        <div class="col-md-3 mb-3">
+            <label class="form-label">Trạng thái</label>
+            <div class="form-check form-switch mt-2">
+                <input asp-for="IsActive" class="form-check-input" type="checkbox" />
+                <label asp-for="IsActive" class="form-check-label">Kích hoạt combo</label>
+            </div>
+        </div>
+    </div>
+
+    <div class="mb-3">
+        <label asp-for="Description" class="form-label">Mô tả</label>
+        <textarea asp-for="Description" class="form-control" rows="2" placeholder="Mô tả ngắn về combo"></textarea>
+    </div>
+
+    <div class="admin-card mt-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="fas fa-list me-2"></i>Nguyên liệu</span>
+            <button type="button" id="addComboItem" class="btn btn-sm btn-primary">
+                <i class="fas fa-plus me-1"></i>Thêm món
+            </button>
+        </div>
+        <div class="card-body">
+            <div id="comboItemsContainer">
+                @for (int i = 0; i < Model.Items.Count; i++)
+                {
+                    var vd = new ViewDataDictionary(ViewData) { { "Index", i }, { "Products", Model.Products } };
+                    <partial name="_ComboItemRow" model="Model.Items[i]" view-data="vd" />
+                }
+            </div>
+        </div>
+    </div>
+
+    <hr class="my-3" />
+    <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">
+            <i class="fas fa-save me-2"></i>Lưu combo
+        </button>
+        <a asp-action="Index" class="btn btn-outline-secondary">Hủy</a>
+    </div>
+</form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+    <script>
+        const productOptions = @Html.Raw(Json.Serialize(Model.Products.Select(p => new { p.Id, p.Name, Variants = p.Variants.Select(v => new { v.Id, v.Name }) })));
+        let itemIndex = @(Model.Items.Count);
+
+        function buildOptions(items, selectedId) {
+            return '<option value="">-- chọn --</option>' +
+                items.map(i => '<option value="' + i.id + '"' + (i.id == selectedId ? ' selected' : '') + '>' + i.name + '</option>').join('');
+        }
+
+        function buildVariantSelect(productId, selectedVariantId) {
+            const product = productOptions.find(p => p.id == productId);
+            if (!product || !product.variants.length) return '<option value="">Không có biến thể</option>';
+            return '<option value="">-- mặc định --</option>' +
+                product.variants.map(v => '<option value="' + v.id + '"' + (v.id == selectedVariantId ? ' selected' : '') + '>' + v.name + '</option>').join('');
+        }
+
+        function refreshVariantSelect(productSelect) {
+            const row = productSelect.closest('.combo-item-row');
+            const variantSelect = row.querySelector('.variant-select');
+            const selectedVariant = variantSelect.value;
+            variantSelect.innerHTML = buildVariantSelect(productSelect.value, selectedVariant);
+        }
+
+        document.getElementById('addComboItem').addEventListener('click', function () {
+            const container = document.getElementById('comboItemsContainer');
+            const html = `
+                <div class="row combo-item-row align-items-end mb-2">
+                    <div class="col-md-5">
+                        <label class="form-label">Sản phẩm</label>
+                        <select name="Items[${itemIndex}].ProductId" class="form-select product-select" required>
+                            ${buildOptions(productOptions, '')}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Biến thể</label>
+                        <select name="Items[${itemIndex}].ProductVariantId" class="form-select variant-select">
+                            <option value="">-- mặc định --</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">SL</label>
+                        <input name="Items[${itemIndex}].Quantity" class="form-control" type="number" min="1" value="1" required />
+                    </div>
+                    <div class="col-md-2">
+                        <button type="button" class="btn btn-outline-danger remove-item w-100">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                    <input type="hidden" name="Items[${itemIndex}].SortOrder" value="${itemIndex}" />
+                </div>`;
+            container.insertAdjacentHTML('beforeend', html);
+            itemIndex++;
+        });
+
+        document.getElementById('comboItemsContainer').addEventListener('change', function (e) {
+            if (e.target.classList.contains('product-select')) {
+                refreshVariantSelect(e.target);
+            }
+        });
+
+        document.getElementById('comboItemsContainer').addEventListener('click', function (e) {
+            if (e.target.closest('.remove-item')) {
+                e.target.closest('.combo-item-row').remove();
+            }
+        });
+    </script>
+}

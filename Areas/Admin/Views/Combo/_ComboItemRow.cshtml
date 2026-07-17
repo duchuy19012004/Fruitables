@@ -1,0 +1,44 @@
+@model Fruitables.ViewModels.ComboItemFormModel
+@{
+    var index = (int)(ViewData["Index"] ?? 0);
+    var products = (List<Fruitables.ViewModels.ComboProductOptionViewModel>)ViewData["Products"]!;
+}
+
+<div class="row combo-item-row align-items-end mb-2">
+    <div class="col-md-5">
+        <label class="form-label">Sản phẩm</label>
+        <select name="Items[@index].ProductId" class="form-select product-select" required>
+            <option value="">-- chọn --</option>
+            @foreach (var p in products)
+            {
+                <option value="@p.Id" selected="@(p.Id == Model.ProductId)">@p.Name</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">Biến thể</label>
+        <select name="Items[@index].ProductVariantId" class="form-select variant-select">
+            <option value="">-- mặc định --</option>
+            @{
+                var selectedProduct = products.FirstOrDefault(p => p.Id == Model.ProductId);
+            }
+            @if (selectedProduct != null)
+            {
+                @foreach (var v in selectedProduct.Variants)
+                {
+                    <option value="@v.Id" selected="@(v.Id == Model.ProductVariantId)">@v.Name</option>
+                }
+            }
+        </select>
+    </div>
+    <div class="col-md-2">
+        <label class="form-label">SL</label>
+        <input name="Items[@index].Quantity" class="form-control" type="number" min="1" value="@Model.Quantity" required />
+    </div>
+    <div class="col-md-2">
+        <button type="button" class="btn btn-outline-danger remove-item w-100">
+            <i class="fas fa-trash"></i>
+        </button>
+    </div>
+    <input type="hidden" name="Items[@index].SortOrder" value="@index" />
+</div>
