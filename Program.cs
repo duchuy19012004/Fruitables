@@ -52,6 +52,7 @@ builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 builder.Services.AddScoped<ISettingsService, SettingsService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IProductAdminService, ProductAdminService>();
+builder.Services.AddScoped<IComboService, ComboService>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<IProductPricingService, ProductPricingService>();
 builder.Services.AddScoped<IPriceManagementService, PriceManagementService>();
