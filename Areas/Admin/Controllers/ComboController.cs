@@ -41,6 +41,16 @@ public class ComboController : Controller
             return View(model);
         }
 
+        var uploadedUrl = await TryUploadComboImageAsync(model.ImageFile);
+        if (uploadedUrl == null && model.ImageFile != null)
+        {
+            model.Products = (await _comboService.GetProductOptionsAsync()).ToList();
+            return View(model);
+        }
+
+        if (!string.IsNullOrEmpty(uploadedUrl))
+            model.ImageUrl = uploadedUrl;
+
         var result = await _comboService.CreateAsync(model);
         if (!result.Success)
         {
