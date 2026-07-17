@@ -31,6 +31,8 @@ public class UnitOfWork : IUnitOfWork
     private IRepository<ProductTag>? _productTags;
     private IRepository<ProductLog>? _productLogs;
     private IRepository<PriceSchedule>? _priceSchedules;
+    private IRepository<Combo>? _combos;
+    private IRepository<ComboItem>? _comboItems;
     private IRepository<Address>? _addresses;
     
     // RBAC repositories
@@ -103,6 +105,12 @@ public class UnitOfWork : IUnitOfWork
 
     public IRepository<PriceSchedule> PriceSchedules =>
         _priceSchedules ??= new Repository<PriceSchedule>(_context);
+
+    public IRepository<Combo> Combos =>
+        _combos ??= new Repository<Combo>(_context);
+
+    public IRepository<ComboItem> ComboItems =>
+        _comboItems ??= new Repository<ComboItem>(_context);
     
     public IRepository<Address> Addresses =>
         _addresses ??= new Repository<Address>(_context);

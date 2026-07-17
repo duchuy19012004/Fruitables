@@ -30,6 +30,8 @@ public interface IUnitOfWork : IDisposable
     IRepository<ProductTag> ProductTags { get; }
     IRepository<ProductLog> ProductLogs { get; }
     IRepository<PriceSchedule> PriceSchedules { get; }
+    IRepository<Combo> Combos { get; }
+    IRepository<ComboItem> ComboItems { get; }
     
     // New repository for Address
     IRepository<Address> Addresses { get; }

@@ -35,6 +35,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<ProductVariant> ProductVariants => Set<ProductVariant>();
     public DbSet<ProductLog> ProductLogs => Set<ProductLog>();
     public DbSet<PriceSchedule> PriceSchedules => Set<PriceSchedule>();
+    public DbSet<Combo> Combos => Set<Combo>();
+    public DbSet<ComboItem> ComboItems => Set<ComboItem>();
     public DbSet<OrderStatusHistory> OrderStatusHistories => Set<OrderStatusHistory>();
     public DbSet<OrderNote> OrderNotes => Set<OrderNote>();
     public DbSet<UserAccountLog> UserAccountLogs => Set<UserAccountLog>();
@@ -171,6 +173,30 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<OrderItem>(entity =>
         {
             entity.HasOne(e => e.ProductVariant).WithMany().HasForeignKey(e => e.ProductVariantId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // Combo
+        modelBuilder.Entity<Combo>(entity =>
+        {
+            entity.HasIndex(e => e.Slug).IsUnique();
+        });
+
+        // ComboItem
+        modelBuilder.Entity<ComboItem>(entity =>
+        {
+            entity.HasIndex(e => new { e.ComboId, e.SortOrder });
+            entity.HasOne(i => i.Combo)
+                  .WithMany(c => c.Items)
+                  .HasForeignKey(i => i.ComboId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(i => i.Product)
+                  .WithMany()
+                  .HasForeignKey(i => i.ProductId)
+                  .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(i => i.ProductVariant)
+                  .WithMany()
+                  .HasForeignKey(i => i.ProductVariantId)
+                  .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<PriceSchedule>(entity =>
