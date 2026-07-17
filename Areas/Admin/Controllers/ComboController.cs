@@ -84,6 +84,22 @@ public class ComboController : Controller
             return View(model);
         }
 
+        if (model.ImageFile != null)
+        {
+            var existing = await _comboService.GetForEditAsync(id);
+            if (!string.IsNullOrEmpty(existing?.ImageUrl))
+                await _imageUploadService.DeleteImageAsync(existing.ImageUrl);
+
+            var uploadedUrl = await TryUploadComboImageAsync(model.ImageFile);
+            if (uploadedUrl == null)
+            {
+                model.Products = (await _comboService.GetProductOptionsAsync()).ToList();
+                return View(model);
+            }
+
+            model.ImageUrl = uploadedUrl;
+        }
+
         var result = await _comboService.UpdateAsync(id, model);
         if (!result.Success)
         {
