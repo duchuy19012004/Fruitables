@@ -1,4 +1,6 @@
 @using Fruitables.ViewModels
+@using Fruitables.Services.Interfaces
+@inject IComboService ComboService
 @model ShopViewModel
 @{
     ViewData["Title"] = "Cửa hàng";
@@ -52,6 +54,11 @@
             </div>
         </div>
     </section>
+
+    @{
+        var comboCards = await ComboService.GetActiveComboCardsAsync();
+    }
+    <partial name="_ComboSection" model="comboCards" />
 
     <section class="shop-shell">
         <div class="container">
