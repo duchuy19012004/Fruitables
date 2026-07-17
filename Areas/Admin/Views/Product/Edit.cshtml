@@ -67,7 +67,7 @@
                         <div class="col-md-6 mb-3">
                             <label for="request_Price" class="form-label">Giá gốc <span class="text-danger">*</span></label>
                             <div class="input-group">
-                                <input type="number" name="request.Price" id="request_Price" value="@Model.Product.Price" step="0.01" class="form-control" placeholder="0" readonly />
+                                <input type="number" id="request_Price" value="@Model.Product.Price" step="0.01" class="form-control" placeholder="0" readonly />
                                 <span class="input-group-text">đ</span>
                             </div>
                             <small class="text-muted d-flex align-items-center mt-1">
@@ -382,9 +382,6 @@
             return new Intl.NumberFormat('vi-VN').format(value) + ' VND';
         }
 
-        document.getElementById('request_Price')?.addEventListener('input', function(e) {
-            document.getElementById('pricePreview').textContent = formatPrice(e.target.value);
-        });
 
         // Variant price formatting
         document.getElementById('variantPrice')?.addEventListener('input', function(e) {

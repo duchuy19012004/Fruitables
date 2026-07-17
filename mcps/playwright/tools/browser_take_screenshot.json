@@ -29,10 +29,20 @@
       "fullPage": {
         "description": "When true, takes a screenshot of the full scrollable page, instead of the currently visible viewport. Cannot be used with element screenshots.",
         "type": "boolean"
+      },
+      "scale": {
+        "default": "css",
+        "description": "Image resolution scale. \"css\" produces a screenshot sized in CSS pixels (smaller, consistent across devices). \"device\" produces a high-resolution screenshot using device pixels (larger, accounts for the device pixel ratio). Default is css.",
+        "type": "string",
+        "enum": [
+          "css",
+          "device"
+        ]
       }
     },
     "required": [
-      "type"
+      "type",
+      "scale"
     ],
     "additionalProperties": false
   }

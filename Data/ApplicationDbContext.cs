@@ -170,7 +170,7 @@ public class ApplicationDbContext : DbContext
 
         modelBuilder.Entity<OrderItem>(entity =>
         {
-            entity.HasOne(e => e.ProductVariant).WithMany().HasForeignKey(e => e.ProductVariantId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.ProductVariant).WithMany().HasForeignKey(e => e.ProductVariantId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<PriceSchedule>(entity =>

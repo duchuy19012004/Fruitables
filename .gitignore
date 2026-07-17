@@ -432,3 +432,6 @@ skills-lock.json
 !.agents/
 !.agents/**
 .worktrees/
+
+# Brainstorm visual companion sessions
+.superpowers/

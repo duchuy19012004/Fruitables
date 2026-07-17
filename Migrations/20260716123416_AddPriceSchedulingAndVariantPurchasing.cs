@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -11,9 +11,19 @@ namespace Fruitables.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropIndex(
-                name: "IX_CartItems_CartId",
-                table: "CartItems");
+            // Some existing databases were created from a schema where this legacy
+            // index had already been removed even though the migration history says
+            // the original migration ran. Keep this migration safe for both shapes.
+            migrationBuilder.Sql(
+                """
+                IF EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_CartItems_CartId'
+                      AND object_id = OBJECT_ID(N'[dbo].[CartItems]')
+                )
+                    DROP INDEX [IX_CartItems_CartId] ON [dbo].[CartItems];
+                """);
 
             migrationBuilder.AddColumn<int>(
                 name: "ProductVariantId",
@@ -182,13 +192,17 @@ namespace Fruitables.Migrations
                 principalColumn: "Id",
                 onDelete: ReferentialAction.Restrict);
 
+            // SQL Server rejects SetNull here: Products cascades to both OrderItems
+            // and ProductVariants, so a SetNull through ProductVariants would create
+            // multiple cascade paths (error 1785). Restrict matches app behavior:
+            // DeleteVariantAsync soft-deletes variants referenced by order items.
             migrationBuilder.AddForeignKey(
                 name: "FK_OrderItems_ProductVariants_ProductVariantId",
                 table: "OrderItems",
                 column: "ProductVariantId",
                 principalTable: "ProductVariants",
                 principalColumn: "Id",
-                onDelete: ReferentialAction.SetNull);
+                onDelete: ReferentialAction.Restrict);
         }
 
         /// <inheritdoc />

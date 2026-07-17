@@ -5,7 +5,7 @@ namespace Fruitables.ViewModels;
 
 #region Request DTOs
 
-public class CreateProductRequest
+public class ProductFormRequest
 {
     [Required(ErrorMessage = "Tên sản phẩm không được để trống")]
     [StringLength(255, ErrorMessage = "Tên sản phẩm không được vượt quá 255 ký tự")]
@@ -21,13 +21,6 @@ public class CreateProductRequest
 
     [Required(ErrorMessage = "Danh mục không được để trống")]
     public int CategoryId { get; set; }
-
-    [Required(ErrorMessage = "Giá không được để trống")]
-    [Range(0, double.MaxValue, ErrorMessage = "Giá phải lớn hơn hoặc bằng 0")]
-    public decimal Price { get; set; }
-
-    [Range(0, double.MaxValue, ErrorMessage = "Giá khuyến mãi phải lớn hơn hoặc bằng 0")]
-    public decimal? SalePrice { get; set; }
 
     [StringLength(20, ErrorMessage = "Đơn vị không được vượt quá 20 ký tự")]
     public string Unit { get; set; } = "kg";
@@ -54,7 +47,14 @@ public class CreateProductRequest
     public List<string>? Tags { get; set; }
 }
 
-public class UpdateProductRequest : CreateProductRequest
+public class CreateProductRequest : ProductFormRequest
+{
+    [Required(ErrorMessage = "Giá không được để trống")]
+    [Range(0, double.MaxValue, ErrorMessage = "Giá phải lớn hơn hoặc bằng 0")]
+    public decimal Price { get; set; }
+}
+
+public class UpdateProductRequest : ProductFormRequest
 {
     public int Id { get; set; }
 }
@@ -69,10 +69,8 @@ public class ProductListRequest
     public bool IncludeDeleted { get; set; } = false;
 }
 
-public class CreateVariantRequest
+public class UpdateVariantRequest
 {
-    public int ProductId { get; set; }
-
     [Required(ErrorMessage = "SKU không được để trống")]
     [StringLength(50, ErrorMessage = "SKU không được vượt quá 50 ký tự")]
     public string SKU { get; set; } = string.Empty;
@@ -81,17 +79,19 @@ public class CreateVariantRequest
     [StringLength(100, ErrorMessage = "Tên biến thể không được vượt quá 100 ký tự")]
     public string Name { get; set; } = string.Empty;
 
-    [Required(ErrorMessage = "Giá không được để trống")]
-    [Range(0, double.MaxValue, ErrorMessage = "Giá phải lớn hơn hoặc bằng 0")]
-    public decimal Price { get; set; }
-
-    [Range(0, double.MaxValue, ErrorMessage = "Giá khuyến mãi phải lớn hơn hoặc bằng 0")]
-    public decimal? SalePrice { get; set; }
-
     [Range(0, int.MaxValue, ErrorMessage = "Số lượng tồn kho phải lớn hơn hoặc bằng 0")]
     public int StockQuantity { get; set; } = 0;
 
     public bool IsActive { get; set; } = true;
+}
+
+public class CreateVariantRequest : UpdateVariantRequest
+{
+    public int ProductId { get; set; }
+
+    [Required(ErrorMessage = "Giá không được để trống")]
+    [Range(0, double.MaxValue, ErrorMessage = "Giá phải lớn hơn hoặc bằng 0")]
+    public decimal Price { get; set; }
 }
 
 #endregion

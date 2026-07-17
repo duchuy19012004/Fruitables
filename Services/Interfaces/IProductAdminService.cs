@@ -25,6 +25,6 @@ public interface IProductAdminService
     
     // Variant Management
     Task<ProductResult> AddVariantAsync(CreateVariantRequest request);
-    Task<ProductResult> UpdateVariantAsync(int variantId, CreateVariantRequest request);
+    Task<ProductResult> UpdateVariantAsync(int variantId, UpdateVariantRequest request);
     Task<ProductResult> DeleteVariantAsync(int variantId);
 }

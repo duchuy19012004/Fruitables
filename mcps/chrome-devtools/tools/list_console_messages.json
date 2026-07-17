@@ -47,6 +47,10 @@
         "type": "boolean",
         "default": false,
         "description": "Set to true to return the preserved messages over the last 3 navigations."
+      },
+      "serviceWorkerId": {
+        "type": "string",
+        "description": "Filter messages to only return messages of the specified service worker."
       }
     },
     "additionalProperties": true,

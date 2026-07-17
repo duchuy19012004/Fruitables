@@ -3,11 +3,6 @@ namespace Fruitables.Options;
 // ============================================================
 // Cấu hình chatbot — đọc từ appsettings.json mục "Chat"
 // (hoặc user-secrets / biến môi trường cho khóa API).
-//
-// Người non-tech chỉ cần nhớ:
-// - BaseUrl + Model + ApiKey = "gọi AI Kimi"
-// - Embedding Local = "tự mã hóa tri thức trên máy, không cần API embed"
-// ============================================================
 public class ChatOptions
 {
     public const string SectionName = "Chat";

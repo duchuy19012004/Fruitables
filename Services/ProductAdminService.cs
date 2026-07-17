@@ -210,15 +210,9 @@ public class ProductAdminService : IProductAdminService
         if (product == null)
             return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy sản phẩm với ID {request.Id}");
 
-        if (request.Price != product.Price)
-            return ProductResult.Fail(ProductErrorType.ValidationError, "Vui lòng thay đổi giá gốc tại trang Quản lý giá để hệ thống kiểm tra lịch và ghi nhật ký.");
-
         // Validation
         if (string.IsNullOrWhiteSpace(request.Name))
             return ProductResult.Fail(ProductErrorType.ValidationError, "Tên sản phẩm không được để trống");
-
-        if (request.Price < 0)
-            return ProductResult.Fail(ProductErrorType.ValidationError, "Giá sản phẩm không được âm");
 
         // Generate slug if not provided
         var slug = string.IsNullOrWhiteSpace(request.Slug) 
@@ -610,7 +604,7 @@ public class ProductAdminService : IProductAdminService
         return ProductResult.Ok(product);
     }
 
-    public async Task<ProductResult> UpdateVariantAsync(int variantId, CreateVariantRequest request)
+    public async Task<ProductResult> UpdateVariantAsync(int variantId, UpdateVariantRequest request)
     {
         await using var transaction = await BeginVariantWriteAsync();
         var variants = await _unitOfWork.ProductVariants
@@ -620,16 +614,10 @@ public class ProductAdminService : IProductAdminService
         if (variant == null)
             return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy variant với ID {variantId}");
 
-        if (request.Price != variant.Price)
-            return ProductResult.Fail(ProductErrorType.ValidationError, "Vui lòng thay đổi giá biến thể tại trang Quản lý giá để hệ thống kiểm tra lịch và ghi nhật ký.");
-
         if (request.IsActive && !variant.IsActive && !await CanEnableVariantAsync(variant.ProductId))
             return ProductResult.Fail(ProductErrorType.ValidationError, "Hãy hủy các lịch giá cấp sản phẩm đang chạy hoặc sắp tới trước khi kích hoạt biến thể.");
 
         // Validation
-        if (request.Price < 0)
-            return ProductResult.Fail(ProductErrorType.ValidationError, "Giá variant không được âm");
-
         if (request.StockQuantity < 0)
             return ProductResult.Fail(ProductErrorType.ValidationError, "Số lượng tồn kho không được âm");
 

@@ -369,7 +369,7 @@ public class ProductController : Controller
 
     // POST: Admin/Product/UpdateVariant/{id}
     [HttpPost]
-    public async Task<IActionResult> UpdateVariant(int id, [FromBody] CreateVariantRequest request)
+    public async Task<IActionResult> UpdateVariant(int id, [FromBody] UpdateVariantRequest request)
     {
         var result = await _productAdminService.UpdateVariantAsync(id, request);
 
