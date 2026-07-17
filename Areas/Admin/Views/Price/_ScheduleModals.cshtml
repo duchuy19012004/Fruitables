@@ -1,0 +1,155 @@
+@using Fruitables.ViewModels
+@model PriceManagementViewModel
+
+<div class="modal fade price-page-modal" id="bulkPreviewModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-eye"></i> Xem trước thay đổi giá</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning small d-none mb-3" id="bulkInvalidWarning">
+                    <i class="fas fa-exclamation-triangle me-1"></i>
+                    Có dòng có giá mới không hợp lệ (≤ 0đ). Hãy điều chỉnh lại mức thay đổi.
+                </div>
+                <div class="table-responsive" style="max-height:50vh">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th>Sản phẩm / biến thể</th>
+                                <th class="text-end">Giá hiện tại</th>
+                                <th class="text-end">Giá mới</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bulkPreviewBody"></tbody>
+                    </table>
+                </div>
+                <p class="text-muted small mb-0 mt-3">
+                    <i class="fas fa-info-circle me-1"></i>
+                    Toàn bộ thay đổi được áp dụng cùng lúc; nếu có lỗi sẽ không dòng nào thay đổi.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Đóng</button>
+                <button type="button" class="btn btn-primary" id="bulkApplyBtn">
+                    <i class="fas fa-check me-1"></i>Áp dụng
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade price-page-modal" id="scheduleModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form asp-action="CreateSchedule" method="post" class="modal-content" id="scheduleForm">
+            <div class="modal-header">
+                <h5 class="modal-title" id="scheduleModalTitle"><i class="fas fa-calendar-plus"></i> Tạo lịch giảm giá</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
+            </div>
+            <div class="modal-body">
+                <div class="field-block">
+                    <label class="form-label" for="scheduleTarget">Đối tượng</label>
+                    <select id="scheduleTarget" class="form-select" required>
+                        <option value="">Chọn sản phẩm / biến thể</option>
+                        @foreach (var row in Model.Rows)
+                        {
+                            <option value="@row.ProductId:@row.ProductVariantId">
+                                @row.ProductName@(row.VariantName == null ? "" : " - " + row.VariantName)
+                            </option>
+                        }
+                    </select>
+                </div>
+                <input type="hidden" name="ProductId" id="scheduleProductId" />
+                <input type="hidden" name="ProductVariantId" id="scheduleVariantId" />
+                <div class="field-block">
+                    <label class="form-label" for="scheduleType">Kiểu giảm</label>
+                    <select name="DiscountType" id="scheduleType" class="form-select">
+                        <option value="FixedPrice">Giá bán cụ thể</option>
+                        <option value="Percentage">Phần trăm</option>
+                    </select>
+                </div>
+                <div class="field-block">
+                    <label class="form-label" for="scheduleValue">Giá trị</label>
+                    <input name="Value" id="scheduleValue" type="number" min="0" step="0.01" class="form-control" required />
+                    <div class="form-text" id="scheduleValueHint">Giá bán cụ thể (đ), nên nhỏ hơn giá gốc.</div>
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <div class="field-block mb-0">
+                            <label class="form-label" for="scheduleStart">Bắt đầu</label>
+                            <input name="StartsAt" id="scheduleStart" type="datetime-local" class="form-control" required />
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="field-block mb-0">
+                            <label class="form-label" for="scheduleEnd">Kết thúc <span class="text-muted fw-normal">(tùy chọn)</span></label>
+                            <input name="EndsAt" id="scheduleEnd" type="datetime-local" class="form-control" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Đóng</button>
+                <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i>Lưu lịch</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal fade price-page-modal" id="basePriceModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form asp-action="UpdateBasePrice" method="post" class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-tags"></i> Cập nhật giá gốc</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
+            </div>
+            <div class="modal-body">
+                <div class="target-summary">
+                    <div class="fw-bold" id="basePriceLabel"></div>
+                    <div class="small text-muted mt-1">Giá hiện tại: <span id="basePriceCurrent" class="fw-semibold text-dark"></span></div>
+                </div>
+                <div class="field-block">
+                    <label class="form-label" for="newPrice">Giá gốc mới</label>
+                    <div class="input-group">
+                        <input type="number" name="newPrice" id="newPrice" min="1" step="0.01" class="form-control" required />
+                        <span class="input-group-text">đ</span>
+                    </div>
+                </div>
+                <input type="hidden" name="productId" id="baseProductId" />
+                <input type="hidden" name="productVariantId" id="baseVariantId" />
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Đóng</button>
+                <button type="submit" class="btn btn-primary"><i class="fas fa-check me-1"></i>Cập nhật</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal fade price-page-modal" id="cancelScheduleModal" tabindex="-1" aria-labelledby="cancelScheduleModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <form id="cancelScheduleForm" method="post" class="modal-content">
+            @Html.AntiForgeryToken()
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title" id="cancelScheduleModalTitle">
+                    <i class="fas fa-ban text-danger"></i> Hủy lịch giảm giá
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
+            </div>
+            <div class="modal-body pt-3">
+                <p class="mb-2">Bạn có chắc muốn hủy lịch giá cho:</p>
+                <div class="target-summary mb-0">
+                    <div class="fw-bold" id="cancelScheduleLabel">-</div>
+                    <div class="small text-muted mt-1">Lịch đã hủy sẽ không áp dụng lại. Thao tác này không hoàn tác được.</div>
+                </div>
+            </div>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Giữ lịch</button>
+                <button type="submit" class="btn btn-danger" id="cancelScheduleConfirmBtn">
+                    <i class="fas fa-ban me-1"></i>Hủy lịch
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
