@@ -768,15 +768,16 @@
         }));
     }
 
-    /* ---- Realtime ---- */
+    /* ---- Realtime: banner không giật trang, user tự quyết khi nào tải lại ---- */
     function bindRealtime() {
-        if (window.ecommerceHub) {
-            window.ecommerceHub.on('PriceChanged', () => {
-                if (!document.querySelector('.modal.show') && !document.querySelector('.inline-price-editor')) {
-                    window.location.reload();
-                }
-            });
-        }
+        if (!window.ecommerceHub) return;
+        window.ecommerceHub.on('PriceChanged', () => {
+            document.getElementById('priceUpdateBanner')?.classList.remove('d-none');
+        });
+        document.getElementById('priceUpdateReload')?.addEventListener('click', () => window.location.reload());
+        document.getElementById('priceUpdateDismiss')?.addEventListener('click', () => {
+            document.getElementById('priceUpdateBanner')?.classList.add('d-none');
+        });
     }
 
     function init(cfg) {

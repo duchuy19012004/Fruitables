@@ -26,6 +26,15 @@
         </button>
     </div>
 
+    <div id="priceUpdateBanner" class="pp-update-banner d-none" role="status">
+        <i class="fas fa-sync-alt"></i>
+        <span>Có cập nhật mới về giá từ nơi khác.</span>
+        <button type="button" id="priceUpdateReload" class="btn btn-sm btn-primary">Tải lại</button>
+        <button type="button" id="priceUpdateDismiss" class="pp-banner-dismiss" aria-label="Bỏ qua">
+            <i class="fas fa-times"></i>
+        </button>
+    </div>
+
     <div class="pp-tabs" role="tablist">
         <a role="tab"
            class="@(Model.Tab == "prices" ? "active" : "")"

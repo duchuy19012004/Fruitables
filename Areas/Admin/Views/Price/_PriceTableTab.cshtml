@@ -31,34 +31,50 @@
     })!;
 }
 
-<div class="stat-grid">
-    <a class="stat-card @(currentFilter == "" ? "active" : "")" href="@StatUrl(null)">
+<div class="stat-grid" role="group" aria-label="Lọc nhanh bảng giá">
+    <a class="stat-card @(currentFilter == "" ? "active" : "")" href="@StatUrl(null)" aria-pressed="@(currentFilter == "" ? "true" : "false")">
         <div class="stat-icon slate"><i class="fas fa-tags"></i></div>
         <div>
             <div class="stat-num">@Model.StatTotal</div>
             <div class="stat-label">Tổng mục giá</div>
         </div>
+        @if (currentFilter == "")
+        {
+            <span class="stat-check"><i class="fas fa-check"></i></span>
+        }
     </a>
-    <a class="stat-card @(currentFilter == "active" ? "active" : "")" href="@StatUrl("active")">
+    <a class="stat-card @(currentFilter == "active" ? "active" : "")" href="@StatUrl("active")" aria-pressed="@(currentFilter == "active" ? "true" : "false")">
         <div class="stat-icon green"><i class="fas fa-bolt"></i></div>
         <div>
             <div class="stat-num">@Model.StatActive</div>
             <div class="stat-label">Đang giảm giá</div>
         </div>
+        @if (currentFilter == "active")
+        {
+            <span class="stat-check"><i class="fas fa-check"></i></span>
+        }
     </a>
-    <a class="stat-card @(currentFilter == "upcoming" ? "active" : "")" href="@StatUrl("upcoming")">
+    <a class="stat-card @(currentFilter == "upcoming" ? "active" : "")" href="@StatUrl("upcoming")" aria-pressed="@(currentFilter == "upcoming" ? "true" : "false")">
         <div class="stat-icon blue"><i class="far fa-clock"></i></div>
         <div>
             <div class="stat-num">@Model.StatUpcoming</div>
             <div class="stat-label">Sắp chạy</div>
         </div>
+        @if (currentFilter == "upcoming")
+        {
+            <span class="stat-check"><i class="fas fa-check"></i></span>
+        }
     </a>
-    <a class="stat-card @(currentFilter == "regular" ? "active" : "")" href="@StatUrl("regular")">
+    <a class="stat-card @(currentFilter == "regular" ? "active" : "")" href="@StatUrl("regular")" aria-pressed="@(currentFilter == "regular" ? "true" : "false")">
         <div class="stat-icon gray"><i class="fas fa-box-open"></i></div>
         <div>
             <div class="stat-num">@Model.StatRegular</div>
             <div class="stat-label">Chưa có lịch</div>
         </div>
+        @if (currentFilter == "regular")
+        {
+            <span class="stat-check"><i class="fas fa-check"></i></span>
+        }
     </a>
 </div>
 
@@ -74,6 +90,21 @@
                     <input type="hidden" name="filter" value="@Model.Filter" />
                 }
             </div>
+            @if (!string.IsNullOrEmpty(Model.Filter))
+            {
+                var filterLabel = Model.Filter switch
+                {
+                    "active" => "Đang giảm giá",
+                    "upcoming" => "Sắp chạy",
+                    _ => "Chưa có lịch"
+                };
+                <span class="pp-filter-chip">
+                    <i class="fas fa-filter"></i>Bộ lọc: @filterLabel
+                    <a href="@Url.Action("Index", "Price", new { area = "Admin", tab = "prices", search = Model.Search })" aria-label="Xóa bộ lọc">
+                        <i class="fas fa-times"></i>
+                    </a>
+                </span>
+            }
         </div>
         <div class="col-auto d-flex gap-2">
             <button type="submit" class="btn btn-outline-primary">
