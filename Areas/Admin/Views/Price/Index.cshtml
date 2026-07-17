@@ -1,13 +1,10 @@
-@using Fruitables.Models
 @using Fruitables.ViewModels
 @model PriceManagementViewModel
 @{
     ViewData["Title"] = "Quản lý giá";
     Layout = "~/Areas/Admin/Views/Shared/_AdminDashboardLayout.cshtml";
-    var now = DateTimeOffset.UtcNow;
-    var currentFilter = Model.Filter ?? "";
-    var hasFilter = !string.IsNullOrEmpty(Model.Search) || !string.IsNullOrEmpty(Model.Filter);
-    string StatUrl(string? f) => Url.Action("Index", "Price", new { area = "Admin", filter = f, search = Model.Search })!;
+
+    string TabUrl(string tab) => Url.Action("Index", "Price", new { area = "Admin", tab })!;
 }
 
 @section Styles {
@@ -18,220 +15,37 @@
     <div class="pp-header">
         <div>
             <h4>Quản lý giá</h4>
-            <p>Giá gốc, giá đang áp dụng và lịch giảm giá theo sản phẩm.</p>
+            <p>Bảng giá: xem và chỉnh giá đang áp dụng · Lịch giảm giá: lên lịch khuyến mãi theo thời gian.</p>
         </div>
         <button class="btn btn-primary" type="button" id="createScheduleBtn">
             <i class="fas fa-calendar-plus me-2"></i>Tạo lịch giảm giá
         </button>
     </div>
 
-    <div class="stat-grid">
-        <a class="stat-card @(currentFilter == "" ? "active" : "")" href="@StatUrl(null)">
-            <div class="stat-icon slate"><i class="fas fa-tags"></i></div>
-            <div>
-                <div class="stat-num">@Model.StatTotal</div>
-                <div class="stat-label">Tổng mục giá</div>
-            </div>
+    <div class="pp-tabs" role="tablist">
+        <a role="tab"
+           class="@(Model.Tab == "prices" ? "active" : "")"
+           aria-selected="@(Model.Tab == "prices" ? "true" : "false")"
+           href="@TabUrl("prices")">
+            <i class="fas fa-tags"></i>Bảng giá
         </a>
-        <a class="stat-card @(currentFilter == "active" ? "active" : "")" href="@StatUrl("active")">
-            <div class="stat-icon green"><i class="fas fa-bolt"></i></div>
-            <div>
-                <div class="stat-num">@Model.StatActive</div>
-                <div class="stat-label">Đang giảm giá</div>
-            </div>
-        </a>
-        <a class="stat-card @(currentFilter == "upcoming" ? "active" : "")" href="@StatUrl("upcoming")">
-            <div class="stat-icon blue"><i class="far fa-clock"></i></div>
-            <div>
-                <div class="stat-num">@Model.StatUpcoming</div>
-                <div class="stat-label">Sắp chạy</div>
-            </div>
-        </a>
-        <a class="stat-card @(currentFilter == "regular" ? "active" : "")" href="@StatUrl("regular")">
-            <div class="stat-icon gray"><i class="fas fa-box-open"></i></div>
-            <div>
-                <div class="stat-num">@Model.StatRegular</div>
-                <div class="stat-label">Chưa có lịch</div>
-            </div>
+        <a role="tab"
+           class="@(Model.Tab == "schedules" ? "active" : "")"
+           aria-selected="@(Model.Tab == "schedules" ? "true" : "false")"
+           href="@TabUrl("schedules")">
+            <i class="far fa-calendar-alt"></i>Lịch giảm giá
+            <span class="pp-tab-badge">@Model.ScheduleStatusCounts.GetValueOrDefault("all")</span>
         </a>
     </div>
 
-    <form method="get" class="pp-card pp-search">
-        <div class="row g-2 align-items-center">
-            <div class="col">
-                <div class="input-group">
-                    <span class="input-group-text border-end-0"><i class="fas fa-search"></i></span>
-                    <input name="search" value="@Model.Search" class="form-control border-start-0" placeholder="Tìm theo tên sản phẩm hoặc SKU" autocomplete="off" />
-                    @if (!string.IsNullOrEmpty(Model.Filter))
-                    {
-                        <input type="hidden" name="filter" value="@Model.Filter" />
-                    }
-                </div>
-            </div>
-            <div class="col-auto d-flex gap-2">
-                <button type="submit" class="btn btn-outline-primary">
-                    <i class="fas fa-filter me-1"></i>Lọc
-                </button>
-                @if (hasFilter)
-                {
-                    <a href="@Url.Action("Index", "Price", new { area = "Admin" })" class="btn btn-outline-secondary">
-                        <i class="fas fa-times me-1"></i>Xóa lọc
-                    </a>
-                }
-            </div>
-        </div>
-    </form>
-
-    <form asp-action="BulkUpdate" method="post" id="bulkForm">
-        @Html.AntiForgeryToken()
-        <div class="pp-card mb-4">
-            <div class="pp-card-head">
-                <h5 class="pp-card-title"><i class="fas fa-list-ul"></i> Bảng giá</h5>
-                <span class="text-muted small ms-auto d-none d-md-inline">Chọn dòng để điều chỉnh hàng loạt · nhấn giá gốc để sửa nhanh</span>
-            </div>
-
-            <div class="bulk-bar">
-                <span class="sel-chip" id="selChip">
-                    <i class="fas fa-check-square"></i>
-                    Đã chọn: <span id="selectedCount">0</span>
-                </span>
-                <div class="bulk-fields">
-                    <span class="field-label d-none d-lg-inline">Điều chỉnh</span>
-                    <select name="adjustmentType" class="form-select form-select-sm" style="width:auto" title="Kiểu điều chỉnh">
-                        <option value="Amount">Số tiền</option>
-                        <option value="Percentage">Phần trăm</option>
-                    </select>
-                    <select name="direction" class="form-select form-select-sm" style="width:auto" title="Chiều điều chỉnh">
-                        <option value="Increase">Tăng</option>
-                        <option value="Decrease">Giảm</option>
-                    </select>
-                    <input name="value" type="number" min="0.01" step="0.01" class="form-control form-control-sm" style="width:140px" placeholder="Mức điều chỉnh" required />
-                    <button type="submit" id="bulkPreviewBtn" class="btn btn-sm btn-primary" disabled>
-                        <i class="fas fa-eye me-1"></i>Xem trước
-                    </button>
-                </div>
-            </div>
-
-            <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0 price-table">
-                    <thead>
-                        <tr>
-                            <th style="width:40px"><input type="checkbox" id="selectAll" class="form-check-input" title="Chọn tất cả" /></th>
-                            <th class="sortable" data-sort="name">Sản phẩm / biến thể <i class="fas fa-sort sort-arrow"></i></th>
-                            <th>SKU</th>
-                            <th class="sortable text-end" data-sort="base">Giá gốc <i class="fas fa-sort sort-arrow"></i></th>
-                            <th class="sortable text-end" data-sort="effective">Giá hiện tại <i class="fas fa-sort sort-arrow"></i></th>
-                            <th>Lịch đang chạy</th>
-                            <th>Lịch sắp tới</th>
-                            <th class="text-end" style="width:120px">Thao tác</th>
-                        </tr>
-                    </thead>
-                    <tbody id="priceTbody">
-                        @await Html.PartialAsync("_PriceTableRows", Model)
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </form>
-
-    <div class="pp-card">
-        <div class="pp-card-head">
-            <h5 class="pp-card-title"><i class="fas fa-history"></i> Lịch sử gần đây</h5>
-        </div>
-        <div class="table-responsive">
-            <table class="table table-hover mb-0 align-middle hist-table">
-                <thead>
-                    <tr>
-                        <th>Đối tượng</th>
-                        <th>Kiểu giảm</th>
-                        <th>Hiệu lực</th>
-                        <th>Trạng thái</th>
-                        <th class="text-end">Thao tác</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @if (!Model.Schedules.Any())
-                    {
-                        <tr>
-                            <td colspan="5">
-                                <div class="pp-empty">
-                                    <div class="pp-empty-icon"><i class="far fa-calendar-times"></i></div>
-                                    <strong>Chưa có lịch giảm giá</strong>
-                                    <p>Tạo lịch mới để lên kế hoạch khuyến mãi theo thờ gian.</p>
-                                </div>
-                            </td>
-                        </tr>
-                    }
-                    @foreach (var schedule in Model.Schedules)
-                    {
-                        var status = schedule.GetStatus(now);
-                        var (badgeClass, badgeText, badgeIcon) = status switch
-                        {
-                            PriceScheduleStatus.Active => ("running", "Đang chạy", "fa-bolt"),
-                            PriceScheduleStatus.Scheduled => ("planned", "Sắp chạy", "fa-clock"),
-                            PriceScheduleStatus.Ended => ("done", "Đã kết thúc", "fa-check"),
-                            _ => ("cancelled", "Đã hủy", "fa-ban")
-                        };
-                        <tr>
-                            <td class="hist-target">
-                                @schedule.Product.Name
-                                @if (schedule.ProductVariant != null)
-                                {
-                                    <div class="prod-variant"><i class="fas fa-code-branch"></i>@schedule.ProductVariant.Name</div>
-                                }
-                            </td>
-                            <td>
-                                @(schedule.DiscountType == DiscountType.FixedPrice
-                                    ? $"Giá {schedule.Value:N0}đ"
-                                    : $"Giảm {schedule.Value:N0}%")
-                            </td>
-                            <td class="hist-period">
-                                @schedule.StartsAt.ToOffset(TimeSpan.FromHours(7)).ToString("dd/MM/yyyy HH:mm")
-                                <span class="sep"><i class="fas fa-arrow-right" style="font-size:.65rem"></i></span>
-                                @(schedule.EndsAt?.ToOffset(TimeSpan.FromHours(7)).ToString("dd/MM/yyyy HH:mm") ?? "Không giới hạn")
-                            </td>
-                            <td>
-                                <span class="badge-status @badgeClass">
-                                    <i class="fas @badgeIcon"></i>@badgeText
-                                </span>
-                            </td>
-                            <td class="text-end">
-                                <div class="row-actions">
-                                    @if (status == PriceScheduleStatus.Scheduled)
-                                    {
-                                        <button type="button" class="btn btn-sm btn-outline-primary btn-text-sm schedule-action"
-                                                data-mode="edit" data-id="@schedule.Id" data-product="@schedule.ProductId"
-                                                data-variant="@schedule.ProductVariantId" data-type="@schedule.DiscountType"
-                                                data-value="@schedule.Value" data-start="@schedule.StartsAt.ToOffset(TimeSpan.FromHours(7)).ToString("yyyy-MM-ddTHH:mm")"
-                                                data-end="@(schedule.EndsAt?.ToOffset(TimeSpan.FromHours(7)).ToString("yyyy-MM-ddTHH:mm") ?? "")"
-                                                title="Sửa lịch">
-                                            <i class="fas fa-pen me-1"></i>Sửa
-                                        </button>
-                                    }
-                                    <button type="button" class="btn-icon schedule-action"
-                                            data-mode="clone" data-product="@schedule.ProductId" data-variant="@schedule.ProductVariantId"
-                                            data-type="@schedule.DiscountType" data-value="@schedule.Value"
-                                            title="Nhân bản lịch" aria-label="Nhân bản lịch">
-                                        <i class="fas fa-copy"></i>
-                                    </button>
-                                    @if (status is PriceScheduleStatus.Active or PriceScheduleStatus.Scheduled)
-                                    {
-                                        <button type="button"
-                                                class="btn btn-sm btn-outline-danger btn-text-sm cancel-schedule-btn"
-                                                data-id="@schedule.Id"
-                                                data-label="@schedule.Product.Name@(schedule.ProductVariant == null ? "" : " - " + schedule.ProductVariant.Name)"
-                                                title="Hủy lịch">
-                                            <i class="fas fa-ban me-1"></i>Hủy
-                                        </button>
-                                    }
-                                </div>
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </div>
-    </div>
+    @if (Model.Tab == "schedules")
+    {
+        @await Html.PartialAsync("_SchedulesTab", Model)
+    }
+    else
+    {
+        @await Html.PartialAsync("_PriceTableTab", Model)
+    }
 </div>
 
 @await Html.PartialAsync("_ScheduleModals", Model)

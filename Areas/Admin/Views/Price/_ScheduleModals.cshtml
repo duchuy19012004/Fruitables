@@ -52,10 +52,10 @@
                     <label class="form-label" for="scheduleTarget">Đối tượng</label>
                     <select id="scheduleTarget" class="form-select" required>
                         <option value="">Chọn sản phẩm / biến thể</option>
-                        @foreach (var row in Model.Rows)
+                        @foreach (var t in Model.ScheduleTargets)
                         {
-                            <option value="@row.ProductId:@row.ProductVariantId">
-                                @row.ProductName@(row.VariantName == null ? "" : " - " + row.VariantName)
+                            <option value="@t.ProductId:@t.ProductVariantId">
+                                @t.ProductName@(t.VariantName == null ? "" : " - " + t.VariantName)@(t.SKU == null ? "" : $" ({t.SKU})")
                             </option>
                         }
                     </select>

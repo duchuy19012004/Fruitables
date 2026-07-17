@@ -1,0 +1,165 @@
+@using Fruitables.ViewModels
+@model PriceManagementViewModel
+@{
+    var currentFilter = Model.Filter ?? "";
+    var hasFilter = !string.IsNullOrEmpty(Model.Search) || !string.IsNullOrEmpty(Model.Filter);
+
+    string StatUrl(string? f) => Url.Action("Index", "Price", new { area = "Admin", tab = "prices", filter = f, search = Model.Search })!;
+
+    string SortUrl(string key) => Url.Action("Index", "Price", new
+    {
+        area = "Admin",
+        tab = "prices",
+        search = Model.Search,
+        filter = Model.Filter,
+        sort = key,
+        dir = Model.Sort == key && Model.Dir != "desc" ? "desc" : "asc"
+    })!;
+
+    string SortIcon(string key) => Model.Sort != key ? "fa-sort" : Model.Dir == "desc" ? "fa-sort-down" : "fa-sort-up";
+    string SortCls(string key) => Model.Sort == key ? "sort-arrow active" : "sort-arrow";
+
+    string PageUrl(int p) => Url.Action("Index", "Price", new
+    {
+        area = "Admin",
+        tab = "prices",
+        search = Model.Search,
+        filter = Model.Filter,
+        sort = Model.Sort,
+        dir = Model.Dir,
+        page = p
+    })!;
+}
+
+<div class="stat-grid">
+    <a class="stat-card @(currentFilter == "" ? "active" : "")" href="@StatUrl(null)">
+        <div class="stat-icon slate"><i class="fas fa-tags"></i></div>
+        <div>
+            <div class="stat-num">@Model.StatTotal</div>
+            <div class="stat-label">Tổng mục giá</div>
+        </div>
+    </a>
+    <a class="stat-card @(currentFilter == "active" ? "active" : "")" href="@StatUrl("active")">
+        <div class="stat-icon green"><i class="fas fa-bolt"></i></div>
+        <div>
+            <div class="stat-num">@Model.StatActive</div>
+            <div class="stat-label">Đang giảm giá</div>
+        </div>
+    </a>
+    <a class="stat-card @(currentFilter == "upcoming" ? "active" : "")" href="@StatUrl("upcoming")">
+        <div class="stat-icon blue"><i class="far fa-clock"></i></div>
+        <div>
+            <div class="stat-num">@Model.StatUpcoming</div>
+            <div class="stat-label">Sắp chạy</div>
+        </div>
+    </a>
+    <a class="stat-card @(currentFilter == "regular" ? "active" : "")" href="@StatUrl("regular")">
+        <div class="stat-icon gray"><i class="fas fa-box-open"></i></div>
+        <div>
+            <div class="stat-num">@Model.StatRegular</div>
+            <div class="stat-label">Chưa có lịch</div>
+        </div>
+    </a>
+</div>
+
+<form method="get" class="pp-card pp-search">
+    <input type="hidden" name="tab" value="prices" />
+    <div class="row g-2 align-items-center">
+        <div class="col">
+            <div class="input-group">
+                <span class="input-group-text border-end-0"><i class="fas fa-search"></i></span>
+                <input name="search" value="@Model.Search" class="form-control border-start-0" placeholder="Tìm theo tên sản phẩm hoặc SKU" autocomplete="off" />
+                @if (!string.IsNullOrEmpty(Model.Filter))
+                {
+                    <input type="hidden" name="filter" value="@Model.Filter" />
+                }
+            </div>
+        </div>
+        <div class="col-auto d-flex gap-2">
+            <button type="submit" class="btn btn-outline-primary">
+                <i class="fas fa-filter me-1"></i>Lọc
+            </button>
+            @if (hasFilter)
+            {
+                <a href="@Url.Action("Index", "Price", new { area = "Admin", tab = "prices" })" class="btn btn-outline-secondary">
+                    <i class="fas fa-times me-1"></i>Xóa lọc
+                </a>
+            }
+        </div>
+    </div>
+</form>
+
+<form asp-action="BulkUpdate" method="post" id="bulkForm">
+    @Html.AntiForgeryToken()
+    <div class="pp-card mb-4">
+        <div class="pp-card-head">
+            <h5 class="pp-card-title"><i class="fas fa-list-ul"></i> Bảng giá</h5>
+            <span class="text-muted small ms-auto d-none d-md-inline">Chọn dòng để điều chỉnh hàng loạt · nhấn giá gốc để sửa nhanh</span>
+        </div>
+
+        <div class="bulk-bar">
+            <span class="sel-chip" id="selChip">
+                <i class="fas fa-check-square"></i>
+                Đã chọn: <span id="selectedCount">0</span>
+            </span>
+            <div class="bulk-fields">
+                <span class="field-label d-none d-lg-inline">Điều chỉnh</span>
+                <select name="adjustmentType" class="form-select form-select-sm" style="width:auto" title="Kiểu điều chỉnh">
+                    <option value="Amount">Số tiền</option>
+                    <option value="Percentage">Phần trăm</option>
+                </select>
+                <select name="direction" class="form-select form-select-sm" style="width:auto" title="Chiều điều chỉnh">
+                    <option value="Increase">Tăng</option>
+                    <option value="Decrease">Giảm</option>
+                </select>
+                <input name="value" type="number" min="0.01" step="0.01" class="form-control form-control-sm" style="width:140px" placeholder="Mức điều chỉnh" required />
+                <button type="submit" id="bulkPreviewBtn" class="btn btn-sm btn-primary" disabled>
+                    <i class="fas fa-eye me-1"></i>Xem trước
+                </button>
+            </div>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 price-table">
+                <thead>
+                    <tr>
+                        <th style="width:40px"><input type="checkbox" id="selectAll" class="form-check-input" title="Chọn tất cả" /></th>
+                        <th><a class="sort-link" href="@SortUrl("name")">Sản phẩm / biến thể <i class="fas @SortIcon("name") @SortCls("name")"></i></a></th>
+                        <th>SKU</th>
+                        <th class="text-end"><a class="sort-link" href="@SortUrl("base")">Giá gốc <i class="fas @SortIcon("base") @SortCls("base")"></i></a></th>
+                        <th class="text-end"><a class="sort-link" href="@SortUrl("effective")">Giá hiện tại <i class="fas @SortIcon("effective") @SortCls("effective")"></i></a></th>
+                        <th>Lịch đang chạy</th>
+                        <th>Lịch sắp tới</th>
+                        <th class="text-end" style="width:120px">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody id="priceTbody">
+                    @await Html.PartialAsync("_PriceTableRows", Model)
+                </tbody>
+            </table>
+        </div>
+
+        @if (Model.TotalPages > 1)
+        {
+            <div class="pp-pager">
+                <span class="pp-pager-info">Trang @Model.Page / @Model.TotalPages · @Model.TotalGroups nhóm sản phẩm</span>
+                <nav aria-label="Phân trang bảng giá">
+                    <ul class="pagination pagination-sm">
+                        <li class="page-item @(Model.Page == 1 ? "disabled" : "")">
+                            <a class="page-link" href="@PageUrl(Model.Page - 1)">Trước</a>
+                        </li>
+                        @for (var i = 1; i <= Model.TotalPages; i++)
+                        {
+                            <li class="page-item @(Model.Page == i ? "active" : "")">
+                                <a class="page-link" href="@PageUrl(i)">@i</a>
+                            </li>
+                        }
+                        <li class="page-item @(Model.Page == Model.TotalPages ? "disabled" : "")">
+                            <a class="page-link" href="@PageUrl(Model.Page + 1)">Sau</a>
+                        </li>
+                    </ul>
+                </nav>
+            </div>
+        }
+    </div>
+</form>

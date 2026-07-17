@@ -338,7 +338,7 @@
                 <div class="tl-empty-icon"><i class="far fa-calendar-times"></i></div>
                 <div class="tl-empty-copy">
                     <strong>Chưa có lịch giảm giá</strong>
-                    <p>${label ? esc(label) + ' · ' : ''}Tạo lịch để lên kế hoạch giá theo thờ gian.</p>
+                    <p>${label ? esc(label) + ' · ' : ''}Tạo lịch để lên kế hoạch giá theo thời gian.</p>
                 </div>
                 <button type="button" class="btn btn-sm btn-primary tl-create-btn">
                     <i class="fas fa-calendar-plus me-1"></i>Tạo lịch
@@ -633,7 +633,6 @@
         bindGroupToggles();
         bindTimelineToggles();
         bindInlineEditor();
-        bindSorting();
         bindRealtime();
     }
 

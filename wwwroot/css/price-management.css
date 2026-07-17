@@ -912,3 +912,120 @@
     margin-bottom: 1rem;
 }
 .price-page-modal .target-summary .fw-bold { font-weight: 600 !important; }
+
+/* Task tabs (bắt chước sa-tabs của trang Analytics) */
+.price-page .pp-tabs {
+    display: flex;
+    gap: .2rem;
+    border-bottom: 1px solid var(--pp-line);
+    margin-bottom: 1rem;
+}
+.price-page .pp-tabs a {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: .6rem .9rem;
+    font-size: .875rem;
+    font-weight: 500;
+    color: var(--pp-muted);
+    text-decoration: none;
+    margin-bottom: -1px;
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+}
+.price-page .pp-tabs a:hover { color: var(--pp-ink); }
+.price-page .pp-tabs a.active {
+    color: var(--pp-primary-dark);
+    border-bottom-color: var(--pp-primary);
+    font-weight: 600;
+}
+.price-page .pp-tabs a .pp-tab-badge {
+    font-size: .68rem;
+    background: #f1f5f9;
+    color: var(--pp-muted);
+    padding: .1rem .4rem;
+    border-radius: 999px;
+    font-weight: 600;
+}
+.price-page .pp-tabs a.active .pp-tab-badge {
+    background: var(--pp-primary-soft);
+    color: var(--pp-primary-dark);
+}
+
+/* Sort header links (sort server-side) */
+.price-page th .sort-link {
+    color: inherit;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: .1rem;
+    text-transform: inherit;
+    letter-spacing: inherit;
+    font: inherit;
+}
+.price-page th .sort-link:hover { color: var(--pp-ink); }
+
+/* Pagination footer */
+.price-page .pp-pager {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    padding: .7rem 1.15rem;
+    border-top: 1px solid var(--pp-line);
+}
+.price-page .pp-pager .pp-pager-info {
+    font-size: .8rem;
+    color: var(--pp-muted);
+}
+.price-page .pp-pager .pagination { margin: 0; }
+.price-page .pp-pager .page-link {
+    color: var(--pp-primary-dark);
+    border-color: var(--pp-line);
+    font-size: .82rem;
+    padding: .35rem .7rem;
+}
+.price-page .pp-pager .page-item.active .page-link {
+    background: var(--pp-primary);
+    border-color: var(--pp-primary);
+    color: #fff;
+}
+.price-page .pp-pager .page-item.disabled .page-link { color: #b6bcc6; }
+
+/* Status filter chips (tab Lịch giảm giá) */
+.price-page .pp-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    padding: .85rem 1.15rem;
+    border-bottom: 1px solid var(--pp-line);
+}
+.price-page .pp-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    padding: .35rem .8rem;
+    border-radius: 999px;
+    border: 1px solid var(--pp-line);
+    background: #fff;
+    color: var(--pp-muted);
+    font-size: .8rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: border-color .15s ease, background .15s ease, color .15s ease;
+}
+.price-page .pp-chip:hover { border-color: #c5df8a; color: var(--pp-primary-dark); }
+.price-page .pp-chip.active {
+    background: var(--pp-primary-soft);
+    border-color: var(--pp-primary);
+    color: var(--pp-primary-dark);
+}
+.price-page .pp-chip .pp-chip-count {
+    background: rgba(0,0,0,.06);
+    border-radius: 999px;
+    padding: .05rem .45rem;
+    font-size: .72rem;
+}
+.price-page .pp-chip.active .pp-chip-count { background: rgba(129,196,8,.18); }

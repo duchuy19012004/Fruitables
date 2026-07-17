@@ -14,7 +14,24 @@ public class PriceController : Controller
 
     public PriceController(IPriceManagementService prices) => _prices = prices;
 
-    public async Task<IActionResult> Index(string? search, string? filter) => View(await _prices.GetDashboardAsync(search, filter));
+    public async Task<IActionResult> Index(string? search = null, string? filter = null, string tab = "prices",
+        string? sort = null, string? dir = null, int page = 1,
+        string? scheduleStatus = null, string? scheduleSearch = null, int schedulePage = 1)
+    {
+        var query = new PriceDashboardQuery
+        {
+            Tab = tab == "schedules" ? "schedules" : "prices",
+            Search = search,
+            Filter = filter is "active" or "upcoming" or "regular" ? filter : null,
+            Sort = sort is "base" or "effective" ? sort : "name",
+            Dir = dir == "desc" ? "desc" : "asc",
+            Page = Math.Max(1, page),
+            ScheduleStatus = scheduleStatus is "active" or "scheduled" or "ended" or "cancelled" ? scheduleStatus : null,
+            ScheduleSearch = scheduleSearch,
+            SchedulePage = Math.Max(1, schedulePage)
+        };
+        return View(await _prices.GetDashboardAsync(query));
+    }
 
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> CreateSchedule(SavePriceScheduleRequest request)
@@ -42,7 +59,10 @@ public class PriceController : Controller
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> UpdateBasePrice(int productId, int? productVariantId, decimal newPrice)
     {
-        SetMessage(await _prices.UpdateBasePriceAsync(new PriceTargetKey(productId, productVariantId), newPrice, CurrentAdminId()));
+        var result = await _prices.UpdateBasePriceAsync(new PriceTargetKey(productId, productVariantId), newPrice, CurrentAdminId());
+        if (Request.Headers["X-Requested-With"] == "XMLHttpRequest")
+            return Json(new { success = result.Success, error = result.Error });
+        SetMessage(result);
         return RedirectToAction(nameof(Index));
     }
 
