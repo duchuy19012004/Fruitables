@@ -1,0 +1,196 @@
+@using Fruitables.Models
+@using Fruitables.ViewModels
+@model PriceManagementViewModel
+@{
+    var now = DateTimeOffset.UtcNow;
+    var currentStatus = Model.ScheduleStatus ?? "";
+    var counts = Model.ScheduleStatusCounts;
+    int CountOf(string key) => counts.TryGetValue(key, out var c) ? c : 0;
+    var hasFilter = !string.IsNullOrEmpty(Model.ScheduleStatus) || !string.IsNullOrEmpty(Model.ScheduleSearch);
+
+    string StatusUrl(string? status) => Url.Action("Index", "Price", new
+    {
+        area = "Admin",
+        tab = "schedules",
+        scheduleStatus = status,
+        scheduleSearch = Model.ScheduleSearch
+    })!;
+
+    string SchPageUrl(int p) => Url.Action("Index", "Price", new
+    {
+        area = "Admin",
+        tab = "schedules",
+        scheduleStatus = Model.ScheduleStatus,
+        scheduleSearch = Model.ScheduleSearch,
+        schedulePage = p
+    })!;
+}
+
+<div class="pp-card mb-4">
+    <div class="pp-card-head">
+        <h5 class="pp-card-title"><i class="fas fa-calendar-alt"></i> Lịch giảm giá</h5>
+        <span class="text-muted small ms-auto d-none d-md-inline">Toàn bộ lịch của mọi sản phẩm · lọc theo trạng thái hoặc tìm theo tên / SKU</span>
+    </div>
+
+    <div class="pp-chips" role="group" aria-label="Lọc theo trạng thái">
+        <a class="pp-chip @(currentStatus == "" ? "active" : "")" href="@StatusUrl(null)">
+            Tất cả <span class="pp-chip-count">@CountOf("all")</span>
+        </a>
+        <a class="pp-chip @(currentStatus == "active" ? "active" : "")" href="@StatusUrl("active")">
+            <i class="fas fa-bolt"></i>Đang chạy <span class="pp-chip-count">@CountOf("active")</span>
+        </a>
+        <a class="pp-chip @(currentStatus == "scheduled" ? "active" : "")" href="@StatusUrl("scheduled")">
+            <i class="far fa-clock"></i>Sắp chạy <span class="pp-chip-count">@CountOf("scheduled")</span>
+        </a>
+        <a class="pp-chip @(currentStatus == "ended" ? "active" : "")" href="@StatusUrl("ended")">
+            <i class="fas fa-check"></i>Đã kết thúc <span class="pp-chip-count">@CountOf("ended")</span>
+        </a>
+        <a class="pp-chip @(currentStatus == "cancelled" ? "active" : "")" href="@StatusUrl("cancelled")">
+            <i class="fas fa-ban"></i>Đã hủy <span class="pp-chip-count">@CountOf("cancelled")</span>
+        </a>
+    </div>
+
+    <form method="get" class="pp-search">
+        <input type="hidden" name="tab" value="schedules" />
+        @if (!string.IsNullOrEmpty(Model.ScheduleStatus))
+        {
+            <input type="hidden" name="scheduleStatus" value="@Model.ScheduleStatus" />
+        }
+        <div class="row g-2 align-items-center">
+            <div class="col">
+                <div class="input-group">
+                    <span class="input-group-text border-end-0"><i class="fas fa-search"></i></span>
+                    <input name="scheduleSearch" value="@Model.ScheduleSearch" class="form-control border-start-0" placeholder="Tìm theo tên sản phẩm hoặc SKU" autocomplete="off" />
+                </div>
+            </div>
+            <div class="col-auto d-flex gap-2">
+                <button type="submit" class="btn btn-outline-primary">
+                    <i class="fas fa-filter me-1"></i>Lọc
+                </button>
+                @if (hasFilter)
+                {
+                    <a href="@Url.Action("Index", "Price", new { area = "Admin", tab = "schedules" })" class="btn btn-outline-secondary">
+                        <i class="fas fa-times me-1"></i>Xóa lọc
+                    </a>
+                }
+            </div>
+        </div>
+    </form>
+
+    <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle hist-table">
+            <thead>
+                <tr>
+                    <th>Đối tượng</th>
+                    <th>Kiểu giảm</th>
+                    <th>Hiệu lực</th>
+                    <th>Trạng thái</th>
+                    <th class="text-end">Thao tác</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (!Model.SchedulesPage.Items.Any())
+                {
+                    <tr>
+                        <td colspan="5">
+                            <div class="pp-empty">
+                                <div class="pp-empty-icon"><i class="far fa-calendar-times"></i></div>
+                                <strong>Chưa có lịch giảm giá</strong>
+                                <p>Tạo lịch mới để lên kế hoạch khuyến mãi theo thời gian.</p>
+                            </div>
+                        </td>
+                    </tr>
+                }
+                @foreach (var schedule in Model.SchedulesPage.Items)
+                {
+                    var status = schedule.GetStatus(now);
+                    var (badgeClass, badgeText, badgeIcon) = status switch
+                    {
+                        PriceScheduleStatus.Active => ("running", "Đang chạy", "fa-bolt"),
+                        PriceScheduleStatus.Scheduled => ("planned", "Sắp chạy", "fa-clock"),
+                        PriceScheduleStatus.Ended => ("done", "Đã kết thúc", "fa-check"),
+                        _ => ("cancelled", "Đã hủy", "fa-ban")
+                    };
+                    <tr>
+                        <td class="hist-target">
+                            @schedule.Product.Name
+                            @if (schedule.ProductVariant != null)
+                            {
+                                <div class="prod-variant"><i class="fas fa-code-branch"></i>@schedule.ProductVariant.Name</div>
+                            }
+                        </td>
+                        <td>
+                            @(schedule.DiscountType == DiscountType.FixedPrice
+                                ? $"Giá {schedule.Value:N0}đ"
+                                : $"Giảm {schedule.Value:N0}%")
+                        </td>
+                        <td class="hist-period">
+                            @schedule.StartsAt.ToOffset(TimeSpan.FromHours(7)).ToString("dd/MM/yyyy HH:mm")
+                            <span class="sep"><i class="fas fa-arrow-right" style="font-size:.65rem"></i></span>
+                            @(schedule.EndsAt?.ToOffset(TimeSpan.FromHours(7)).ToString("dd/MM/yyyy HH:mm") ?? "Không giới hạn")
+                        </td>
+                        <td>
+                            <span class="badge-status @badgeClass">
+                                <i class="fas @badgeIcon"></i>@badgeText
+                            </span>
+                        </td>
+                        <td class="text-end">
+                            <div class="row-actions">
+                                @if (status == PriceScheduleStatus.Scheduled)
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-primary btn-text-sm schedule-action"
+                                            data-mode="edit" data-id="@schedule.Id" data-product="@schedule.ProductId"
+                                            data-variant="@schedule.ProductVariantId" data-type="@schedule.DiscountType"
+                                            data-value="@schedule.Value" data-start="@schedule.StartsAt.ToOffset(TimeSpan.FromHours(7)).ToString("yyyy-MM-ddTHH:mm")"
+                                            data-end="@(schedule.EndsAt?.ToOffset(TimeSpan.FromHours(7)).ToString("yyyy-MM-ddTHH:mm") ?? "")"
+                                            title="Sửa lịch">
+                                        <i class="fas fa-pen me-1"></i>Sửa
+                                    </button>
+                                }
+                                <button type="button" class="btn-icon schedule-action"
+                                        data-mode="clone" data-product="@schedule.ProductId" data-variant="@schedule.ProductVariantId"
+                                        data-type="@schedule.DiscountType" data-value="@schedule.Value"
+                                        title="Nhân bản lịch" aria-label="Nhân bản lịch">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                                @if (status is PriceScheduleStatus.Active or PriceScheduleStatus.Scheduled)
+                                {
+                                    <button type="button"
+                                            class="btn btn-sm btn-outline-danger btn-text-sm cancel-schedule-btn"
+                                            data-id="@schedule.Id"
+                                            data-label="@schedule.Product.Name@(schedule.ProductVariant == null ? "" : " - " + schedule.ProductVariant.Name)"
+                                            title="Hủy lịch">
+                                        <i class="fas fa-ban me-1"></i>Hủy
+                                    </button>
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @if (Model.SchedulesPage.TotalPages > 1)
+    {
+        <div class="pp-pager">
+            <span class="pp-pager-info">Trang @Model.SchedulesPage.Page / @Model.SchedulesPage.TotalPages · @Model.SchedulesPage.TotalCount lịch</span>
+            <nav aria-label="Phân trang lịch giảm giá">
+                <ul class="pagination pagination-sm">
+                    <li class="page-item @(!Model.SchedulesPage.HasPreviousPage ? "disabled" : "")">
+                        <a class="page-link" href="@SchPageUrl(Model.SchedulesPage.Page - 1)">Trước</a>
+                    </li>
+                    @for (var i = 1; i <= Model.SchedulesPage.TotalPages; i++)
+                    {
+                        <li class="page-item @(Model.SchedulesPage.Page == i ? "active" : "")">
+                            <a class="page-link" href="@SchPageUrl(i)">@i</a>
+                        </li>
+                    }
+                    <li class="page-item @(!Model.SchedulesPage.HasNextPage ? "disabled" : "")">
+                        <a class="page-link" href="@SchPageUrl(Model.SchedulesPage.Page + 1)">Sau</a>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+    }
+</div>

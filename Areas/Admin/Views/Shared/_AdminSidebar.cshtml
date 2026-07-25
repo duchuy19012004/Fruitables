@@ -39,17 +39,10 @@
     <div class="sidebar-menu-title">Thống kê</div>
     <ul class="sidebar-nav">
         <li class="sidebar-nav-item">
-            <a asp-action="Index" asp-controller="Revenue" asp-area="Admin" 
-               class="sidebar-nav-link @(controller == "Revenue" && action == "Index" ? "active" : "")">
+            <a asp-action="Index" asp-controller="Analytics" asp-area="Admin"
+               class="sidebar-nav-link @(controller == "Analytics" || controller == "Revenue" ? "active" : "")">
                 <i class="fas fa-chart-line"></i>
-                <span>Doanh thu</span>
-            </a>
-        </li>
-        <li class="sidebar-nav-item">
-            <a asp-action="CancelledOrders" asp-controller="Revenue" asp-area="Admin" 
-               class="sidebar-nav-link @(controller == "Revenue" && action == "CancelledOrders" ? "active" : "")">
-                <i class="fas fa-times-circle"></i>
-                <span>Đơn hủy</span>
+                <span>Thống kê bán hàng</span>
             </a>
         </li>
     </ul>

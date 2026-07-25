@@ -1,0 +1,190 @@
+@using Fruitables.Models
+@using Fruitables.ViewModels
+@model PriceManagementViewModel
+@{
+    var now = DateTimeOffset.UtcNow;
+    var groups = Model.Rows.GroupBy(r => r.ProductId).Select(g => g.ToList()).ToList();
+}
+
+@functions {
+    private string TimelineJson(PriceManagementRow row, DateTimeOffset now)
+    {
+        var tz = TimeSpan.FromHours(7);
+        var data = row.Schedules
+            .OrderBy(s => s.StartsAt)
+            .Select(s =>
+            {
+                var start = s.StartsAt.ToOffset(tz);
+                var end = s.EndsAt?.ToOffset(tz);
+                return new
+                {
+                    id = s.Id,
+                    productId = s.ProductId,
+                    variantId = s.ProductVariantId,
+                    type = s.DiscountType.ToString(),
+                    kind = s.DiscountType == DiscountType.FixedPrice ? "fixed" : "percent",
+                    value = s.Value,
+                    start = start.ToString("yyyy-MM-ddTHH:mm:ss+07:00"),
+                    end = end?.ToString("yyyy-MM-ddTHH:mm:ss+07:00"),
+                    startLocal = start.ToString("yyyy-MM-ddTHH:mm"),
+                    endLocal = end?.ToString("yyyy-MM-ddTHH:mm") ?? "",
+                    status = s.GetStatus(now).ToString().ToLowerInvariant()
+                };
+            });
+        return System.Text.Json.JsonSerializer.Serialize(data);
+    }
+}
+
+@if (!Model.Rows.Any())
+{
+    <tr>
+        <td colspan="8">
+            <div class="pp-empty">
+                <div class="pp-empty-icon"><i class="fas fa-box-open"></i></div>
+                <strong>Không có sản phẩm khớp bộ lọc</strong>
+                <p>Thử xóa bộ lọc hoặc tìm bằng tên / SKU khác.</p>
+            </div>
+        </td>
+    </tr>
+}
+@foreach (var group in groups)
+{
+    if (group.Count > 1)
+    {
+        var first = group[0];
+        <tr class="group-parent" data-name="@first.ProductName" data-base="@group.Min(r => r.BasePrice)" data-effective="@group.Min(r => r.EffectivePrice)">
+            <td></td>
+            <td class="prod-cell">
+                <button type="button" class="btn btn-sm btn-link group-toggle open p-0 me-1 text-decoration-none text-muted" data-group="@first.ProductId" title="Thu gọn / mở rộng" aria-label="Thu gọn nhóm">
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <span class="prod-name">@first.ProductName</span>
+                <span class="variant-count"><i class="fas fa-layer-group"></i>@group.Count biến thể</span>
+            </td>
+            <td><span class="sku is-empty">-</span></td>
+            <td class="money text-muted" style="font-weight:500">
+                @group.Min(r => r.BasePrice).ToString("N0")đ - @group.Max(r => r.BasePrice).ToString("N0")đ
+            </td>
+            <td class="money"><span class="empty-dash">-</span></td>
+            <td><span class="empty-dash">-</span></td>
+            <td><span class="empty-dash">-</span></td>
+            <td></td>
+        </tr>
+    }
+    foreach (var row in group)
+    {
+        var isChild = group.Count > 1;
+        var savings = row.BasePrice - row.EffectivePrice;
+        var hasDiscount = row.EffectivePrice < row.BasePrice;
+        <tr class="price-row@(isChild ? " variant-row" : "")" data-group="@(isChild ? row.ProductId.ToString() : null)" data-name="@row.ProductName @row.VariantName" data-base="@row.BasePrice" data-effective="@row.EffectivePrice">
+            <td>
+                <input class="row-check form-check-input" type="checkbox" name="selectedTargets" value="@row.ProductId:@row.ProductVariantId" data-label="@row.ProductName @(row.VariantName ?? "")" data-price="@row.BasePrice" />
+            </td>
+            <td class="prod-cell">
+                @if (isChild)
+                {
+                    <span class="variant-rail"></span>
+                }
+                <span class="prod-name">@row.ProductName</span>
+                @if (row.ProductVariantId.HasValue)
+                {
+                    <div class="prod-variant"><i class="fas fa-code-branch"></i>@row.VariantName</div>
+                }
+            </td>
+            <td>
+                @if (string.IsNullOrEmpty(row.SKU))
+                {
+                    <span class="sku is-empty">-</span>
+                }
+                else
+                {
+                    <span class="sku">@row.SKU</span>
+                }
+            </td>
+            <td class="money base-price-cell" data-product="@row.ProductId" data-variant="@row.ProductVariantId" data-price="@row.BasePrice" title="Nhấn để sửa giá gốc">
+                <span class="base-price-value">@row.BasePrice.ToString("N0")đ</span>
+                <i class="fas fa-pen edit-hint"></i>
+            </td>
+            <td class="money">
+                <div class="price-stack">
+                    @if (hasDiscount)
+                    {
+                        <span class="price-was">@row.BasePrice.ToString("N0")đ</span>
+                        <span class="price-now is-sale">@row.EffectivePrice.ToString("N0")đ</span>
+                        <span class="save-chip">-@savings.ToString("N0")đ</span>
+                    }
+                    else
+                    {
+                        <span class="price-now">@row.EffectivePrice.ToString("N0")đ</span>
+                    }
+                </div>
+            </td>
+            <td>
+                @if (row.CurrentSchedule == null)
+                {
+                    <span class="empty-dash">-</span>
+                }
+                else
+                {
+                    <span class="sch-pill active">
+                        <i class="fas fa-bolt"></i>
+                        @(row.CurrentSchedule.DiscountType == DiscountType.FixedPrice
+                            ? $"Còn {row.CurrentSchedule.Value:N0}đ"
+                            : $"-{row.CurrentSchedule.Value:N0}%")
+                    </span>
+                }
+            </td>
+            <td>
+                @if (row.UpcomingSchedule == null)
+                {
+                    <span class="empty-dash">-</span>
+                }
+                else
+                {
+                    <span class="sch-pill upcoming">
+                        <i class="far fa-clock"></i>
+                        @(row.UpcomingSchedule.DiscountType == DiscountType.FixedPrice
+                            ? $"Còn {row.UpcomingSchedule.Value:N0}đ"
+                            : $"-{row.UpcomingSchedule.Value:N0}%")
+                    </span>
+                    <div class="sch-meta">
+                        <i class="far fa-calendar-alt"></i>
+                        @row.UpcomingSchedule.StartsAt.ToOffset(TimeSpan.FromHours(7)).ToString("dd/MM/yyyy HH:mm")
+                    </div>
+                }
+            </td>
+            <td class="text-end">
+                <div class="row-actions">
+                    <button type="button"
+                            class="btn-icon primary-soft schedule-create-btn"
+                            data-product="@row.ProductId"
+                            data-variant="@row.ProductVariantId"
+                            title="Tạo lịch giảm giá"
+                            aria-label="Tạo lịch giảm giá">
+                        <i class="fas fa-calendar-plus"></i>
+                    </button>
+                    <button type="button"
+                            class="btn-icon timeline-toggle"
+                            data-target="tl-@row.ProductId-@(row.ProductVariantId ?? 0)"
+                            data-group="@(isChild ? row.ProductId.ToString() : null)"
+                            title="Xem timeline giá"
+                            aria-label="Xem timeline giá"
+                            aria-expanded="false"
+                            aria-controls="tl-@row.ProductId-@(row.ProductVariantId ?? 0)">
+                        <i class="fas fa-chart-line"></i><i class="fas fa-chevron-down tl-chevron"></i>
+                    </button>
+                </div>
+            </td>
+        </tr>
+        <tr class="timeline-row d-none" id="tl-@row.ProductId-@(row.ProductVariantId ?? 0)" data-group="@(isChild ? row.ProductId.ToString() : null)">
+            <td colspan="8">
+                <div class="timeline-wrap"
+                     data-schedules="@TimelineJson(row, now)"
+                     data-product="@row.ProductId"
+                     data-variant="@(row.ProductVariantId?.ToString() ?? "")"
+                     data-label="@row.ProductName@(row.VariantName == null ? "" : " - " + row.VariantName)">
+                </div>
+            </td>
+        </tr>
+    }
+}

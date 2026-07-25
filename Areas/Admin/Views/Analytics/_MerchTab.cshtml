@@ -1,0 +1,163 @@
+@model Fruitables.ViewModels.SalesHubVm
+@{
+    var m = Model.Merch;
+    var f = Model.Filter;
+    string Money(decimal v) => v.ToString("N0") + " đ";
+
+    var currentSort = string.IsNullOrWhiteSpace(f.Sort) ? "net" : f.Sort.Trim().ToLowerInvariant();
+    var currentDir = string.IsNullOrWhiteSpace(f.Dir) ? "desc" : f.Dir.Trim().ToLowerInvariant();
+
+    string DimUrl(string dimension) => Url.Action("Index", "Analytics", new
+    {
+        area = "Admin",
+        preset = f.Preset,
+        from = f.From,
+        to = f.To,
+        tab = "merch",
+        dimension,
+        sort = f.Sort,
+        dir = f.Dir,
+        take = f.Take
+    })!;
+
+    string SortUrl(string sortKey)
+    {
+        var nextDir = "desc";
+        if (currentSort == sortKey)
+            nextDir = currentDir == "desc" ? "asc" : "desc";
+        else if (sortKey == "name")
+            nextDir = "asc";
+
+        return Url.Action("Index", "Analytics", new
+        {
+            area = "Admin",
+            preset = f.Preset,
+            from = f.From,
+            to = f.To,
+            tab = "merch",
+            dimension = f.Dimension == MerchDimension.Category ? "category" : "product",
+            sort = sortKey,
+            dir = nextDir,
+            take = f.Take
+        })!;
+    }
+
+    string SortLabel(string label, string sortKey)
+    {
+        if (currentSort != sortKey) return label;
+        return label + (currentDir == "asc" ? " ↑" : " ↓");
+    }
+
+    var isProduct = f.Dimension != MerchDimension.Category;
+    var dimLabel = isProduct ? "sản phẩm" : "danh mục";
+}
+
+@if (m == null)
+{
+    <div class="sa-empty">Không có dữ liệu xếp hạng sản phẩm/danh mục cho kỳ này.</div>
+    return;
+}
+
+<div class="sa-g sa-g-21">
+    <div class="sa-card">
+        <div class="sa-card-h">
+            <span>Top @dimLabel (doanh thu thuần)</span>
+            <div class="sa-split-tabs">
+                <a class="@(isProduct ? "active" : "")" href="@DimUrl("product")">Sản phẩm</a>
+                <a class="@(!isProduct ? "active" : "")" href="@DimUrl("category")">Danh mục</a>
+            </div>
+        </div>
+        <div class="sa-card-b">
+            <div class="sa-chart-box lg"><canvas id="sa-chart-rank-bar" data-chart="rankBar"></canvas></div>
+        </div>
+    </div>
+    <div class="sa-card">
+        <div class="sa-card-h">Tỷ trọng danh mục</div>
+        <div class="sa-card-b">
+            <div class="sa-chart-box lg"><canvas id="sa-chart-merch-cat" data-chart="categoryMix"></canvas></div>
+        </div>
+    </div>
+</div>
+
+<div class="sa-g sa-g-2">
+    <div class="sa-card">
+        <div class="sa-card-h">Số lượng vs doanh thu thuần</div>
+        <div class="sa-card-b">
+            <div class="sa-chart-box md"><canvas id="sa-chart-units-vs-net" data-chart="unitsVsNet"></canvas></div>
+        </div>
+    </div>
+    <div class="sa-card">
+        <div class="sa-card-h">Tăng trưởng % so kỳ trước</div>
+        <div class="sa-card-b">
+            <div class="sa-chart-box md"><canvas id="sa-chart-growth" data-chart="growth"></canvas></div>
+        </div>
+    </div>
+</div>
+
+<div class="sa-card">
+    <div class="sa-card-h">
+        <span>Bảng xếp hạng đầy đủ</span>
+        <span class="sa-sub">Top @f.Take · @dimLabel</span>
+    </div>
+    <div class="sa-card-b" style="padding:0">
+        @if (m.Rows.Count == 0)
+        {
+            <div class="sa-empty">Chưa có dữ liệu xếp hạng trong kỳ.</div>
+        }
+        else
+        {
+            <table class="sa-data">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th><a href="@SortUrl("name")">@SortLabel(isProduct ? "Sản phẩm" : "Danh mục", "name")</a></th>
+                        @if (isProduct)
+                        {
+                            <th>Danh mục</th>
+                        }
+                        <th class="num"><a href="@SortUrl("units")">@SortLabel("SL", "units")</a></th>
+                        <th class="num"><a href="@SortUrl("net")">@SortLabel("Thuần", "net")</a></th>
+                        <th class="num"><a href="@SortUrl("share")">@SortLabel("Tỷ trọng", "share")</a></th>
+                        <th class="num"><a href="@SortUrl("orders")">@SortLabel("Đơn", "orders")</a></th>
+                        <th class="num"><a href="@SortUrl("delta")">@SortLabel("Δ", "delta")</a></th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var row in m.Rows)
+                {
+                    <tr>
+                        <td><span class="rank @(row.Rank <= 2 ? "top" : "")">@row.Rank</span></td>
+                        <td><strong>@row.Name</strong></td>
+                        @if (isProduct)
+                        {
+                            <td>@(row.CategoryName ?? "—")</td>
+                        }
+                        <td class="num">@row.Units.ToString("N0")</td>
+                        <td class="num sa-money">@Money(row.NetRevenue)</td>
+                        <td class="num">@row.SharePercent.ToString("0.##")%</td>
+                        <td class="num">@row.OrderCount.ToString("N0")</td>
+                        <td class="num">
+                            @if (row.DeltaPercent is null)
+                            {
+                                <span class="sa-delta-flat">—</span>
+                            }
+                            else if (row.DeltaPercent > 0)
+                            {
+                                <span class="sa-delta-up">↑ @row.DeltaPercent.Value.ToString("0.##")%</span>
+                            }
+                            else if (row.DeltaPercent < 0)
+                            {
+                                <span class="sa-delta-down">↓ @Math.Abs(row.DeltaPercent.Value).ToString("0.##")%</span>
+                            }
+                            else
+                            {
+                                <span class="sa-delta-flat">—</span>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>

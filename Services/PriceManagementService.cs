@@ -25,17 +25,17 @@ public sealed class PriceManagementService : IPriceManagementService
         _logger = logger;
     }
 
-    public async Task<PriceManagementViewModel> GetDashboardAsync(string? search = null, string? filter = null)
+    public async Task<PriceManagementViewModel> GetDashboardAsync(PriceDashboardQuery q)
     {
         var now = _timeProvider.GetUtcNow();
         IQueryable<Product> query = _unitOfWork.Products.Query()
             .Where(p => !p.IsDeleted)
             .Include(p => p.Variants).ThenInclude(v => v.PriceSchedules)
             .Include(p => p.PriceSchedules);
-        if (!string.IsNullOrWhiteSpace(search))
-            query = query.Where(p => p.Name.Contains(search) || p.Variants.Any(v => v.SKU.Contains(search)));
+        if (!string.IsNullOrWhiteSpace(q.Search))
+            query = query.Where(p => p.Name.Contains(q.Search) || p.Variants.Any(v => v.SKU.Contains(q.Search)));
 
-        var products = await query.OrderBy(p => p.Name).ToListAsync();
+        var products = await query.ToListAsync();
         var rows = new List<PriceManagementRow>();
         foreach (var product in products)
         {
@@ -49,7 +49,12 @@ public sealed class PriceManagementService : IPriceManagementService
             foreach (var variant in activeVariants)
                 rows.Add(BuildRow(product, variant, variant.Price, variant.StockQuantity, variant.PriceSchedules, now));
         }
-        rows = filter switch
+        var statTotal = rows.Count;
+        var statActive = rows.Count(row => row.CurrentSchedule != null);
+        var statUpcoming = rows.Count(row => row.UpcomingSchedule != null);
+        var statRegular = rows.Count(row => row.CurrentSchedule == null && row.UpcomingSchedule == null);
+
+        rows = q.Filter switch
         {
             "active" => rows.Where(row => row.CurrentSchedule != null).ToList(),
             "upcoming" => rows.Where(row => row.UpcomingSchedule != null).ToList(),
@@ -57,14 +62,123 @@ public sealed class PriceManagementService : IPriceManagementService
             _ => rows
         };
 
+        // Nhóm theo sản phẩm (1 nhóm = sản phẩm + mọi biến thể), sort và phân trang theo nhóm
+        // để một nhóm không bao giờ bị tách qua 2 trang.
+        var groups = rows.GroupBy(r => r.ProductId).Select(g => g.ToList()).ToList();
+        var desc = string.Equals(q.Dir, "desc", StringComparison.OrdinalIgnoreCase);
+        // Lưu ý: sort tên theo Ordinal — có thể khác nhẹ so với collation tiếng Việt của client cũ.
+        IEnumerable<List<PriceManagementRow>> ordered = q.Sort switch
+        {
+            "base" => desc
+                ? groups.OrderByDescending(g => g.Min(r => r.BasePrice))
+                : groups.OrderBy(g => g.Min(r => r.BasePrice)),
+            "effective" => desc
+                ? groups.OrderByDescending(g => g.Min(r => r.EffectivePrice))
+                : groups.OrderBy(g => g.Min(r => r.EffectivePrice)),
+            _ => desc
+                ? groups.OrderByDescending(g => g[0].ProductName, StringComparer.OrdinalIgnoreCase)
+                : groups.OrderBy(g => g[0].ProductName, StringComparer.OrdinalIgnoreCase)
+        };
+        var totalGroups = groups.Count;
+        var page = Math.Max(1, q.Page);
+        var pagedRows = ordered
+            .Skip((page - 1) * q.PageSize)
+            .Take(q.PageSize)
+            .SelectMany(g => g)
+            .ToList();
+
+        // Combobox đối tượng lịch: mọi sản phẩm/biến thể (không phụ thuộc trang/lọc hiện tại)
+        var targetProducts = await _unitOfWork.Products.Query()
+            .Where(p => !p.IsDeleted)
+            .Include(p => p.Variants)
+            .OrderBy(p => p.Name)
+            .ToListAsync();
+        var targets = new List<ScheduleTargetItem>();
+        foreach (var p in targetProducts)
+        {
+            var activeVariants = p.Variants.Where(v => v.IsActive).OrderBy(v => v.Name).ToList();
+            if (activeVariants.Count == 0)
+            {
+                targets.Add(new ScheduleTargetItem { ProductId = p.Id, ProductName = p.Name, BasePrice = p.Price });
+                continue;
+            }
+            foreach (var v in activeVariants)
+                targets.Add(new ScheduleTargetItem
+                {
+                    ProductId = p.Id, ProductVariantId = v.Id, ProductName = p.Name,
+                    VariantName = v.Name, SKU = v.SKU, BasePrice = v.Price
+                });
+        }
+
+        // Tab Lịch giảm giá: lọc trạng thái + tìm kiếm + phân trang ở SQL.
+        IQueryable<PriceSchedule> schQuery = _unitOfWork.PriceSchedules.Query()
+            .Include(s => s.Product).Include(s => s.ProductVariant);
+        if (!string.IsNullOrWhiteSpace(q.ScheduleSearch))
+            schQuery = schQuery.Where(s => s.Product.Name.Contains(q.ScheduleSearch) ||
+                (s.ProductVariant != null &&
+                    (s.ProductVariant.Name.Contains(q.ScheduleSearch) || s.ProductVariant.SKU.Contains(q.ScheduleSearch))));
+
+        // Đếm theo trạng thái (1 query projection, đếm in-memory). Thứ tự ưu tiên trạng thái
+        // PHẢI khớp PriceSchedule.GetStatus: cancelled → scheduled → ended → active.
+        var statusFacts = await schQuery
+            .Select(s => new { s.IsCancelled, s.StartsAt, s.EndsAt })
+            .ToListAsync();
+        var statusCounts = new Dictionary<string, int>
+        {
+            ["all"] = statusFacts.Count, ["active"] = 0, ["scheduled"] = 0, ["ended"] = 0, ["cancelled"] = 0
+        };
+        foreach (var s in statusFacts)
+        {
+            var key = s.IsCancelled ? "cancelled"
+                : s.StartsAt > now ? "scheduled"
+                : s.EndsAt.HasValue && s.EndsAt.Value <= now ? "ended"
+                : "active";
+            statusCounts[key]++;
+        }
+
+        // Mirror SQL của PriceSchedule.GetStatus — giữ đồng bộ khi sửa model.
+        schQuery = q.ScheduleStatus switch
+        {
+            "active" => schQuery.Where(s => !s.IsCancelled && s.StartsAt <= now && (!s.EndsAt.HasValue || s.EndsAt > now)),
+            "scheduled" => schQuery.Where(s => !s.IsCancelled && s.StartsAt > now),
+            "ended" => schQuery.Where(s => !s.IsCancelled && s.EndsAt.HasValue && s.EndsAt <= now),
+            "cancelled" => schQuery.Where(s => s.IsCancelled),
+            _ => schQuery
+        };
+        var schTotal = await schQuery.CountAsync();
+        var schPage = Math.Max(1, q.SchedulePage);
+        var schItems = await schQuery
+            .OrderByDescending(s => s.StartsAt)
+            .Skip((schPage - 1) * q.SchedulePageSize)
+            .Take(q.SchedulePageSize)
+            .ToListAsync();
+
         return new PriceManagementViewModel
         {
-            Search = search,
-            Filter = filter,
-            Rows = rows,
-            Schedules = await _unitOfWork.PriceSchedules.Query()
-                .Include(s => s.Product).Include(s => s.ProductVariant)
-                .OrderByDescending(s => s.StartsAt).Take(100).ToListAsync()
+            Search = q.Search,
+            Filter = q.Filter,
+            Rows = pagedRows,
+            StatTotal = statTotal,
+            StatActive = statActive,
+            StatUpcoming = statUpcoming,
+            StatRegular = statRegular,
+            Tab = q.Tab,
+            Sort = q.Sort,
+            Dir = q.Dir,
+            Page = page,
+            PageSize = q.PageSize,
+            TotalGroups = totalGroups,
+            ScheduleTargets = targets,
+            ScheduleStatus = q.ScheduleStatus,
+            ScheduleSearch = q.ScheduleSearch,
+            SchedulesPage = new PagedResult<PriceSchedule>
+            {
+                Items = schItems,
+                TotalCount = schTotal,
+                Page = schPage,
+                PageSize = q.SchedulePageSize
+            },
+            ScheduleStatusCounts = statusCounts
         };
     }
 
@@ -307,7 +421,8 @@ public sealed class PriceManagementService : IPriceManagementService
             VariantName = variant?.Name, SKU = variant?.SKU, BasePrice = basePrice,
             EffectivePrice = quote.EffectivePrice, StockQuantity = stock,
             CurrentSchedule = list.FirstOrDefault(s => s.IsActiveAt(now)),
-            UpcomingSchedule = list.Where(s => s.StartsAt > now).OrderBy(s => s.StartsAt).FirstOrDefault()
+            UpcomingSchedule = list.Where(s => s.StartsAt > now).OrderBy(s => s.StartsAt).FirstOrDefault(),
+            Schedules = schedules.OrderBy(s => s.StartsAt).ToList()
         };
     }
 }

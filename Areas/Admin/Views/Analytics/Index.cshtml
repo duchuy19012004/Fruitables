@@ -1,0 +1,149 @@
+@model Fruitables.ViewModels.SalesHubVm
+@using System.Text.Json
+@{
+    ViewData["Title"] = "Thống kê bán hàng";
+    Layout = "~/Areas/Admin/Views/Shared/_AdminDashboardLayout.cshtml";
+
+    var f = Model.Filter;
+    var tabKey = f.Tab switch
+    {
+        SalesAnalyticsTab.Merch => "merch",
+        SalesAnalyticsTab.Cancellations => "cancellations",
+        _ => "overview"
+    };
+    var dim = f.Dimension == MerchDimension.Category ? "category" : "product";
+
+    string TabUrl(string tab) => Url.Action("Index", "Analytics", new
+    {
+        area = "Admin",
+        preset = f.Preset,
+        from = f.From,
+        to = f.To,
+        tab,
+        dimension = dim,
+        sort = f.Sort,
+        dir = f.Dir,
+        take = f.Take
+    })!;
+
+    string ExportUrl() => Url.Action("Export", "Analytics", new
+    {
+        area = "Admin",
+        preset = f.Preset,
+        from = f.From,
+        to = f.To,
+        tab = tabKey,
+        dimension = dim,
+        sort = f.Sort,
+        dir = f.Dir,
+        take = f.Take
+    })!;
+
+    object chartPayload = f.Tab switch
+    {
+        SalesAnalyticsTab.Merch when Model.Merch != null => new
+        {
+            rankBar = Model.Merch.RankBar,
+            categoryMix = Model.Merch.CategoryMix,
+            unitsVsNet = Model.Merch.UnitsVsNet,
+            growth = Model.Merch.Growth
+        },
+        SalesAnalyticsTab.Cancellations when Model.Cancellations != null => new
+        {
+            cancelTrend = Model.Cancellations.CancelTrend,
+            reasons = Model.Cancellations.Reasons,
+            valueByProduct = Model.Cancellations.ValueByProduct,
+            valueByCategory = Model.Cancellations.ValueByCategory
+        },
+        _ when Model.Overview != null => new
+        {
+            trend = Model.Overview.Trend,
+            ordersVolume = Model.Overview.OrdersVolume,
+            categoryMix = Model.Overview.CategoryMix,
+            aovTrend = Model.Overview.AovTrend,
+            unitsTrend = Model.Overview.UnitsTrend,
+            pipeline = Model.Overview.Pipeline,
+            periodCompare = Model.Overview.PeriodCompare,
+            topProductsBar = Model.Overview.TopProductsBar
+        },
+        _ => new { }
+    };
+
+    var jsonOpts = new JsonSerializerOptions
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+    var chartsJson = JsonSerializer.Serialize(chartPayload, jsonOpts);
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/sales-analytics.css" asp-append-version="true" />
+}
+
+<div class="sa-page container-fluid py-4">
+    <div class="sa-page-head">
+        <div>
+            <h2>Thống kê bán hàng</h2>
+            <p>
+                Doanh thu gộp / thuần · so kỳ liền trước
+                @if (!string.IsNullOrEmpty(Model.Periods.Current.Label))
+                {
+                    <text>· @Model.Periods.Current.Label</text>
+                }
+            </p>
+        </div>
+        <a class="sa-btn sa-btn-primary" href="@ExportUrl()">
+            <i class="fas fa-download"></i> Xuất Excel
+        </a>
+    </div>
+
+    @if (!string.IsNullOrEmpty(Model.Error))
+    {
+        <div class="alert alert-danger" role="alert">
+            <i class="fas fa-exclamation-circle me-1"></i>@Model.Error
+        </div>
+    }
+
+    @await Html.PartialAsync("_FilterBar", Model)
+
+    <div class="sa-tabs" role="tablist">
+        <a role="tab"
+           class="@(f.Tab == SalesAnalyticsTab.Overview ? "active" : "")"
+           aria-selected="@(f.Tab == SalesAnalyticsTab.Overview ? "true" : "false")"
+           href="@TabUrl("overview")">Tổng quan</a>
+        <a role="tab"
+           class="@(f.Tab == SalesAnalyticsTab.Merch ? "active" : "")"
+           aria-selected="@(f.Tab == SalesAnalyticsTab.Merch ? "true" : "false")"
+           href="@TabUrl("merch")">Sản phẩm &amp; danh mục</a>
+        <a role="tab"
+           class="@(f.Tab == SalesAnalyticsTab.Cancellations ? "active" : "")"
+           aria-selected="@(f.Tab == SalesAnalyticsTab.Cancellations ? "true" : "false")"
+           href="@TabUrl("cancellations")">Hủy &amp; hoàn <span class="sa-badge">phụ</span></a>
+    </div>
+
+    @switch (f.Tab)
+    {
+        case SalesAnalyticsTab.Overview:
+            @await Html.PartialAsync("_OverviewTab", Model)
+            break;
+        case SalesAnalyticsTab.Merch:
+            @await Html.PartialAsync("_MerchTab", Model)
+            break;
+        default:
+            @await Html.PartialAsync("_CancellationsTab", Model)
+            break;
+    }
+</div>
+
+@section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="~/js/sales-analytics.js" asp-append-version="true"></script>
+    <script>
+        window.saCharts = @Html.Raw(chartsJson);
+        document.addEventListener('DOMContentLoaded', function () {
+            if (window.SalesAnalytics) {
+                SalesAnalytics.init(window.saCharts || {});
+            }
+        });
+    </script>
+}
