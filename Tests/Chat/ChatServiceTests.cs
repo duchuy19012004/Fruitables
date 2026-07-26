@@ -2,6 +2,7 @@ using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Options;
 using Fruitables.Services.Chat;
+using Fruitables.Services.Chat.Intents;
 using Fruitables.Services.Interfaces;
 using Fruitables.ViewModels;
 using Microsoft.EntityFrameworkCore;
@@ -14,6 +15,16 @@ namespace Fruitables.Tests.Chat;
 
 public class ChatServiceTests
 {
+    private static IIntentRouter CreateGeneralIntentRouter()
+    {
+        var router = new Mock<IIntentRouter>();
+        router.Setup(service => service.ClassifyAsync(
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ChatIntent.Of(ChatIntentKind.GeneralInquiry, 0.5f));
+        return router.Object;
+    }
+
     private static ApplicationDbContext CreateContext()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -40,6 +51,8 @@ public class ChatServiceTests
         var sut = new ChatService(
             db,
             rag.Object,
+            CreateGeneralIntentRouter(),
+            Mock.Of<IProductService>(),
             cache,
             Microsoft.Extensions.Options.Options.Create(chatOptions ?? new ChatOptions()),
             NullLogger<ChatService>.Instance);
@@ -139,6 +152,8 @@ public class ChatServiceTests
         var sut = new ChatService(
             db,
             rag.Object,
+            CreateGeneralIntentRouter(),
+            Mock.Of<IProductService>(),
             cache,
             Microsoft.Extensions.Options.Options.Create(new ChatOptions()),
             NullLogger<ChatService>.Instance);
@@ -178,6 +193,8 @@ public class ChatServiceTests
         var sut = new ChatService(
             db,
             rag.Object,
+            CreateGeneralIntentRouter(),
+            Mock.Of<IProductService>(),
             cache,
             Microsoft.Extensions.Options.Options.Create(new ChatOptions()),
             NullLogger<ChatService>.Instance);

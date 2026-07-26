@@ -24,8 +24,7 @@ public sealed class RagService : IRagService
 {
     // Câu trả lời cố định khi hệ thống không tìm thấy tri thức đủ tin cậy
     internal const string RefuseMessage =
-        "Xin lỗi, mình chưa có đủ thông tin trong hệ thống để trả lời chính xác câu này.\n" +
-        "Bạn có thể liên hệ bộ phận CSKH qua trang Liên hệ hoặc để lại tin nhắn để được hỗ trợ trực tiếp.";
+        "Mình chưa tìm thấy thông tin phù hợp để trả lời câu này.";
 
     private readonly ApplicationDbContext _db;
     private readonly IEmbeddingClient _embeddingClient;
@@ -47,9 +46,27 @@ public sealed class RagService : IRagService
         _logger = logger;
     }
 
+    // Sensitive patterns - defense-in-depth (ChatService cũng check)
+    private static readonly string[] SensitivePatterns = new[]
+    {
+        "admin", "quản trị", "mật khẩu", "password", "api key", "connection string",
+        "debug", "config", "secret", "token", "credential", "database"
+    };
+
     // Trả lời 1 câu hỏi của khách (đủ câu, không stream)
     public async Task<RagAnswer> AnswerAsync(string userMessage, CancellationToken ct = default)
     {
+        // Sensitive guard: chặn trước khi gọi embedding/LLM
+        if (IsSensitive(userMessage))
+        {
+            return new RagAnswer
+            {
+                Content = RefuseMessage,
+                Refused = true,
+                SourceChunkIds = new List<long>()
+            };
+        }
+
         var retrieval = await RetrieveAsync(userMessage, ct);
         if (retrieval is null)
         {
@@ -77,6 +94,13 @@ public sealed class RagService : IRagService
         string userMessage,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
+        // Sensitive guard
+        if (IsSensitive(userMessage))
+        {
+            yield return RagStreamPart.Refuse(RefuseMessage);
+            yield break;
+        }
+
         var retrieval = await RetrieveAsync(userMessage, ct);
         if (retrieval is null)
         {
@@ -192,5 +216,14 @@ public sealed class RagService : IRagService
         sb.AppendLine("### QUESTION");
         sb.Append(question);
         return sb.ToString();
+    }
+
+    private static bool IsSensitive(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return false;
+
+        var lower = message.ToLowerInvariant();
+        return SensitivePatterns.Any(p => lower.Contains(p));
     }
 }

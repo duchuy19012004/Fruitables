@@ -1,17 +1,17 @@
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using Fruitables.Services.Interfaces;
 
 namespace Fruitables.Tests.Chat.Fakes;
 
-/// <summary>
-/// Test double for <see cref="ILlmClient"/> that records prompts and returns a fixed response.
-/// Streaming yields the response in small chunks so stream tests exercise the pipeline.
-/// </summary>
+// Test double for ILlmClient: records prompts, returns fixed response.
 public sealed class FakeLlmClient : ILlmClient
 {
     public string Response { get; set; } = "Câu trả lời giả.";
 
-    /// <summary>Optional: force stream chunk size (chars). Default 8.</summary>
+    // JSON response cho GenerateAsync (intent classification)
+    public string JsonResponse { get; set; } = """{"kind":"GeneralInquiry","confidence":0.9,"slots":{}}""";
+
     public int StreamChunkSize { get; set; } = 8;
 
     public List<(string System, string User)> Calls { get; } = new();
@@ -38,8 +38,16 @@ public sealed class FakeLlmClient : ILlmClient
             ct.ThrowIfCancellationRequested();
             var len = Math.Min(size, text.Length - i);
             yield return text.Substring(i, len);
-            // Yield control so async stream consumers work as in production
             await Task.Yield();
         }
+    }
+
+    public Task<JsonElement> GenerateAsync(string systemPrompt, string userPrompt, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        Calls.Add((systemPrompt, userPrompt));
+
+        var doc = JsonDocument.Parse(JsonResponse);
+        return Task.FromResult(doc.RootElement.Clone());
     }
 }

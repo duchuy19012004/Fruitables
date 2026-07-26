@@ -224,7 +224,8 @@ public class ChatApiController : ControllerBase
                 sessionId = evt.SessionId,
                 text = evt.Text,
                 refused = evt.Refused ?? false,
-                messageId = evt.MessageId
+                messageId = evt.MessageId,
+                action = evt.Action
             },
             "error" => new { error = evt.Error },
             _ => new { }

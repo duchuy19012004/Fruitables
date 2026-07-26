@@ -104,29 +104,18 @@
     function finalizeAssistantBubble(bubble, text, refused) {
         if (!bubble) return;
         var html = escapeHtml(text || '');
-        if (refused) {
-            html +=
-                '<span class="chat-refused-note">' +
-                'Bạn có thể <a href="/Contact">liên hệ hỗ trợ</a> để được giúp thêm.' +
-                '</span>';
-        }
+        // RagService đã có hướng dẫn liên hệ trong RefuseMessage, không thêm nữa
         bubble.classList.remove('chat-bubble-streaming', 'chat-bubble-typing');
         bubble.innerHTML = html;
     }
 
-    // Vẽ 1 tin từ API (kể cả khi bot "từ chối" → thêm link Liên hệ)
+    // Vẽ 1 tin từ API
     function renderMessage(root, msg) {
         var role = (msg.role || msg.Role || 'assistant').toLowerCase();
         var content = msg.content || msg.Content || '';
-        var refused = !!(msg.refused || msg.Refused);
 
         var html = escapeHtml(content);
-        if (refused && role === 'assistant') {
-            html +=
-                '<span class="chat-refused-note">' +
-                'Bạn có thể <a href="/Contact">liên hệ hỗ trợ</a> để được giúp thêm.' +
-                '</span>';
-        }
+        // RagService đã có hướng dẫn liên hệ trong RefuseMessage, không thêm nữa
         appendBubble(root, role === 'user' ? 'user' : 'assistant', html);
     }
 

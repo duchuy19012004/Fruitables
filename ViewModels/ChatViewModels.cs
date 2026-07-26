@@ -68,6 +68,8 @@ public class ChatStreamEvent
 
     public long? MessageId { get; set; }
 
+    public string? Action { get; set; }
+
     public string? Error { get; set; }
 
     public static ChatStreamEvent Meta(Guid sessionId) => new()
@@ -82,13 +84,14 @@ public class ChatStreamEvent
         Text = delta
     };
 
-    public static ChatStreamEvent Done(Guid sessionId, string content, bool refused, long messageId) => new()
+    public static ChatStreamEvent Done(Guid sessionId, string content, bool refused, long messageId, string? action = null) => new()
     {
         Type = "done",
         SessionId = sessionId,
         Text = content,
         Refused = refused,
-        MessageId = messageId
+        MessageId = messageId,
+        Action = action
     };
 
     public static ChatStreamEvent Fail(string error) => new()
@@ -120,6 +123,7 @@ public class ChatMessageDto
     public string Content { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public bool Refused { get; set; }
+    public string? Action { get; set; }
 }
 
 // Phản hồi sau khi gửi tin: id cuộc chat + tin bot

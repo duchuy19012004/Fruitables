@@ -2,24 +2,31 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Fruitables.Services.Interfaces;
 
 namespace Fruitables.Hubs
 {
     public class EcommerceHub : Hub
     {
+        private readonly IChatService _chatService;
+
+        public EcommerceHub(IChatService chatService)
+        {
+            _chatService = chatService;
+        }
+
         public override async Task OnConnectedAsync()
         {
-            if (Context.User?.Identity?.IsAuthenticated == true)
+            var user = Context.User;
+            if (user?.Identity?.IsAuthenticated == true)
             {
-                // Join user-specific group
-                var userId = Context.User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                var userId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
                 if (!string.IsNullOrEmpty(userId))
                 {
                     await Groups.AddToGroupAsync(Context.ConnectionId, $"User:{userId}");
                 }
 
-                // Join Admins group if user is Admin or SuperAdmin
-                if (Context.User.IsInRole("Admin") || Context.User.IsInRole("SuperAdmin"))
+                if (user.IsInRole("Admin") || user.IsInRole("SuperAdmin"))
                 {
                     await Groups.AddToGroupAsync(Context.ConnectionId, "Admins");
                 }
@@ -32,14 +39,12 @@ namespace Fruitables.Hubs
         {
             if (orderId <= 0) throw new HubException("Invalid orderId.");
 
-            // Optional: verify if user owns the order or is admin
             if (Context.User != null && (Context.User.IsInRole("Admin") || Context.User.IsInRole("SuperAdmin")))
             {
                 await Groups.AddToGroupAsync(Context.ConnectionId, $"Order:{orderId}");
                 return;
             }
 
-            // Customer
             var userIdStr = Context.User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
             if (int.TryParse(userIdStr, out int userId))
             {
@@ -50,7 +55,7 @@ namespace Fruitables.Hubs
                     return;
                 }
             }
-            
+
             throw new HubException("Unauthorized to join this order group.");
         }
 
@@ -63,7 +68,6 @@ namespace Fruitables.Hubs
         public async Task JoinProductGroup(int productId)
         {
             if (productId <= 0) throw new HubException("Invalid productId.");
-            // Anyone can join product group to see stock updates
             await Groups.AddToGroupAsync(Context.ConnectionId, $"Product:{productId}");
         }
 
@@ -71,6 +75,42 @@ namespace Fruitables.Hubs
         {
             if (productId <= 0) return;
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"Product:{productId}");
+        }
+
+        // Chat: dùng ChatService (đã có intent routing + sensitive guard)
+        public async Task SendChat(string message)
+        {
+            var trimmed = (message ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(trimmed))
+            {
+                await Clients.Caller.SendAsync("ChatError", "Tin nhắn trống.");
+                return;
+            }
+
+            int? userId = null;
+            var userIdStr = Context.User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (int.TryParse(userIdStr, out var parsedUserId))
+                userId = parsedUserId;
+
+            try
+            {
+                // Tạo session nếu chưa có (dùng ChatState để track)
+                var state = Services.Chat.ChatState.GetOrAdd(Context);
+                if (!state.SessionId.HasValue)
+                {
+                    state.SessionId = await _chatService.CreateSessionAsync(userId, "signalr");
+                }
+
+                // ChatService xử lý: intent routing → handler phù hợp → lưu DB
+                var response = await _chatService.SendAsync(
+                    state.SessionId.Value, trimmed, userId, null);
+
+                await Clients.Caller.SendAsync("ChatResponse", response.AssistantMessage.Content);
+            }
+            catch (Exception)
+            {
+                await Clients.Caller.SendAsync("ChatError", "Đã xảy ra lỗi. Vui lòng thử lại.");
+            }
         }
     }
 }

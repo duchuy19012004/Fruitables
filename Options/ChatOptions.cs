@@ -1,20 +1,21 @@
 namespace Fruitables.Options;
 
-// ============================================================
 // Cấu hình chatbot — đọc từ appsettings.json mục "Chat"
-// (hoặc user-secrets / biến môi trường cho khóa API).
 public class ChatOptions
 {
     public const string SectionName = "Chat";
 
-    // Tên nhà cung cấp AI (hiển thị / ghi log), ví dụ "Kimi"
-    public string Provider { get; set; } = "Kimi";
+    // Tên endpoint AI (hiển thị / ghi log)
+    public string Provider { get; set; } = "Xiaomi MiMo";
 
-    // Tên model AI chat, ví dụ "kimi-k2.7-code"
-    public string Model { get; set; } = "kimi-k2.7-code";
+    // Tên model AI chat
+    public string Model { get; set; } = "mimo-v2.5";
+
+    // API key (để trống nếu endpoint không yêu cầu)
+    public string ApiKey { get; set; } = string.Empty;
 
     // Cách mã hóa tri thức để tìm kiếm:
-    // - "Local" = mã hóa trên server (mặc định, phù hợp Kimi vì Kimi không có API embed công khai)
+    // - "Local" = mã hóa trên server (mặc định, không gọi API embedding)
     // - "OpenAICompatible" = gọi API /embeddings của nhà cung cấp
     public string EmbeddingProvider { get; set; } = "Local";
 
@@ -24,10 +25,8 @@ public class ChatOptions
     // Độ dài vector khi dùng Local (càng lớn càng chi tiết, tốn bộ nhớ hơn một chút)
     public int EmbeddingDimensions { get; set; } = 256;
 
-    // Địa chỉ API AI (OpenAI-compatible)
-    // Key sk-kimi-* (Kimi Code): https://api.kimi.com/coding/v1
-    // Key Moonshot platform:     https://api.moonshot.ai/v1
-    public string BaseUrl { get; set; } = "https://api.kimi.com/coding/v1";
+    // Địa chỉ API AI theo chuẩn OpenAI-compatible
+    public string BaseUrl { get; set; } = "https://token-plan-sgp.xiaomimimo.com/v1";
 
     // Mỗi câu hỏi lấy tối đa bao nhiêu đoạn tri thức liên quan
     public int TopK { get; set; } = 5;

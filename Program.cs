@@ -5,6 +5,7 @@ using Fruitables.Repositories;
 using Fruitables.Repositories.Interfaces;
 using Fruitables.Services;
 using Fruitables.Services.Chat;
+using Fruitables.Services.Chat.Intents;
 using Fruitables.Services.Interfaces;
 using Fruitables.Services.Search;
 using Fruitables.Options;
@@ -79,54 +80,18 @@ builder.Services.Configure<SearchSuggestOptions>(
     builder.Configuration.GetSection(SearchSuggestOptions.SectionName));
 builder.Services.AddScoped<ISearchSuggestService, SearchSuggestService>();
 
-// Gắn BaseUrl + API key vào HttpClient khi gọi AI (Kimi...)
+// Cấu hình HttpClient cho endpoint AI local theo chuẩn OpenAI.
 static void ConfigureChatHttpClient(IServiceProvider sp, HttpClient client)
 {
     var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<Fruitables.Options.ChatOptions>>().Value;
-    var configuration = sp.GetRequiredService<IConfiguration>();
+    ChatHttpClientConfigurator.Configure(client, options);
 
-    // Ví dụ: https://api.moonshot.ai/v1/
-    var baseUrl = options.BaseUrl?.TrimEnd('/') + "/";
-    if (Uri.TryCreate(baseUrl, UriKind.Absolute, out var baseUri))
-        client.BaseAddress = baseUri;
-
-    // k2.7 / thinking có thể chậm hơn k2.6 — tránh HttpClient cancel sớm → 503
-    client.Timeout = TimeSpan.FromSeconds(120);
-
-    // Ưu tiên key Kimi/Moonshot; vẫn nhận XAI_* nếu ai còn dùng cũ.
-    // Không hard-code key trong source — dùng env / user-secrets.
-    // Lưu ý: launchSettings KIMI_API_KEY="" sẽ che User env → bỏ qua chuỗi rỗng.
-    static string? FirstNonEmpty(params string?[] values)
-    {
-        foreach (var v in values)
-        {
-            if (!string.IsNullOrWhiteSpace(v))
-                return v.Trim();
-        }
-        return null;
-    }
-
-    var apiKey = FirstNonEmpty(
-        Environment.GetEnvironmentVariable("KIMI_API_KEY"),
-        Environment.GetEnvironmentVariable("MOONSHOT_API_KEY"),
-        configuration["Chat:ApiKey"],
-        configuration["KIMI_API_KEY"],
-        configuration["MOONSHOT_API_KEY"],
-        Environment.GetEnvironmentVariable("XAI_API_KEY"),
-        configuration["XAI_API_KEY"]);
-
-    if (!string.IsNullOrWhiteSpace(apiKey))
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-    else
-        sp.GetRequiredService<ILoggerFactory>()
-            .CreateLogger("ChatHttpClient")
-            .LogWarning("Chat API key missing — LLM calls will fail with 401. Set KIMI_API_KEY or user-secrets Chat:ApiKey.");
 }
 
-// AI chat (OpenAI-compatible → Kimi)
+// AI chat qua endpoint local OpenAI-compatible.
 builder.Services.AddHttpClient<ILlmClient, SpaceXaiLlmClient>(ConfigureChatHttpClient);
 
-// Mã hóa tri thức: mặc định Local (không cần API embed của Kimi)
+// Mã hóa tri thức: mặc định Local (không gọi API embedding).
 // Đổi Chat:EmbeddingProvider=OpenAICompatible nếu sau này dùng embed qua API
 var embeddingProvider = builder.Configuration["Chat:EmbeddingProvider"] ?? "Local";
 if (string.Equals(embeddingProvider, "OpenAICompatible", StringComparison.OrdinalIgnoreCase))
@@ -143,6 +108,7 @@ builder.Services.AddScoped<IIndexingService, IndexingService>(); // đưa FAQ/SP
 builder.Services.AddScoped<IFaqService, FaqService>();           // CRUD FAQ Admin
 builder.Services.AddScoped<IRagService, RagService>();           // tìm tri thức + gọi AI
 builder.Services.AddScoped<IChatService, ChatService>();         // session, lưu tin, chống spam
+builder.Services.AddScoped<IIntentRouter, IntentRouter>();       // phân loại ý định khách hàng
 
 builder.Services.AddHttpClient<IGhnService, GhnService>((serviceProvider, client) =>
 {

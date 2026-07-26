@@ -12,7 +12,7 @@ namespace Fruitables.Services.Chat;
 public static class RetrievalText
 {
     // Phi├¬n bß║ún thuß║¡t to├ín ΓÇö ─æß╗òi khi sß╗¡a synonym/tokenize ΓåÆ reindex tß║ío lß║íi embedding
-    public const string AlgorithmId = "lh-v3";
+    public const string AlgorithmId = "lh-v4";
 
     // synonym: token gß╗æc ΓåÆ c├íc token li├¬n quan (─æ├ú lower-case)
     private static readonly Dictionary<string, string[]> Synonyms = new(StringComparer.OrdinalIgnoreCase)

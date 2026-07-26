@@ -83,7 +83,7 @@ public class RagServiceTests
         Assert.True(answer.Refused);
         Assert.Empty(llm.Calls);
         Assert.Empty(answer.SourceChunkIds);
-        Assert.Contains("liên hệ", answer.Content, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("Mình chưa tìm thấy thông tin phù hợp để trả lời câu này.", answer.Content);
     }
 
     [Fact]
@@ -115,7 +115,7 @@ public class RagServiceTests
 
         Assert.True(answer.Refused);
         Assert.Empty(llm.Calls);
-        Assert.Contains("liên hệ", answer.Content, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("Mình chưa tìm thấy thông tin phù hợp để trả lời câu này.", answer.Content);
     }
 
     [Fact]

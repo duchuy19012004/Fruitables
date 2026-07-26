@@ -1,17 +1,19 @@
+using System.Text.Json;
+
 namespace Fruitables.Services.Interfaces;
 
-// ============================================================
-// "Cổng" gọi AI chat (Kimi, xAI, ...).
-// Phần còn lại của app không cần biết đang dùng nhà cung cấp nào.
-// ============================================================
+// Cổng gọi AI chat qua endpoint OpenAI-compatible.
 public interface ILlmClient
 {
-    // Gửi lời dặn hệ thống + câu hỏi (có kèm context), nhận câu trả lời chữ
+    // Gửi prompt, nhận câu trả lời chữ
     Task<string> CompleteAsync(string systemPrompt, string userPrompt, CancellationToken ct = default);
 
-    // Cùng prompt nhưng trả về từng mảnh chữ khi model đang generate (SSE từ provider)
+    // Streaming: trả về từng chunk
     IAsyncEnumerable<string> CompleteStreamingAsync(
         string systemPrompt,
         string userPrompt,
         CancellationToken ct = default);
+
+    // Gọi LLM và parse JSON response (dùng cho intent classification, structured output)
+    Task<JsonElement> GenerateAsync(string systemPrompt, string userPrompt, CancellationToken ct = default);
 }

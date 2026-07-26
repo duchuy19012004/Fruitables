@@ -11,8 +11,8 @@ namespace Fruitables.Services.Chat;
 // ============================================================
 // GỌI AI CHAT THEO CHUẨN OPENAI
 //
-// Dùng được với nhiều nhà: Kimi (Moonshot), xAI, OpenAI...
-// Chỉ cần đổi BaseUrl + ApiKey + Model trong cấu hình.
+// Gọi endpoint local theo chuẩn OpenAI-compatible.
+// Chỉ cần đổi BaseUrl + Model trong cấu hình.
 //
 // Tên class còn "SpaceXai" vì lịch sử ban đầu; thực tế là client chung.
 // ============================================================
@@ -53,7 +53,6 @@ public sealed class SpaceXaiLlmClient : ILlmClient
         string userPrompt,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        // kimi-k2.7-code (và một số model thinking) chỉ chấp nhận temperature = 1
         var temperature = ResolveTemperature(_options.Model);
         var body = new
         {
@@ -125,16 +124,59 @@ public sealed class SpaceXaiLlmClient : ILlmClient
         }
     }
 
-    // k2.7-code: temperature cố định 1; model khác dùng 0.2 (ổn định hơn cho CS)
+    // Gọi LLM và parse JSON response (dùng cho structured output).
+    public async Task<JsonElement> GenerateAsync(
+        string systemPrompt,
+        string userPrompt,
+        CancellationToken ct = default)
+    {
+        var body = new
+        {
+            model = _options.Model,
+            messages = new[]
+            {
+                new { role = "system", content = systemPrompt },
+                new { role = "user", content = userPrompt }
+            },
+            temperature = 0.1,
+            stream = false
+        };
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "chat/completions")
+        {
+            Content = JsonContent.Create(body, options: JsonOptions)
+        };
+
+        using var response = await _httpClient.SendAsync(request, ct);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(ct);
+            _logger.LogError(
+                "LLM generate failed model={Model} status={StatusCode}: {Body}",
+                _options.Model,
+                (int)response.StatusCode,
+                errorBody);
+            throw new InvalidOperationException(
+                $"LLM provider error (model={_options.Model}, status={(int)response.StatusCode})");
+        }
+
+        var json = await response.Content.ReadAsStringAsync(ct);
+        using var doc = JsonDocument.Parse(json);
+
+        // OpenAI-compatible: choices[0].message.content
+        var content = doc.RootElement
+            .GetProperty("choices")[0]
+            .GetProperty("message")
+            .GetProperty("content")
+            .GetString() ?? string.Empty;
+
+        // Parse content as JSON
+        return JsonDocument.Parse(content).RootElement.Clone();
+    }
+
     internal static double ResolveTemperature(string? model)
     {
-        if (string.IsNullOrWhiteSpace(model))
-            return 0.2;
-
-        var m = model.Trim().ToLowerInvariant();
-        if (m.Contains("k2.7") || m.Contains("kimi-k2.7"))
-            return 1.0;
-
         return 0.2;
     }
 }
