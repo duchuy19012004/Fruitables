@@ -75,7 +75,8 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<Product>(entity =>
         {
             entity.HasIndex(e => e.Slug).IsUnique();
-            entity.Property(product => product.PriceRevision).IsConcurrencyToken();
+            entity.Property(product => product.PriceRevision)
+                  .HasDefaultValue(1);
             entity.HasOne(p => p.Category)
                   .WithMany(c => c.Products)
                   .HasForeignKey(p => p.CategoryId)
@@ -153,7 +154,8 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<ProductVariant>(entity =>
         {
             entity.HasIndex(e => e.SKU).IsUnique();
-            entity.Property(variant => variant.PriceRevision).IsConcurrencyToken();
+            entity.Property(variant => variant.PriceRevision)
+                  .HasDefaultValue(1);
             entity.HasOne(v => v.Product)
                   .WithMany(p => p.Variants)
                   .HasForeignKey(v => v.ProductId)
@@ -206,7 +208,9 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<PriceSchedule>(entity =>
         {
             entity.HasIndex(e => new { e.ProductId, e.ProductVariantId, e.StartsAt });
-            entity.Property(schedule => schedule.Revision).IsConcurrencyToken();
+            entity.Property(schedule => schedule.Revision)
+                  .HasDefaultValue(1)
+                  .IsConcurrencyToken();
 
             entity.HasOne(e => e.Product)
                   .WithMany(p => p.PriceSchedules)

@@ -1,0 +1,41 @@
+using Fruitables.Data;
+using Fruitables.Models;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Xunit;
+
+namespace Fruitables.Tests;
+
+public class PricingModelConfigurationTests
+{
+    [Fact]
+    public void Revision_columns_default_to_one_and_only_schedule_revision_is_concurrency_token()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        using var context = new ApplicationDbContext(options);
+
+        var productRevision = context.Model
+            .FindEntityType(typeof(Product))!
+            .FindProperty(nameof(Product.PriceRevision))!;
+
+        var variantRevision = context.Model
+            .FindEntityType(typeof(ProductVariant))!
+            .FindProperty(nameof(ProductVariant.PriceRevision))!;
+
+        var scheduleRevision = context.Model
+            .FindEntityType(typeof(PriceSchedule))!
+            .FindProperty(nameof(PriceSchedule.Revision))!;
+
+        Assert.Equal(1, productRevision.GetDefaultValue());
+        Assert.False(productRevision.IsConcurrencyToken);
+
+        Assert.Equal(1, variantRevision.GetDefaultValue());
+        Assert.False(variantRevision.IsConcurrencyToken);
+
+        Assert.Equal(1, scheduleRevision.GetDefaultValue());
+        Assert.True(scheduleRevision.IsConcurrencyToken);
+    }
+}
