@@ -35,3 +35,14 @@ public class CartItemViewModel
     public bool IsAvailable { get; set; } = true;
     public decimal Total => Price * Quantity;
 }
+
+public sealed record CartMutationResult(
+    bool Success,
+    string Message)
+{
+    public static CartMutationResult Ok(string message = "ÄÃ£ cáº­p nháº­t giá» hÃ ng.") =>
+        new(true, message);
+
+    public static CartMutationResult Fail(string message) =>
+        new(false, message);
+}

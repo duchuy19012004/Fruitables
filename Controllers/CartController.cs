@@ -34,11 +34,21 @@ public class CartController : Controller
     // POST: Thêm sản phẩm vào giỏ (yêu cầu đăng nhập)
     [HttpPost]
     [Authorize]
-    public async Task<IActionResult> AddToCart(int productId, int quantity = 1, int? variantId = null)
+    public async Task<IActionResult> AddToCart(
+        int productId,
+        int quantity = 1,
+        int? variantId = null)
     {
         var sessionId = GetSessionId();
-        await _cartService.AddToCartAsync(sessionId, productId, quantity, variantId);
-        TempData["Success"] = "Product added to cart!";
+
+        var result = await _cartService.AddToCartAsync(
+            sessionId,
+            productId,
+            quantity,
+            variantId);
+
+        TempData[result.Success ? "Success" : "Error"] = result.Message;
+
         return RedirectToAction(nameof(Index));
     }
 

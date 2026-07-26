@@ -92,44 +92,89 @@ public class CartService : ICartService
         return cartViewModel;
     }
 
-    public async Task AddToCartAsync(string sessionId, int productId, int quantity = 1, int? variantId = null)
+    public async Task<CartMutationResult> AddToCartAsync(
+        string sessionId,
+        int productId,
+        int quantity = 1,
+        int? variantId = null)
     {
-        var cart    = await GetOrCreateCartAsync(sessionId);
-        var product = await _unitOfWork.Products.Query().Include(p => p.Variants)
-            .FirstOrDefaultAsync(p => p.Id == productId && p.IsActive && !p.IsDeleted);
-        if (product == null || quantity <= 0) return;
-        var activeVariants = product.Variants.Where(v => v.IsActive).ToList();
+        if (quantity <= 0)
+            return CartMutationResult.Fail("Sá»‘ lÆ°á»£ng pháº£i lá»›n hÆ¡n 0.");
+
+        var cart = await GetOrCreateCartAsync(sessionId);
+        var product = await _unitOfWork.Products.Query()
+            .Include(p => p.Variants)
+            .FirstOrDefaultAsync(p =>
+                p.Id == productId &&
+                p.IsActive &&
+                !p.IsDeleted);
+
+        if (product == null)
+            return CartMutationResult.Fail("Sáº£n pháº©m khÃ´ng tá»“n táº¡i hoáº·c Ä‘Ã£ ngá»«ng bÃ¡n.");
+
+        var activeVariants = product.Variants
+            .Where(variant => variant.IsActive)
+            .ToList();
+
         ProductVariant? variant = null;
+
         if (activeVariants.Count > 0)
         {
-            variant = activeVariants.FirstOrDefault(v => v.Id == variantId);
-            if (variant == null || variant.StockQuantity <= 0) return;
-        }
-        else if (variantId.HasValue || product.StockQuantity <= 0) return;
+            variant = activeVariants.FirstOrDefault(item => item.Id == variantId);
+            if (variant == null)
+                return CartMutationResult.Fail("Vui lÃ²ng chá»n má»™t biáº¿n thá»ƒ Ä‘ang bÃ¡n.");
 
-        var existingItem = await _unitOfWork.CartItems.Query()
-            .FirstOrDefaultAsync(ci => ci.CartId == cart.Id && ci.ProductId == productId && ci.ProductVariantId == variantId);
-
-        if (existingItem != null)
-        {
-            var stock = variant?.StockQuantity ?? product.StockQuantity;
-            existingItem.Quantity = Math.Min(existingItem.Quantity + quantity, stock);
+            if (variant.StockQuantity <= 0)
+                return CartMutationResult.Fail("Biáº¿n thá»ƒ Ä‘Ã£ háº¿t hÃ ng.");
         }
         else
         {
-            var cartItem = new CartItem
+            if (variantId.HasValue)
+                return CartMutationResult.Fail("Biáº¿n thá»ƒ khÃ´ng há»£p lá»‡.");
+
+            if (product.StockQuantity <= 0)
+                return CartMutationResult.Fail("Sáº£n pháº©m Ä‘Ã£ háº¿t hÃ ng.");
+        }
+
+        var quote = await _pricing.GetQuoteAsync(productId, variantId);
+        if (quote == null)
+        {
+            return CartMutationResult.Fail(
+                "KhÃ´ng thá»ƒ xÃ¡c Ä‘á»‹nh giÃ¡ hiá»‡n táº¡i cá»§a sáº£n pháº©m. Vui lÃ²ng táº£i láº¡i trang.");
+        }
+
+        var existingItem = await _unitOfWork.CartItems.Query()
+            .FirstOrDefaultAsync(item =>
+                item.CartId == cart.Id &&
+                item.ProductId == productId &&
+                item.ProductVariantId == variantId);
+
+        var stock = variant?.StockQuantity ?? product.StockQuantity;
+
+        if (existingItem != null)
+        {
+            existingItem.Quantity = Math.Min(
+                existingItem.Quantity + quantity,
+                stock);
+
+            existingItem.Price = quote.EffectivePrice;
+        }
+        else
+        {
+            await _unitOfWork.CartItems.AddAsync(new CartItem
             {
-                CartId    = cart.Id,
+                CartId = cart.Id,
                 ProductId = productId,
                 ProductVariantId = variantId,
-                Quantity  = Math.Min(quantity, variant?.StockQuantity ?? product.StockQuantity),
-                Price     = (await _pricing.GetQuoteAsync(productId, variantId))?.EffectivePrice ?? product.Price
-            };
-            await _unitOfWork.CartItems.AddAsync(cartItem);
+                Quantity = Math.Min(quantity, stock),
+                Price = quote.EffectivePrice
+            });
         }
 
         cart.UpdatedAt = DateTime.UtcNow;
         await _unitOfWork.SaveChangesAsync();
+
+        return CartMutationResult.Ok("ÄÃ£ thÃªm sáº£n pháº©m vÃ o giá» hÃ ng.");
     }
 
     public async Task UpdateQuantityAsync(string sessionId, int cartItemId, int quantity)

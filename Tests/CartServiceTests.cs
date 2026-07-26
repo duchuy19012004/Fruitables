@@ -163,4 +163,47 @@ public class CartServiceTests
         Assert.Null(result.ShippingInfo);
         Assert.Equal(0m, result.ShippingFee);
     }
+
+    [Fact]
+    public async Task AddToCartAsync_when_quote_is_missing_adds_nothing_and_returns_failure()
+    {
+        var options = CreateInMemoryOptions();
+        await using var context = new ApplicationDbContext(options);
+
+        context.Products.Add(new Product
+        {
+            Id = 1,
+            Name = "Apple",
+            Slug = "apple-missing-quote",
+            Price = 50_000,
+            StockQuantity = 10,
+            MinOrderQuantity = 1,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+
+        await context.SaveChangesAsync();
+
+        var pricing = new Mock<IProductPricingService>();
+        pricing.Setup(service => service.GetQuoteAsync(
+                1,
+                null,
+                It.IsAny<DateTimeOffset?>()))
+            .ReturnsAsync((PriceQuote?)null);
+
+        var service = new CartService(
+            new UnitOfWork(context),
+            Mock.Of<ICouponService>(),
+            pricing.Object);
+
+        var result = await service.AddToCartAsync(
+            "missing-quote-session",
+            productId: 1,
+            quantity: 1);
+
+        Assert.False(result.Success);
+        Assert.Contains("xÃ¡c Ä‘á»‹nh giÃ¡", result.Message);
+        Assert.Empty(await context.CartItems.ToListAsync());
+    }
 }

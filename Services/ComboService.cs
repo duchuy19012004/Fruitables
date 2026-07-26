@@ -217,7 +217,18 @@ public class ComboService : IComboService
                 continue;
             }
 
-            await cartService.AddToCartAsync(sessionId, item.ProductId, item.Quantity, item.ProductVariantId);
+            var cartResult = await cartService.AddToCartAsync(
+                sessionId,
+                item.ProductId,
+                item.Quantity,
+                item.ProductVariantId);
+
+            if (!cartResult.Success)
+            {
+                skipped.Add($"{item.Product.Name} ({cartResult.Message})");
+                continue;
+            }
+
             added++;
         }
 

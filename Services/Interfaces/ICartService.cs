@@ -5,7 +5,11 @@ namespace Fruitables.Services.Interfaces;
 public interface ICartService
 {
     Task<CartViewModel> GetCartAsync(string sessionId, string? district = null);
-    Task AddToCartAsync(string sessionId, int productId, int quantity = 1, int? variantId = null);
+    Task<CartMutationResult> AddToCartAsync(
+        string sessionId,
+        int productId,
+        int quantity = 1,
+        int? variantId = null);
     Task UpdateQuantityAsync(string sessionId, int cartItemId, int quantity);
     Task RemoveFromCartAsync(string sessionId, int cartItemId);
     Task<CartViewModel> RepriceForCheckoutAsync(string sessionId);

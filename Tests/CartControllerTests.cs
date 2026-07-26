@@ -5,6 +5,7 @@ using Fruitables.Services.Interfaces;
 using Fruitables.ViewModels;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using Moq;
 using Xunit;
 
@@ -209,6 +210,44 @@ public class CartControllerTests
                 null,
                 It.Is<ShippingPackage?>(ps => ps != null && ps.Weight == expectedPackage.Weight)),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task AddToCart_when_service_rejects_mutation_sets_error_message()
+    {
+        var cartService = new Mock<ICartService>();
+        cartService.Setup(service => service.AddToCartAsync(
+                It.IsAny<string>(),
+                1,
+                1,
+                null))
+            .ReturnsAsync(CartMutationResult.Fail(
+                "KhÃ´ng thá»ƒ xÃ¡c Ä‘á»‹nh giÃ¡ hiá»‡n táº¡i cá»§a sáº£n pháº©m."));
+
+        var controller = new CartController(
+            cartService.Object,
+            Mock.Of<IShippingService>(),
+            Mock.Of<ICouponService>())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    Session = new TestSession()
+                }
+            },
+            TempData = new TempDataDictionary(
+                new DefaultHttpContext(),
+                Mock.Of<ITempDataProvider>())
+        };
+
+        var action = await controller.AddToCart(1, 1, null);
+
+        Assert.IsType<RedirectToActionResult>(action);
+        Assert.Equal(
+            "KhÃ´ng thá»ƒ xÃ¡c Ä‘á»‹nh giÃ¡ hiá»‡n táº¡i cá»§a sáº£n pháº©m.",
+            controller.TempData["Error"]);
+        Assert.Null(controller.TempData["Success"]);
     }
 
     private sealed class TestSession : ISession
