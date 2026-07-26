@@ -380,7 +380,24 @@ public sealed class PriceManagementService : IPriceManagementService
     public async Task<PriceManagementResult> BulkUpdateBasePricesAsync(BulkPriceUpdateRequest request, int adminId)
     {
         if (request.Targets.Count == 0 || request.Value <= 0)
-            return PriceManagementResult.Fail("Vui lòng chọn đối tượng và nhập mức điều chỉnh lớn hơn 0.");
+        {
+            return PriceManagementResult.Fail(
+                "Vui lòng chọn đối tượng và nhập mức điều chỉnh lớn hơn 0.");
+        }
+
+        if (request.AdjustmentType == PriceAdjustmentType.Amount &&
+            !VndPriceRules.IsValidFixedAdjustment(request.Value))
+        {
+            return PriceManagementResult.Fail(
+                "Mức điều chỉnh theo số tiền phải là số nguyên dương theo đơn vị VNĐ.");
+        }
+
+        if (request.AdjustmentType == PriceAdjustmentType.Percentage &&
+            (request.Value < 1 || request.Value > 99))
+        {
+            return PriceManagementResult.Fail(
+                "Phần trăm điều chỉnh phải từ 1 đến 99.");
+        }
 
         var duplicateTarget = request.Targets
             .GroupBy(item => item.Target)
@@ -509,10 +526,17 @@ public sealed class PriceManagementService : IPriceManagementService
 
         if (!Enum.IsDefined(request.DiscountType))
             return "Kiểu giảm giá không hợp lệ.";
-        if (request.DiscountType == DiscountType.FixedPrice &&
-            (request.Value <= 0 || request.Value >= basePrice))
+        if (request.DiscountType == DiscountType.FixedPrice)
         {
-            return "Giá giảm cố định phải lớn hơn 0 và nhỏ hơn giá gốc.";
+            if (!VndPriceRules.IsValidPrice(request.Value))
+            {
+                return "Giá giảm cố định phải là số nguyên dương theo đơn vị VNĐ.";
+            }
+
+            if (request.Value >= basePrice)
+            {
+                return "Giá giảm cố định phải nhỏ hơn giá gốc.";
+            }
         }
         if (request.DiscountType == DiscountType.Percentage &&
             (request.Value < 1 || request.Value > 99))
@@ -531,7 +555,10 @@ public sealed class PriceManagementService : IPriceManagementService
 
     private async Task<string?> ValidateNewBasePriceAsync(PriceTargetKey target, decimal newPrice)
     {
-        if (newPrice <= 0 || newPrice > 99_999_999.99m) return "Giá gốc mới không hợp lệ.";
+        if (!VndPriceRules.IsValidPrice(newPrice))
+        {
+            return "Giá gốc phải là số nguyên dương theo đơn vị VNĐ và không vượt quá 99.999.999đ.";
+        }
         if (!(await GetBasePriceAsync(target)).HasValue) return "Không tìm thấy sản phẩm hoặc biến thể.";
         var now = _timeProvider.GetUtcNow();
         var invalidFixed = await _unitOfWork.PriceSchedules.Query().AnyAsync(s =>

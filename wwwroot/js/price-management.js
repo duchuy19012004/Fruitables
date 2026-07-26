@@ -11,6 +11,25 @@
     const getToken = () => document.querySelector('#priceAjaxTokens input[name="__RequestVerificationToken"]')?.value
         || document.querySelector('input[name="__RequestVerificationToken"]')?.value || '';
 
+    function isWholeVnd(value) {
+        return Number.isFinite(value) &&
+            Number.isInteger(value) &&
+            value > 0;
+    }
+
+    function syncBulkValueRules() {
+        const input = document.getElementById('bulkValue');
+        const isPercent =
+            document.getElementById('bulkAdjustmentType')?.value === 'Percentage';
+
+        if (!input) return;
+
+        input.min = '1';
+        input.max = isPercent ? '99' : '';
+        input.step = isPercent ? '0.01' : '1';
+        input.inputMode = isPercent ? 'decimal' : 'numeric';
+    }
+
     async function postForm(url, formData) {
         const res = await fetch(url, {
             method: 'POST',
@@ -241,6 +260,10 @@
     }
 
     function bindBulk() {
+        const bulkType = document.getElementById('bulkAdjustmentType');
+        bulkType?.addEventListener('change', syncBulkValueRules);
+        syncBulkValueRules();
+
         document.getElementById('bulkPreviewBtn')?.addEventListener('click', () => {
             const rows = [...document.querySelectorAll('.row-check:checked')];
             if (!rows.length) return;
@@ -250,6 +273,21 @@
                 return;
             }
             const percent = document.getElementById('bulkAdjustmentType').value === 'Percentage';
+
+            if (!percent && !isWholeVnd(value)) {
+                showPriceToast(
+                    'warning',
+                    'Mức điều chỉnh theo số tiền phải là số nguyên dương.');
+                return;
+            }
+
+            if (percent && (value < 1 || value > 99)) {
+                showPriceToast(
+                    'warning',
+                    'Phần trăm điều chỉnh phải từ 1 đến 99.');
+                return;
+            }
+
             const increase = document.getElementById('bulkDirection').value === 'Increase';
             let invalid = 0;
             document.getElementById('bulkPreviewBody').innerHTML = rows.map(row => {
@@ -309,10 +347,16 @@
 
     function updateValueHint() {
         const percent = document.getElementById('scheduleType').value === 'Percentage';
-        document.getElementById('scheduleValue').max = percent ? 99 : '';
+        const input = document.getElementById('scheduleValue');
+
+        input.min = '1';
+        input.max = percent ? '99' : '';
+        input.step = percent ? '0.01' : '1';
+        input.inputMode = percent ? 'decimal' : 'numeric';
+
         document.getElementById('scheduleValueHint').textContent = percent
             ? 'Phần trăm giảm, từ 1 đến 99(%).'
-            : 'Giá bán cụ thể (đ), nên nhỏ hơn giá gốc.';
+            : 'Giá bán cụ thể phải là số nguyên VNĐ và nhỏ hơn giá gốc.';
     }
 
     function resetScheduleForm() {
@@ -724,7 +768,12 @@
         document.querySelectorAll('.base-price-cell').forEach(cell => cell.addEventListener('click', () => {
             if (cell.querySelector('.inline-price-editor')) return;
             const original = cell.innerHTML;
-            cell.innerHTML = `<div class="input-group input-group-sm inline-price-editor"><input type="number" min="1" step="0.01" class="form-control form-control-sm" value="${cell.dataset.price}"><span class="input-group-text">đ</span></div><div class="inline-price-error d-none"></div>`;
+            cell.innerHTML =
+                `<div class="input-group input-group-sm inline-price-editor">` +
+                `<input type="number" min="1" step="1" inputmode="numeric" ` +
+                `class="form-control form-control-sm" value="${cell.dataset.price}">` +
+                `<span class="input-group-text">đ</span></div>` +
+                `<div class="inline-price-error d-none"></div>`;
             const input = cell.querySelector('input');
             input.focus();
             input.select();
@@ -738,7 +787,11 @@
                 if (e.key === 'Escape') { cancel(); return; }
                 if (e.key !== 'Enter') return;
                 const newPrice = Number(input.value);
-                if (!newPrice || newPrice <= 0) { showError('Giá phải lớn hơn 0.'); return; }
+
+                if (!isWholeVnd(newPrice)) {
+                    showError('Giá phải là số nguyên dương theo đơn vị VNĐ.');
+                    return;
+                }
                 input.disabled = true;
                 try {
                     const body = new URLSearchParams({

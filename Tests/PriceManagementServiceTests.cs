@@ -359,6 +359,129 @@ public class PriceManagementServiceTests
         Assert.Contains("không hợp lệ", result.Error);
     }
 
+    [Fact]
+    public async Task UpdateBasePrice_rejects_fractional_vnd()
+    {
+        await using var context = CreateContext();
+        context.Products.Add(new Product
+        {
+            Id = 1,
+            Name = "Táo",
+            Slug = "tao-fractional-base",
+            Price = 100_000,
+            PriceRevision = 1
+        });
+        await context.SaveChangesAsync();
+
+        var result = await CreateService(context).UpdateBasePriceAsync(
+            new UpdateBasePriceRequest
+            {
+                ProductId = 1,
+                NewPrice = 100_000.5m,
+                ExpectedBasePrice = 100_000,
+                ExpectedRevision = 1
+            },
+            adminId: 7);
+
+        Assert.False(result.Success);
+        Assert.Contains("số nguyên", result.Error);
+        Assert.Equal(100_000, context.Products.Find(1)!.Price);
+    }
+
+    [Fact]
+    public async Task CreateSchedule_rejects_fractional_fixed_vnd()
+    {
+        await using var context = CreateContext();
+        context.Products.Add(new Product
+        {
+            Id = 1,
+            Name = "Táo",
+            Slug = "tao-fractional-schedule",
+            Price = 100_000
+        });
+        await context.SaveChangesAsync();
+
+        var result = await CreateService(context).CreateScheduleAsync(
+            new SavePriceScheduleRequest
+            {
+                ProductId = 1,
+                DiscountType = DiscountType.FixedPrice,
+                Value = 80_000.5m,
+                StartsAt = Now.AddHours(1),
+                EndsAt = Now.AddHours(2)
+            },
+            adminId: 7);
+
+        Assert.False(result.Success);
+        Assert.Contains("số nguyên", result.Error);
+        Assert.Empty(context.PriceSchedules);
+    }
+
+    [Fact]
+    public async Task Bulk_fixed_amount_rejects_fractional_vnd_and_updates_nothing()
+    {
+        await using var context = CreateContext();
+        context.Products.Add(new Product
+        {
+            Id = 1,
+            Name = "Táo",
+            Slug = "tao-fractional-bulk",
+            Price = 100_000,
+            PriceRevision = 1
+        });
+        await context.SaveChangesAsync();
+
+        var result = await CreateService(context).BulkUpdateBasePricesAsync(
+            new BulkPriceUpdateRequest
+            {
+                AdjustmentType = PriceAdjustmentType.Amount,
+                Direction = PriceAdjustmentDirection.Increase,
+                Value = 1_000.5m,
+                Targets =
+                {
+                    new BulkPriceTargetRequest
+                    {
+                        ProductId = 1,
+                        ExpectedBasePrice = 100_000,
+                        ExpectedRevision = 1
+                    }
+                }
+            },
+            adminId: 7);
+
+        Assert.False(result.Success);
+        Assert.Contains("số nguyên", result.Error);
+        Assert.Equal(100_000, context.Products.Find(1)!.Price);
+    }
+
+    [Fact]
+    public async Task CreateSchedule_accepts_decimal_percentage_inside_range()
+    {
+        await using var context = CreateContext();
+        context.Products.Add(new Product
+        {
+            Id = 1,
+            Name = "Táo",
+            Slug = "tao-decimal-percent",
+            Price = 100_000
+        });
+        await context.SaveChangesAsync();
+
+        var result = await CreateService(context).CreateScheduleAsync(
+            new SavePriceScheduleRequest
+            {
+                ProductId = 1,
+                DiscountType = DiscountType.Percentage,
+                Value = 10.5m,
+                StartsAt = Now.AddHours(1),
+                EndsAt = Now.AddHours(2)
+            },
+            adminId: 7);
+
+        Assert.True(result.Success);
+        Assert.Equal(10.5m, context.PriceSchedules.Single().Value);
+    }
+
     private static ApplicationDbContext CreateContext() => new(
         new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
