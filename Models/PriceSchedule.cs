@@ -54,7 +54,7 @@ public class PriceSchedule
     {
         if (IsCancelled)
         {
-            return CancelledAt.HasValue && CancelledAt.Value > StartsAt
+            return CancelledAt.HasValue && CancelledAt.Value >= StartsAt
                 ? PriceScheduleStatus.StoppedEarly
                 : PriceScheduleStatus.Cancelled;
         }

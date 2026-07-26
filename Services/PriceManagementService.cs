@@ -269,7 +269,8 @@ public sealed class PriceManagementService : IPriceManagementService
             if (request.ExpectedRevision <= 0 || schedule.Revision != request.ExpectedRevision)
                 return PriceManagementResult.Fail("Lịch giá đã thay đổi bởi người khác. Vui lòng tải lại trang.");
 
-            var status = schedule.GetStatus(_timeProvider.GetUtcNow());
+            var now = _timeProvider.GetUtcNow();
+            var status = schedule.GetStatus(now);
             if (status is PriceScheduleStatus.Ended or PriceScheduleStatus.Cancelled or PriceScheduleStatus.StoppedEarly)
                 return PriceManagementResult.Fail("Lịch đã kết thúc hoặc đã dừng.");
 
@@ -277,7 +278,6 @@ public sealed class PriceManagementService : IPriceManagementService
             if (reason?.Length > 500)
                 return PriceManagementResult.Fail("Lý do hủy không được vượt quá 500 ký tự.");
 
-            var now = _timeProvider.GetUtcNow();
             schedule.IsCancelled = true;
             schedule.CancelledAt = now;
             schedule.CancelledByAdminId = adminId;

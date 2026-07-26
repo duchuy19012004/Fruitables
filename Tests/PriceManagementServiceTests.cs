@@ -482,6 +482,78 @@ public class PriceManagementServiceTests
         Assert.Equal(10.5m, context.PriceSchedules.Single().Value);
     }
 
+    [Fact]
+    public void GetStatus_cancelled_exactly_at_start_is_stopped_early()
+    {
+        var schedule = new PriceSchedule
+        {
+            StartsAt = Now,
+            EndsAt = Now.AddHours(2),
+            IsCancelled = true,
+            CancelledAt = Now
+        };
+
+        Assert.Equal(
+            PriceScheduleStatus.StoppedEarly,
+            schedule.GetStatus(Now));
+    }
+
+    [Fact]
+    public async Task CancelSchedule_uses_one_clock_value_for_status_and_metadata()
+    {
+        await using var context = CreateContext();
+        context.Users.Add(new User
+        {
+            Id = 7,
+            Name = "Admin",
+            Email = "admin-clock@example.com",
+            Password = "x"
+        });
+        context.Products.Add(new Product
+        {
+            Id = 1,
+            Name = "Táo",
+            Slug = "tao-clock",
+            Price = 100_000
+        });
+        context.PriceSchedules.Add(new PriceSchedule
+        {
+            Id = 8,
+            ProductId = 1,
+            DiscountType = DiscountType.Percentage,
+            Value = 10,
+            StartsAt = Now,
+            EndsAt = Now.AddHours(2),
+            Revision = 1
+        });
+        await context.SaveChangesAsync();
+
+        var clock = new SequenceTimeProvider(
+            Now,
+            Now.AddMilliseconds(1));
+
+        var service = new PriceManagementService(
+            new UnitOfWork(context),
+            clock);
+
+        var result = await service.CancelScheduleAsync(
+            8,
+            new CancelPriceScheduleRequest
+            {
+                ExpectedRevision = 1,
+                Reason = "Dừng tại thời điểm bắt đầu"
+            },
+            adminId: 7);
+
+        var schedule = context.PriceSchedules.Find(8)!;
+
+        Assert.True(result.Success);
+        Assert.Equal(Now, schedule.CancelledAt);
+        Assert.Equal(
+            PriceScheduleStatus.StoppedEarly,
+            schedule.GetStatus(Now));
+    }
+
     private static ApplicationDbContext CreateContext() => new(
         new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
@@ -492,5 +564,18 @@ public class PriceManagementServiceTests
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private sealed class SequenceTimeProvider(
+        params DateTimeOffset[] values) : TimeProvider
+    {
+        private int _index;
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            var selected = values[Math.Min(_index, values.Length - 1)];
+            _index++;
+            return selected;
+        }
     }
 }
