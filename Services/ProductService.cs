@@ -10,13 +10,13 @@ public class ProductService : IProductService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly TimeProvider _timeProvider;
-    private readonly IProductPricingService? _pricing;
+    private readonly IProductPricingService _pricing;
 
-    public ProductService(IUnitOfWork unitOfWork, TimeProvider? timeProvider = null,
-        IProductPricingService? pricing = null)
+    public ProductService(IUnitOfWork unitOfWork, TimeProvider timeProvider,
+        IProductPricingService pricing)
     {
         _unitOfWork = unitOfWork;
-        _timeProvider = timeProvider ?? TimeProvider.System;
+        _timeProvider = timeProvider;
         _pricing = pricing;
     }
 
@@ -88,9 +88,6 @@ public class ProductService : IProductService
         if (!string.IsNullOrEmpty(search))
             catalogQuery = catalogQuery.Where(p => p.Name.Contains(search) || p.Description!.Contains(search));
 
-        if (_pricing == null)
-            return await GetShopViewModelInMemoryAsync(catalogQuery, categoryId, search, minPrice, maxPrice, sortBy, page, pageSize);
-
         var priced = _pricing.ProjectCatalogPrices(catalogQuery);
         if (minPrice.HasValue) priced = priced.Where(p => p.MaxPrice >= minPrice.Value);
         if (maxPrice.HasValue) priced = priced.Where(p => p.MinPrice <= maxPrice.Value);
@@ -131,33 +128,6 @@ public class ProductService : IProductService
             CurrentPage = page,
             TotalPages = totalPages,
             PageSize = pageSize
-        };
-    }
-
-    private async Task<ShopViewModel> GetShopViewModelInMemoryAsync(IQueryable<Product> catalogQuery,
-        int? categoryId, string? search, decimal? minPrice, decimal? maxPrice, string? sortBy, int page, int pageSize)
-    {
-        var products = await PricedQuery().Where(p => catalogQuery.Select(x => x.Id).Contains(p.Id))
-            .Include(p => p.Category).Include(p => p.Images).ToListAsync();
-        ApplyPricing(products);
-        IEnumerable<Product> filtered = products;
-        if (minPrice.HasValue) filtered = filtered.Where(p => p.DisplayMaxPrice >= minPrice.Value);
-        if (maxPrice.HasValue) filtered = filtered.Where(p => p.DisplayMinPrice <= maxPrice.Value);
-        filtered = sortBy switch
-        {
-            "price_asc" => filtered.OrderBy(p => p.DisplayMinPrice),
-            "price_desc" => filtered.OrderByDescending(p => p.DisplayMaxPrice),
-            "name" => filtered.OrderBy(p => p.Name),
-            "newest" => filtered.OrderByDescending(p => p.CreatedAt),
-            _ => filtered.OrderByDescending(p => p.IsFeatured).ThenByDescending(p => p.CreatedAt)
-        };
-        var all = filtered.ToList();
-        var categories = await _unitOfWork.Categories.Query().Include(c => c.Products.Where(p => p.IsActive)).ToListAsync();
-        return new ShopViewModel
-        {
-            Products = all.Skip((page - 1) * pageSize).Take(pageSize).ToList(), Categories = categories,
-            SelectedCategoryId = categoryId, SearchTerm = search, MinPrice = minPrice, MaxPrice = maxPrice,
-            SortBy = sortBy, CurrentPage = page, TotalPages = (int)Math.Ceiling(all.Count / (double)pageSize), PageSize = pageSize
         };
     }
 

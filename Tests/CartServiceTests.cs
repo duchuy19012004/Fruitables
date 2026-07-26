@@ -12,6 +12,20 @@ namespace Fruitables.Tests;
 
 public class CartServiceTests
 {
+    private static IProductPricingService CreateDefaultPricing()
+    {
+        var pricing = new Mock<IProductPricingService>();
+        pricing.Setup(service => service.GetQuoteAsync(
+                It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<DateTimeOffset?>()))
+            .ReturnsAsync((int productId, int? variantId, DateTimeOffset? _) =>
+                new PriceQuote(productId, variantId, 100_000, 100_000, null));
+        pricing.Setup(service => service.GetQuotesAsync(
+                It.IsAny<IEnumerable<PriceTargetKey>>(), It.IsAny<DateTimeOffset?>()))
+            .ReturnsAsync((IEnumerable<PriceTargetKey> targets, DateTimeOffset? _) =>
+                targets.ToDictionary(t => t, t => new PriceQuote(t.ProductId, t.ProductVariantId, 100_000, 100_000, null)));
+        return pricing.Object;
+    }
+
     private static DbContextOptions<ApplicationDbContext> CreateInMemoryOptions()
     {
         return new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -61,7 +75,7 @@ public class CartServiceTests
 
         var couponServiceMock = new Mock<ICouponService>();
         var unitOfWork = new UnitOfWork(context);
-        var cartService = new CartService(unitOfWork, couponServiceMock.Object);
+        var cartService = new CartService(unitOfWork, couponServiceMock.Object, CreateDefaultPricing());
 
         var result = await cartService.GetCartAsync("test-session");
 
@@ -84,7 +98,7 @@ public class CartServiceTests
 
         var couponServiceMock = new Mock<ICouponService>();
         var unitOfWork = new UnitOfWork(context);
-        var cartService = new CartService(unitOfWork, couponServiceMock.Object);
+        var cartService = new CartService(unitOfWork, couponServiceMock.Object, CreateDefaultPricing());
 
         var result = await cartService.GetCartAsync("empty-session");
 
@@ -138,7 +152,7 @@ public class CartServiceTests
 
         var couponServiceMock = new Mock<ICouponService>();
         var unitOfWork = new UnitOfWork(context);
-        var cartService = new CartService(unitOfWork, couponServiceMock.Object);
+        var cartService = new CartService(unitOfWork, couponServiceMock.Object, CreateDefaultPricing());
 
         var result = await cartService.GetCartAsync("multi-session");
 

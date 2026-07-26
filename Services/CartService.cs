@@ -12,9 +12,9 @@ public class CartService : ICartService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICouponService _couponService;
-    private readonly IProductPricingService? _pricing;
+    private readonly IProductPricingService _pricing;
 
-    public CartService(IUnitOfWork unitOfWork, ICouponService couponService, IProductPricingService? pricing = null)
+    public CartService(IUnitOfWork unitOfWork, ICouponService couponService, IProductPricingService pricing)
     {
         _unitOfWork    = unitOfWork;
         _couponService = couponService;
@@ -123,9 +123,7 @@ public class CartService : ICartService
                 ProductId = productId,
                 ProductVariantId = variantId,
                 Quantity  = Math.Min(quantity, variant?.StockQuantity ?? product.StockQuantity),
-                Price     = _pricing == null
-                    ? (variant?.SalePrice ?? variant?.Price ?? product.SalePrice ?? product.Price)
-                    : (await _pricing.GetQuoteAsync(productId, variantId))?.EffectivePrice ?? product.Price
+                Price     = (await _pricing.GetQuoteAsync(productId, variantId))?.EffectivePrice ?? product.Price
             };
             await _unitOfWork.CartItems.AddAsync(cartItem);
         }
@@ -243,7 +241,7 @@ public class CartService : ICartService
 
     private async Task<bool> RefreshItemPricesAsync(List<CartItem> items)
     {
-        if (_pricing == null || items.Count == 0) return false;
+        if (items.Count == 0) return false;
         var targets = items.Select(item => new PriceTargetKey(item.ProductId, item.ProductVariantId)).Distinct().ToList();
         var quotes = await _pricing.GetQuotesAsync(targets);
         var changed = false;
