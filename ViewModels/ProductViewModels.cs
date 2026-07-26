@@ -50,7 +50,7 @@ public class ProductFormRequest
 public class CreateProductRequest : ProductFormRequest
 {
     [Required(ErrorMessage = "Giá không được để trống")]
-    [Range(0, double.MaxValue, ErrorMessage = "Giá phải lớn hơn hoặc bằng 0")]
+    [Range(1, double.MaxValue, ErrorMessage = "Giá phải lớn hơn 0")]
     public decimal Price { get; set; }
 }
 
@@ -90,7 +90,7 @@ public class CreateVariantRequest : UpdateVariantRequest
     public int ProductId { get; set; }
 
     [Required(ErrorMessage = "Giá không được để trống")]
-    [Range(0, double.MaxValue, ErrorMessage = "Giá phải lớn hơn hoặc bằng 0")]
+    [Range(1, double.MaxValue, ErrorMessage = "Giá phải lớn hơn 0")]
     public decimal Price { get; set; }
 }
 

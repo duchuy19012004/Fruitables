@@ -13,6 +13,64 @@ public class PriceManagementServiceTests
     private static readonly DateTimeOffset Now = new(2026, 7, 16, 2, 0, 0, TimeSpan.Zero);
 
     [Fact]
+    public async Task CreateSchedule_rejects_zero_fixed_price()
+    {
+        await using var context = CreateContext();
+        context.Products.Add(new Product { Id = 1, Name = "Táo", Slug = "tao", Price = 100_000 });
+        await context.SaveChangesAsync();
+
+        var result = await CreateService(context).CreateScheduleAsync(new SavePriceScheduleRequest
+        {
+            ProductId = 1,
+            DiscountType = DiscountType.FixedPrice,
+            Value = 0,
+            StartsAt = Now.AddHours(1),
+            EndsAt = Now.AddHours(2)
+        }, 7);
+
+        Assert.False(result.Success);
+    }
+
+    [Fact]
+    public async Task CreateSchedule_rejects_one_hundred_percent_discount()
+    {
+        await using var context = CreateContext();
+        context.Products.Add(new Product { Id = 1, Name = "Táo", Slug = "tao", Price = 100_000 });
+        await context.SaveChangesAsync();
+
+        var result = await CreateService(context).CreateScheduleAsync(new SavePriceScheduleRequest
+        {
+            ProductId = 1,
+            DiscountType = DiscountType.Percentage,
+            Value = 100,
+            StartsAt = Now.AddHours(1),
+            EndsAt = Now.AddHours(2)
+        }, 7);
+
+        Assert.False(result.Success);
+    }
+
+    [Fact]
+    public async Task CreateSchedule_rejects_schedule_already_ended()
+    {
+        await using var context = CreateContext();
+        context.Products.Add(new Product { Id = 1, Name = "Táo", Slug = "tao", Price = 100_000 });
+        await context.SaveChangesAsync();
+
+        var result = await CreateService(context).CreateScheduleAsync(new SavePriceScheduleRequest
+        {
+            ProductId = 1,
+            DiscountType = DiscountType.Percentage,
+            Value = 10,
+            StartsAt = Now.AddHours(-2),
+            EndsAt = Now.AddHours(-1)
+        }, 7);
+
+        Assert.False(result.Success);
+        Assert.Contains("đã kết thúc", result.Error);
+    }
+
+    [Fact]
     public async Task UpdateBasePrice_rejects_stale_price_snapshot()
     {
         await using var context = CreateContext();

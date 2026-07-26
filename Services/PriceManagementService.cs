@@ -502,12 +502,23 @@ public sealed class PriceManagementService : IPriceManagementService
 
         if (request.EndsAt.HasValue && request.StartsAt >= request.EndsAt.Value)
             return "Thời gian kết thúc phải sau thời gian bắt đầu.";
+
+        var now = _timeProvider.GetUtcNow();
+        if (request.EndsAt.HasValue && request.EndsAt.Value.ToUniversalTime() <= now)
+            return "Không thể tạo hoặc cập nhật một lịch đã kết thúc.";
+
         if (!Enum.IsDefined(request.DiscountType))
             return "Kiểu giảm giá không hợp lệ.";
-        if (request.DiscountType == DiscountType.FixedPrice && (request.Value < 0 || request.Value >= basePrice))
-            return "Giá giảm cố định phải nhỏ hơn giá gốc và không được âm.";
-        if (request.DiscountType == DiscountType.Percentage && (request.Value <= 0 || request.Value > 100))
-            return "Phần trăm giảm phải lớn hơn 0 và không quá 100.";
+        if (request.DiscountType == DiscountType.FixedPrice &&
+            (request.Value <= 0 || request.Value >= basePrice))
+        {
+            return "Giá giảm cố định phải lớn hơn 0 và nhỏ hơn giá gốc.";
+        }
+        if (request.DiscountType == DiscountType.Percentage &&
+            (request.Value < 1 || request.Value > 99))
+        {
+            return "Phần trăm giảm phải từ 1 đến 99.";
+        }
 
         var start = request.StartsAt.ToUniversalTime();
         var end = request.EndsAt?.ToUniversalTime();

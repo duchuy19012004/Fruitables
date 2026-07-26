@@ -36,15 +36,21 @@ public class PriceController : Controller
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> CreateSchedule(SavePriceScheduleRequest request)
     {
+        if (!TryGetCurrentAdminId(out var adminId))
+            return Unauthorized();
+
         NormalizeVietnamTime(request);
-        return ResultResponse(await _prices.CreateScheduleAsync(request, CurrentAdminId()));
+        return ResultResponse(await _prices.CreateScheduleAsync(request, adminId));
     }
 
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> UpdateSchedule(int id, SavePriceScheduleRequest request)
     {
+        if (!TryGetCurrentAdminId(out var adminId))
+            return Unauthorized();
+
         NormalizeVietnamTime(request);
-        return ResultResponse(await _prices.UpdateScheduleAsync(id, request, CurrentAdminId()));
+        return ResultResponse(await _prices.UpdateScheduleAsync(id, request, adminId));
     }
 
     private bool TryGetCurrentAdminId(out int adminId) =>
@@ -76,8 +82,6 @@ public class PriceController : Controller
 
         return ResultResponse(await _prices.BulkUpdateBasePricesAsync(request, adminId));
     }
-
-    private int CurrentAdminId() => int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : 0;
 
     private static void NormalizeVietnamTime(SavePriceScheduleRequest request)
     {

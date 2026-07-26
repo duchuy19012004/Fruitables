@@ -153,8 +153,8 @@ public class ProductAdminService : IProductAdminService
         if (string.IsNullOrWhiteSpace(request.Name))
             return ProductResult.Fail(ProductErrorType.ValidationError, "Tên sản phẩm không được để trống");
 
-        if (request.Price < 0)
-            return ProductResult.Fail(ProductErrorType.ValidationError, "Giá sản phẩm không được âm");
+        if (request.Price <= 0)
+            return ProductResult.Fail(ProductErrorType.ValidationError, "Giá phải lớn hơn 0");
 
         // Generate slug if not provided
         var slug = string.IsNullOrWhiteSpace(request.Slug) 
@@ -569,8 +569,8 @@ public class ProductAdminService : IProductAdminService
             return ProductResult.Fail(ProductErrorType.ValidationError, "Hãy hủy các lịch giá cấp sản phẩm đang chạy hoặc sắp tới trước khi kích hoạt biến thể.");
 
         // Validation
-        if (request.Price < 0)
-            return ProductResult.Fail(ProductErrorType.ValidationError, "Giá variant không được âm");
+        if (request.Price <= 0)
+            return ProductResult.Fail(ProductErrorType.ValidationError, "Giá phải lớn hơn 0");
 
         if (request.StockQuantity < 0)
             return ProductResult.Fail(ProductErrorType.ValidationError, "Số lượng tồn kho không được âm");
