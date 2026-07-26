@@ -629,6 +629,14 @@ public class ProductAdminService : IProductAdminService
 
         var oldStock = variant.StockQuantity;
         var wasActive = variant.IsActive;
+
+        if (variant.IsActive && !request.IsActive)
+        {
+            var transitionError = await PrepareLastVariantDeactivationAsync(variant);
+            if (transitionError != null)
+                return ProductResult.Fail(ProductErrorType.ValidationError, transitionError);
+        }
+
         variant.SKU = request.SKU;
         variant.Name = request.Name;
         variant.StockQuantity = request.StockQuantity;
@@ -655,12 +663,20 @@ public class ProductAdminService : IProductAdminService
 
     public async Task<ProductResult> DeleteVariantAsync(int variantId)
     {
+        await using var transaction = await BeginVariantWriteAsync();
         var variants = await _unitOfWork.ProductVariants
             .FindAsync(pv => pv.Id == variantId);
         var variant = variants.FirstOrDefault();
 
         if (variant == null)
             return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy variant với ID {variantId}");
+
+        if (variant.IsActive)
+        {
+            var transitionError = await PrepareLastVariantDeactivationAsync(variant);
+            if (transitionError != null)
+                return ProductResult.Fail(ProductErrorType.ValidationError, transitionError);
+        }
 
         var productId = variant.ProductId;
         var wasActive = variant.IsActive;
@@ -672,6 +688,7 @@ public class ProductAdminService : IProductAdminService
         else
             _unitOfWork.ProductVariants.Remove(variant);
         await _unitOfWork.SaveChangesAsync();
+        if (transaction != null) await transaction.CommitAsync();
         await TryIndexProductAsync(productId);
         if (_notifier != null && wasActive)
         {
@@ -697,6 +714,38 @@ public class ProductAdminService : IProductAdminService
         return _unitOfWork.PriceSchedules.Query().AllAsync(s =>
             s.ProductId != productId || s.ProductVariantId != null || s.IsCancelled ||
             (s.EndsAt.HasValue && s.EndsAt <= now));
+    }
+
+    private async Task<string?> PrepareLastVariantDeactivationAsync(ProductVariant variant)
+    {
+        if (!variant.IsActive)
+            return null;
+
+        var activeVariantCount = await _unitOfWork.ProductVariants.Query()
+            .CountAsync(item => item.ProductId == variant.ProductId && item.IsActive);
+        if (activeVariantCount != 1)
+            return null;
+
+        var now = DateTimeOffset.UtcNow;
+        var hasActiveOrUpcomingVariantSchedule = await _unitOfWork.PriceSchedules.Query()
+            .AnyAsync(schedule =>
+                schedule.ProductId == variant.ProductId &&
+                schedule.ProductVariantId != null &&
+                !schedule.IsCancelled &&
+                (!schedule.EndsAt.HasValue || schedule.EndsAt > now));
+
+        if (hasActiveOrUpcomingVariantSchedule)
+            return "Hãy hủy hoặc kết thúc các lịch giá biến thể đang chạy hoặc sắp tới trước khi tắt biến thể cuối cùng.";
+
+        var product = await _unitOfWork.Products.GetByIdAsync(variant.ProductId);
+        if (product == null)
+            return "Không tìm thấy sản phẩm chứa biến thể.";
+
+        product.Price = variant.Price;
+        product.StockQuantity = variant.StockQuantity;
+        product.PriceRevision++;
+        product.UpdatedAt = DateTime.UtcNow;
+        return null;
     }
 
     private async Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction?> BeginVariantWriteAsync()
