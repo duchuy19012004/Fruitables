@@ -1,6 +1,7 @@
 using Fruitables.Models;
 using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Interfaces;
+using Fruitables.Services.Pricing;
 using Fruitables.ViewModels;
 using Microsoft.EntityFrameworkCore;
 
@@ -238,17 +239,25 @@ public sealed class PriceManagementService : IPriceManagementService
 
     public async Task<PriceManagementResult> CancelScheduleAsync(int id, int adminId)
     {
-        var schedule = await _unitOfWork.PriceSchedules.GetByIdAsync(id);
-        if (schedule == null) return PriceManagementResult.Fail("Không tìm thấy lịch giá.");
-        var status = schedule.GetStatus(_timeProvider.GetUtcNow());
-        if (status is PriceScheduleStatus.Ended or PriceScheduleStatus.Cancelled)
-            return PriceManagementResult.Fail("Lịch đã kết thúc hoặc đã hủy.");
-        schedule.IsCancelled = true;
-        schedule.UpdatedAt = _timeProvider.GetUtcNow();
-        await AddLogAsync(schedule.ProductId, adminId, "PriceScheduleCancel", $"Hủy lịch giá #{id}");
-        await _unitOfWork.SaveChangesAsync();
-        await PublishPriceChangeAsync(schedule.ProductId, schedule.ProductVariantId);
-        return PriceManagementResult.Ok();
+        int productId = 0;
+        int? variantId = null;
+        var result = await RunSerializedWriteAsync(async () =>
+        {
+            var schedule = await _unitOfWork.PriceSchedules.GetByIdAsync(id);
+            if (schedule == null) return PriceManagementResult.Fail("Không tìm thấy lịch giá.");
+            var status = schedule.GetStatus(_timeProvider.GetUtcNow());
+            if (status is PriceScheduleStatus.Ended or PriceScheduleStatus.Cancelled)
+                return PriceManagementResult.Fail("Lịch đã kết thúc hoặc đã hủy.");
+            schedule.IsCancelled = true;
+            schedule.UpdatedAt = _timeProvider.GetUtcNow();
+            productId = schedule.ProductId;
+            variantId = schedule.ProductVariantId;
+            await AddLogAsync(schedule.ProductId, adminId, "PriceScheduleCancel", $"Hủy lịch giá #{id}");
+            await _unitOfWork.SaveChangesAsync();
+            return PriceManagementResult.Ok();
+        });
+        if (result.Success) await PublishPriceChangeAsync(productId, variantId);
+        return result;
     }
 
     public async Task<PriceManagementResult> UpdateBasePriceAsync(PriceTargetKey target, decimal newPrice, int adminId)
@@ -414,15 +423,28 @@ public sealed class PriceManagementService : IPriceManagementService
         IEnumerable<PriceSchedule> schedules, DateTimeOffset now)
     {
         var list = schedules.Where(s => !s.IsCancelled).ToList();
-        var quote = ProductPricingService.CalculateQuote(basePrice, list, now);
+        var quote = PriceCalculator.CalculateQuote(basePrice, list, now);
+        var currentSchedule = quote.ScheduleId.HasValue
+            ? list.First(schedule => schedule.Id == quote.ScheduleId.Value)
+            : null;
+
         return new PriceManagementRow
         {
-            ProductId = product.Id, ProductVariantId = variant?.Id, ProductName = product.Name,
-            VariantName = variant?.Name, SKU = variant?.SKU, BasePrice = basePrice,
-            EffectivePrice = quote.EffectivePrice, StockQuantity = stock,
-            CurrentSchedule = list.FirstOrDefault(s => s.IsActiveAt(now)),
-            UpcomingSchedule = list.Where(s => s.StartsAt > now).OrderBy(s => s.StartsAt).FirstOrDefault(),
-            Schedules = schedules.OrderBy(s => s.StartsAt).ToList()
+            ProductId = product.Id,
+            ProductVariantId = variant?.Id,
+            ProductName = product.Name,
+            VariantName = variant?.Name,
+            SKU = variant?.SKU,
+            BasePrice = basePrice,
+            EffectivePrice = quote.EffectivePrice,
+            StockQuantity = stock,
+            CurrentSchedule = currentSchedule,
+            UpcomingSchedule = list
+                .Where(schedule => schedule.StartsAt > now)
+                .OrderBy(schedule => schedule.StartsAt)
+                .ThenBy(schedule => schedule.Id)
+                .FirstOrDefault(),
+            Schedules = schedules.OrderBy(schedule => schedule.StartsAt).ThenBy(schedule => schedule.Id).ToList()
         };
     }
 }

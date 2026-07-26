@@ -1,6 +1,7 @@
 using Fruitables.Models;
 using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Interfaces;
+using Fruitables.Services.Pricing;
 using Fruitables.ViewModels;
 using Microsoft.EntityFrameworkCore;
 
@@ -102,26 +103,12 @@ public sealed class ProductPricingService : IProductPricingService
         return ComputeEffectivePrice(product.Price, product.PriceSchedules, instant);
     }
 
-    private static decimal ComputeEffectivePrice(decimal basePrice, IEnumerable<PriceSchedule> schedules, DateTimeOffset instant)
-    {
-        var price = schedules
-            .Where(schedule => !schedule.IsCancelled && schedule.StartsAt <= instant &&
-                (!schedule.EndsAt.HasValue || instant < schedule.EndsAt.Value))
-            .Select(schedule => schedule.DiscountType == DiscountType.FixedPrice
-                ? (decimal?)schedule.Value
-                : Math.Round(basePrice * (100m - schedule.Value) / 100m, 0))
-            .FirstOrDefault();
-        return price ?? basePrice;
-    }
+    private static decimal ComputeEffectivePrice(
+        decimal basePrice,
+        IEnumerable<PriceSchedule> schedules,
+        DateTimeOffset instant) =>
+        PriceCalculator.CalculateQuote(basePrice, schedules, instant).EffectivePrice;
 
-    public static PriceQuote CalculateQuote(decimal basePrice, IEnumerable<PriceSchedule> schedules, DateTimeOffset instant)
-    {
-        var active = schedules.Where(s => s.IsActiveAt(instant)).OrderByDescending(s => s.StartsAt).FirstOrDefault();
-        if (active == null) return new PriceQuote(0, null, basePrice, basePrice, null);
-
-        var effectivePrice = active.DiscountType == DiscountType.FixedPrice
-            ? active.Value
-            : Math.Round(basePrice * (100m - active.Value) / 100m, 0, MidpointRounding.AwayFromZero);
-        return new PriceQuote(0, null, basePrice, effectivePrice, active.Id);
-    }
+    public static PriceQuote CalculateQuote(decimal basePrice, IEnumerable<PriceSchedule> schedules, DateTimeOffset instant) =>
+        PriceCalculator.CalculateQuote(basePrice, schedules, instant);
 }

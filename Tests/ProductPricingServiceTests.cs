@@ -2,6 +2,7 @@ using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Repositories;
 using Fruitables.Services;
+using Fruitables.Services.Pricing;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
@@ -84,19 +85,148 @@ public class ProductPricingServiceTests
     }
 
     [Fact]
-    public void Catalog_projection_translates_to_one_sql_query_with_scheduled_prices()
+    public async Task Catalog_projection_computes_scheduled_prices_for_products_and_variants()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseSqlServer("Server=(localdb)\\mssqllocaldb;Database=FruitablesProjectionTest;Trusted_Connection=True")
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
-        using var context = new ApplicationDbContext(options);
+        await using var context = new ApplicationDbContext(options);
+        context.Products.AddRange(
+            new Product
+            {
+                Id = 1,
+                Name = "Tao",
+                Slug = "tao",
+                Price = 100_000,
+                IsActive = true,
+                PriceSchedules =
+                [
+                    new PriceSchedule
+                    {
+                        ProductId = 1,
+                        DiscountType = DiscountType.FixedPrice,
+                        Value = 80_000,
+                        StartsAt = Now.AddHours(-1),
+                        EndsAt = Now.AddHours(1)
+                    }
+                ]
+            },
+            new Product
+            {
+                Id = 2,
+                Name = "Cam",
+                Slug = "cam",
+                Price = 50_000,
+                IsActive = true,
+                Variants =
+                [
+                    new ProductVariant
+                    {
+                        Id = 3,
+                        ProductId = 2,
+                        Name = "Hop 1kg",
+                        SKU = "CAM-1",
+                        Price = 120_000,
+                        IsActive = true,
+                        PriceSchedules =
+                        [
+                            new PriceSchedule
+                            {
+                                ProductId = 2,
+                                ProductVariantId = 3,
+                                DiscountType = DiscountType.Percentage,
+                                Value = 25,
+                                StartsAt = Now.AddHours(-1),
+                                EndsAt = Now.AddHours(1)
+                            }
+                        ]
+                    },
+                    new ProductVariant
+                    {
+                        Id = 4,
+                        ProductId = 2,
+                        Name = "Hop 2kg",
+                        SKU = "CAM-2",
+                        Price = 200_000,
+                        IsActive = true
+                    }
+                ]
+            });
+        await context.SaveChangesAsync();
+
         var service = new ProductPricingService(new UnitOfWork(context), new FixedTimeProvider(Now));
 
-        var sql = service.ProjectCatalogPrices(context.Products.Where(p => p.IsActive)).ToQueryString();
+        var projections = service.ProjectCatalogPrices(context.Products.Where(p => p.IsActive))
+            .OrderBy(p => p.ProductId)
+            .ToList();
 
-        Assert.Contains("PriceSchedules", sql);
-        Assert.Contains("ProductVariants", sql);
-        Assert.DoesNotContain("SELECT *", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Collection(projections,
+            product =>
+            {
+                Assert.Equal(1, product.ProductId);
+                Assert.Equal(80_000, product.MinPrice);
+                Assert.Equal(80_000, product.MaxPrice);
+            },
+            product =>
+            {
+                Assert.Equal(2, product.ProductId);
+                Assert.Equal(90_000, product.MinPrice);
+                Assert.Equal(200_000, product.MaxPrice);
+            });
+    }
+
+    [Fact]
+    public void CalculateQuote_when_legacy_data_has_two_active_schedules_uses_latest_start_then_highest_id()
+    {
+        var schedules = new[]
+        {
+            new PriceSchedule
+            {
+                Id = 10,
+                ProductId = 1,
+                DiscountType = DiscountType.FixedPrice,
+                Value = 80_000,
+                StartsAt = Now.AddHours(-2)
+            },
+            new PriceSchedule
+            {
+                Id = 11,
+                ProductId = 1,
+                DiscountType = DiscountType.FixedPrice,
+                Value = 70_000,
+                StartsAt = Now.AddHours(-1)
+            },
+            new PriceSchedule
+            {
+                Id = 12,
+                ProductId = 1,
+                DiscountType = DiscountType.FixedPrice,
+                Value = 60_000,
+                StartsAt = Now.AddHours(-1)
+            }
+        };
+
+        var quote = PriceCalculator.CalculateQuote(100_000, schedules, Now);
+
+        Assert.Equal(60_000, quote.EffectivePrice);
+        Assert.Equal(12, quote.ScheduleId);
+    }
+
+    [Fact]
+    public void CalculateQuote_percentage_rounds_vnd_away_from_zero()
+    {
+        var schedule = new PriceSchedule
+        {
+            Id = 21,
+            ProductId = 1,
+            DiscountType = DiscountType.Percentage,
+            Value = 15,
+            StartsAt = Now.AddMinutes(-1)
+        };
+
+        var quote = PriceCalculator.CalculateQuote(99_999, new[] { schedule }, Now);
+
+        Assert.Equal(84_999, quote.EffectivePrice);
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider

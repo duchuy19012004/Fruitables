@@ -3,6 +3,7 @@ using Moq;
 using Microsoft.AspNetCore.SignalR;
 using System.Security.Claims;
 using Fruitables.Hubs;
+using Fruitables.Services.Interfaces;
 using Fruitables.Data;
 using Fruitables.Models;
 using Microsoft.EntityFrameworkCore;
@@ -37,7 +38,7 @@ namespace Fruitables.Tests
             mockContext.Setup(c => c.User).Returns(claimsPrincipal);
             mockContext.Setup(c => c.ConnectionId).Returns("conn1");
 
-            var hub = new EcommerceHub
+            var hub = new EcommerceHub(Mock.Of<IChatService>())
             {
                 Clients = mockClients.Object,
                 Groups = mockGroupManager.Object,
@@ -73,7 +74,7 @@ namespace Fruitables.Tests
             mockContext.Setup(c => c.User).Returns(claimsPrincipal);
             mockContext.Setup(c => c.ConnectionId).Returns("conn2");
 
-            var hub = new EcommerceHub
+            var hub = new EcommerceHub(Mock.Of<IChatService>())
             {
                 Clients = mockClients.Object,
                 Groups = mockGroupManager.Object,
@@ -112,7 +113,7 @@ namespace Fruitables.Tests
             mockContext.Setup(c => c.User).Returns(claimsPrincipal);
             mockContext.Setup(c => c.ConnectionId).Returns("conn3");
 
-            var hub = new EcommerceHub
+            var hub = new EcommerceHub(Mock.Of<IChatService>())
             {
                 Clients = mockClients.Object,
                 Groups = mockGroupManager.Object,
@@ -137,7 +138,7 @@ namespace Fruitables.Tests
             var mockContext = new Mock<HubCallerContext>();
             mockContext.Setup(c => c.ConnectionId).Returns("conn4");
 
-            var hub = new EcommerceHub
+            var hub = new EcommerceHub(Mock.Of<IChatService>())
             {
                 Groups = mockGroupManager.Object,
                 Context = mockContext.Object
@@ -156,7 +157,7 @@ namespace Fruitables.Tests
             mockContext.Setup(c => c.ConnectionId).Returns("conn5");
             // No User setup
 
-            var hub = new EcommerceHub
+            var hub = new EcommerceHub(Mock.Of<IChatService>())
             {
                 Groups = mockGroupManager.Object,
                 Context = mockContext.Object
@@ -171,7 +172,7 @@ namespace Fruitables.Tests
         [Fact]
         public async Task JoinOrderGroup_InvalidId_Throws()
         {
-            var hub = new EcommerceHub();
+            var hub = new EcommerceHub(Mock.Of<IChatService>());
             var options = CreateInMemoryOptions();
             using var dbContext = new ApplicationDbContext(options);
 
@@ -182,7 +183,7 @@ namespace Fruitables.Tests
         [Fact]
         public async Task JoinProductGroup_InvalidId_Throws()
         {
-            var hub = new EcommerceHub();
+            var hub = new EcommerceHub(Mock.Of<IChatService>());
 
             await Assert.ThrowsAsync<HubException>(() => hub.JoinProductGroup(0));
             await Assert.ThrowsAsync<HubException>(() => hub.JoinProductGroup(-1));
