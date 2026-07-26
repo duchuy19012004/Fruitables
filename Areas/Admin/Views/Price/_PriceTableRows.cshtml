@@ -24,10 +24,13 @@
                     type = s.DiscountType.ToString(),
                     kind = s.DiscountType == DiscountType.FixedPrice ? "fixed" : "percent",
                     value = s.Value,
+                    revision = s.Revision,
                     start = start.ToString("yyyy-MM-ddTHH:mm:ss+07:00"),
                     end = end?.ToString("yyyy-MM-ddTHH:mm:ss+07:00"),
                     startLocal = start.ToString("yyyy-MM-ddTHH:mm"),
                     endLocal = end?.ToString("yyyy-MM-ddTHH:mm") ?? "",
+                    cancelledAt = s.CancelledAt?.ToOffset(tz).ToString("yyyy-MM-ddTHH:mm:ss+07:00"),
+                    cancellationReason = s.CancellationReason,
                     status = s.GetStatus(now).ToString().ToLowerInvariant()
                 };
             });

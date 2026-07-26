@@ -104,6 +104,73 @@ public class PriceManagementServiceTests
     }
 
     [Fact]
+    public async Task UpdateSchedule_rejects_stale_revision_without_mutating_schedule()
+    {
+        await using var context = CreateContext();
+        context.Products.Add(new Product { Id = 1, Name = "Táo", Slug = "tao", Price = 100_000 });
+        context.PriceSchedules.Add(new PriceSchedule
+        {
+            Id = 4,
+            ProductId = 1,
+            DiscountType = DiscountType.Percentage,
+            Value = 10,
+            StartsAt = Now.AddHours(2),
+            EndsAt = Now.AddHours(4),
+            Revision = 3
+        });
+        await context.SaveChangesAsync();
+
+        var result = await CreateService(context).UpdateScheduleAsync(4, new SavePriceScheduleRequest
+        {
+            ProductId = 1,
+            DiscountType = DiscountType.Percentage,
+            Value = 20,
+            StartsAt = Now.AddHours(2),
+            EndsAt = Now.AddHours(4),
+            ExpectedRevision = 2
+        }, 7);
+
+        Assert.False(result.Success);
+        Assert.Contains("đã thay đổi", result.Error);
+        Assert.Equal(10, context.PriceSchedules.Find(4)!.Value);
+        Assert.Equal(3, context.PriceSchedules.Find(4)!.Revision);
+    }
+
+    [Fact]
+    public async Task Cancel_active_schedule_records_stopped_early_metadata_and_reason()
+    {
+        await using var context = CreateContext();
+        context.Users.Add(new User { Id = 7, Name = "Admin", Email = "admin@example.com", Password = "x" });
+        context.Products.Add(new Product { Id = 1, Name = "Táo", Slug = "tao", Price = 100_000 });
+        context.PriceSchedules.Add(new PriceSchedule
+        {
+            Id = 5,
+            ProductId = 1,
+            DiscountType = DiscountType.Percentage,
+            Value = 10,
+            StartsAt = Now.AddHours(-1),
+            EndsAt = Now.AddHours(2),
+            Revision = 4
+        });
+        await context.SaveChangesAsync();
+
+        var result = await CreateService(context).CancelScheduleAsync(5, new CancelPriceScheduleRequest
+        {
+            ExpectedRevision = 4,
+            Reason = "Dừng sớm do sai giá nhập"
+        }, 7);
+
+        var schedule = context.PriceSchedules.Find(5)!;
+        Assert.True(result.Success);
+        Assert.True(schedule.IsCancelled);
+        Assert.Equal(Now, schedule.CancelledAt);
+        Assert.Equal(7, schedule.CancelledByAdminId);
+        Assert.Equal("Dừng sớm do sai giá nhập", schedule.CancellationReason);
+        Assert.Equal(5, schedule.Revision);
+        Assert.Equal(PriceScheduleStatus.StoppedEarly, schedule.GetStatus(Now));
+    }
+
+    [Fact]
     public async Task Active_schedule_can_be_cancelled_and_is_kept_as_history()
     {
         await using var context = CreateContext();
@@ -115,12 +182,15 @@ public class PriceManagementServiceTests
         });
         await context.SaveChangesAsync();
 
-        var result = await CreateService(context).CancelScheduleAsync(3, 7);
+        var result = await CreateService(context).CancelScheduleAsync(3, new CancelPriceScheduleRequest
+        {
+            ExpectedRevision = 1
+        }, 7);
 
         Assert.True(result.Success);
         Assert.True(context.PriceSchedules.Find(3)!.IsCancelled);
-        Assert.Equal(PriceScheduleStatus.Cancelled, context.PriceSchedules.Find(3)!.GetStatus(Now));
-        Assert.Contains(context.ProductLogs, log => log.Action == "PriceScheduleCancel");
+        Assert.Equal(PriceScheduleStatus.StoppedEarly, context.PriceSchedules.Find(3)!.GetStatus(Now));
+        Assert.Contains(context.ProductLogs, log => log.Action == "PriceScheduleStoppedEarly");
     }
 
     [Fact]

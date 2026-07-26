@@ -188,10 +188,12 @@
     }
 
     /* ---- Hủy lịch ---- */
-    function openCancelSchedule(id, label) {
+    function openCancelSchedule(id, label, revision) {
         const form = document.getElementById('cancelScheduleForm');
         form.action = `${config.urls.cancelSchedule}/${id}`;
         document.getElementById('cancelScheduleLabel').textContent = label || 'Lịch giảm giá đã chọn';
+        document.getElementById('cancelScheduleExpectedRevision').value = revision || 0;
+        document.getElementById('cancelScheduleReason').value = '';
         new bootstrap.Modal(document.getElementById('cancelScheduleModal')).show();
     }
 
@@ -313,6 +315,7 @@
         form.reset();
         form.action = config.urls.createSchedule;
         document.getElementById('scheduleFormError').classList.add('d-none');
+        document.getElementById('scheduleExpectedRevision').value = 0;
         document.getElementById('scheduleModalTitle').innerHTML = '<i class="fas fa-calendar-plus"></i> Tạo lịch giảm giá';
         targetCombo?.clear();
         targetCombo?.setDisabled(false);
@@ -340,6 +343,7 @@
         document.getElementById('scheduleEnd').value = data.end || '';
         if (data.mode === 'edit') {
             document.getElementById('scheduleForm').action = config.urls.updateSchedule + '/' + data.id;
+            document.getElementById('scheduleExpectedRevision').value = data.revision || 0;
             document.getElementById('scheduleModalTitle').innerHTML = '<i class="fas fa-pen"></i> Sửa lịch giảm giá';
             targetCombo?.setDisabled(true);
         } else {
@@ -354,7 +358,7 @@
         document.getElementById('scheduleType')?.addEventListener('change', updateValueHint);
         document.querySelectorAll('.schedule-action').forEach(button => button.addEventListener('click', () => openSchedule(button.dataset)));
         document.querySelectorAll('.cancel-schedule-btn').forEach(btn => {
-            btn.addEventListener('click', () => openCancelSchedule(btn.dataset.id, btn.dataset.label));
+            btn.addEventListener('click', () => openCancelSchedule(btn.dataset.id, btn.dataset.label, btn.dataset.revision));
         });
         document.querySelectorAll('.schedule-create-btn').forEach(btn => {
             btn.addEventListener('click', () => openCreateScheduleFor(btn.dataset.product, btn.dataset.variant));
@@ -410,8 +414,8 @@
     }
 
     /* ---- Timeline Gantt ---- */
-    const tlStatusText = { active: 'Đang chạy', scheduled: 'Sắp chạy', ended: 'Đã kết thúc', cancelled: 'Đã hủy' };
-    const tlStatusIcon = { active: 'fa-bolt', scheduled: 'fa-clock', ended: 'fa-check', cancelled: 'fa-ban' };
+    const tlStatusText = { active: 'Đang chạy', scheduled: 'Sắp chạy', ended: 'Đã kết thúc', cancelled: 'Đã hủy trước khi chạy', stoppedearly: 'Đã dừng sớm' };
+    const tlStatusIcon = { active: 'fa-bolt', scheduled: 'fa-clock', ended: 'fa-check', cancelled: 'fa-ban', stoppedearly: 'fa-stop-circle' };
     const tlFmtDay = d => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
     const tlFmtFull = d => `${tlFmtDay(d)}/${d.getFullYear()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
     const tlValueLabel = i => (i.kind === 'fixed' || i.type === 'FixedPrice')
@@ -500,6 +504,7 @@
                 variant: item.variantId || '',
                 type: item.type,
                 value: item.value,
+                revision: item.revision,
                 start: item.startLocal,
                 end: item.endLocal || ''
             });
@@ -631,7 +636,7 @@
             actions.push(`<button type="button" class="btn-icon tl-clone-btn" data-id="${i.id}" title="Nhân bản lịch" aria-label="Nhân bản lịch"><i class="fas fa-copy"></i></button>`);
             if (canCancel) {
                 const itemLabel = label || tlValueLabel(i);
-                actions.push(`<button type="button" class="btn btn-sm btn-outline-danger btn-text-sm cancel-schedule-btn" data-id="${i.id}" data-label="${esc(itemLabel)}" title="Hủy lịch"><i class="fas fa-ban me-1"></i>Hủy</button>`);
+                actions.push(`<button type="button" class="btn btn-sm btn-outline-danger btn-text-sm cancel-schedule-btn" data-id="${i.id}" data-label="${esc(itemLabel)}" data-revision="${i.revision || 0}" title="Hủy lịch"><i class="fas fa-ban me-1"></i>Hủy</button>`);
             }
             return `<li class="tl-item" data-id="${i.id}" tabindex="0">
             <span class="tl-item-status ${i.status}"><i class="fas ${tlStatusIcon[i.status] || 'fa-circle'}"></i>${esc(tlStatusText[i.status] || i.status)}</span>
@@ -673,7 +678,8 @@
         wrap.querySelectorAll('.cancel-schedule-btn').forEach(btn => {
             btn.addEventListener('click', e => {
                 e.stopPropagation();
-                openCancelSchedule(btn.dataset.id, btn.dataset.label || label);
+                const item = items.find(x => String(x.id) === String(btn.dataset.id));
+                openCancelSchedule(btn.dataset.id, btn.dataset.label || label, item?.revision);
             });
         });
     }

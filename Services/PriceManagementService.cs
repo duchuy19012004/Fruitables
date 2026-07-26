@@ -122,15 +122,21 @@ public sealed class PriceManagementService : IPriceManagementService
         // Đếm theo trạng thái (1 query projection, đếm in-memory). Thứ tự ưu tiên trạng thái
         // PHẢI khớp PriceSchedule.GetStatus: cancelled → scheduled → ended → active.
         var statusFacts = await schQuery
-            .Select(s => new { s.IsCancelled, s.StartsAt, s.EndsAt })
+            .Select(s => new { s.IsCancelled, s.CancelledAt, s.StartsAt, s.EndsAt })
             .ToListAsync();
         var statusCounts = new Dictionary<string, int>
         {
-            ["all"] = statusFacts.Count, ["active"] = 0, ["scheduled"] = 0, ["ended"] = 0, ["cancelled"] = 0
+            ["all"] = statusFacts.Count,
+            ["active"] = 0,
+            ["scheduled"] = 0,
+            ["ended"] = 0,
+            ["cancelled"] = 0,
+            ["stopped"] = 0
         };
         foreach (var s in statusFacts)
         {
-            var key = s.IsCancelled ? "cancelled"
+            var key = s.IsCancelled
+                ? s.CancelledAt.HasValue && s.CancelledAt.Value > s.StartsAt ? "stopped" : "cancelled"
                 : s.StartsAt > now ? "scheduled"
                 : s.EndsAt.HasValue && s.EndsAt.Value <= now ? "ended"
                 : "active";
@@ -143,7 +149,13 @@ public sealed class PriceManagementService : IPriceManagementService
             "active" => schQuery.Where(s => !s.IsCancelled && s.StartsAt <= now && (!s.EndsAt.HasValue || s.EndsAt > now)),
             "scheduled" => schQuery.Where(s => !s.IsCancelled && s.StartsAt > now),
             "ended" => schQuery.Where(s => !s.IsCancelled && s.EndsAt.HasValue && s.EndsAt <= now),
-            "cancelled" => schQuery.Where(s => s.IsCancelled),
+            "stopped" => schQuery.Where(s =>
+                s.IsCancelled &&
+                s.CancelledAt.HasValue &&
+                s.CancelledAt.Value > s.StartsAt),
+            "cancelled" => schQuery.Where(s =>
+                s.IsCancelled &&
+                (!s.CancelledAt.HasValue || s.CancelledAt.Value <= s.StartsAt)),
             _ => schQuery
         };
         var schTotal = await schQuery.CountAsync();
@@ -217,6 +229,8 @@ public sealed class PriceManagementService : IPriceManagementService
         {
             var schedule = await _unitOfWork.PriceSchedules.GetByIdAsync(id);
             if (schedule == null) return PriceManagementResult.Fail("Không tìm thấy lịch giá.");
+            if (request.ExpectedRevision <= 0 || schedule.Revision != request.ExpectedRevision)
+                return PriceManagementResult.Fail("Lịch giá đã thay đổi bởi người khác. Vui lòng tải lại trang.");
             if (schedule.GetStatus(_timeProvider.GetUtcNow()) != PriceScheduleStatus.Scheduled)
                 return PriceManagementResult.Fail("Chỉ lịch chưa bắt đầu mới được chỉnh sửa.");
             if (schedule.ProductId != request.ProductId || schedule.ProductVariantId != request.ProductVariantId)
@@ -229,34 +243,64 @@ public sealed class PriceManagementService : IPriceManagementService
             schedule.StartsAt = request.StartsAt.ToUniversalTime();
             schedule.EndsAt = request.EndsAt?.ToUniversalTime();
             schedule.UpdatedAt = _timeProvider.GetUtcNow();
+            schedule.Revision++;
             await AddLogAsync(request.ProductId, adminId, "PriceScheduleUpdate", $"Cập nhật lịch giá #{id}");
             await _unitOfWork.SaveChangesAsync();
-            return PriceManagementResult.Ok();
+            return PriceManagementResult.Ok(schedule.Revision);
         });
         if (result.Success) await PublishPriceChangeAsync(request.ProductId, request.ProductVariantId);
         return result;
     }
 
-    public async Task<PriceManagementResult> CancelScheduleAsync(int id, int adminId)
+    public async Task<PriceManagementResult> CancelScheduleAsync(
+        int id,
+        CancelPriceScheduleRequest request,
+        int adminId)
     {
         int productId = 0;
         int? variantId = null;
+
         var result = await RunSerializedWriteAsync(async () =>
         {
             var schedule = await _unitOfWork.PriceSchedules.GetByIdAsync(id);
-            if (schedule == null) return PriceManagementResult.Fail("Không tìm thấy lịch giá.");
+            if (schedule == null)
+                return PriceManagementResult.Fail("Không tìm thấy lịch giá.");
+
+            if (request.ExpectedRevision <= 0 || schedule.Revision != request.ExpectedRevision)
+                return PriceManagementResult.Fail("Lịch giá đã thay đổi bởi người khác. Vui lòng tải lại trang.");
+
             var status = schedule.GetStatus(_timeProvider.GetUtcNow());
-            if (status is PriceScheduleStatus.Ended or PriceScheduleStatus.Cancelled)
-                return PriceManagementResult.Fail("Lịch đã kết thúc hoặc đã hủy.");
+            if (status is PriceScheduleStatus.Ended or PriceScheduleStatus.Cancelled or PriceScheduleStatus.StoppedEarly)
+                return PriceManagementResult.Fail("Lịch đã kết thúc hoặc đã dừng.");
+
+            var reason = request.Reason?.Trim();
+            if (reason?.Length > 500)
+                return PriceManagementResult.Fail("Lý do hủy không được vượt quá 500 ký tự.");
+
+            var now = _timeProvider.GetUtcNow();
             schedule.IsCancelled = true;
-            schedule.UpdatedAt = _timeProvider.GetUtcNow();
+            schedule.CancelledAt = now;
+            schedule.CancelledByAdminId = adminId;
+            schedule.CancellationReason = string.IsNullOrWhiteSpace(reason) ? null : reason;
+            schedule.UpdatedAt = now;
+            schedule.Revision++;
+
             productId = schedule.ProductId;
             variantId = schedule.ProductVariantId;
-            await AddLogAsync(schedule.ProductId, adminId, "PriceScheduleCancel", $"Hủy lịch giá #{id}");
+
+            var action = status == PriceScheduleStatus.Active
+                ? "PriceScheduleStoppedEarly"
+                : "PriceScheduleCancel";
+            var detail = $"{action} #{id}; reason={schedule.CancellationReason ?? "không có"}; cancelledAt={now:O}";
+            await AddLogAsync(schedule.ProductId, adminId, action, detail);
             await _unitOfWork.SaveChangesAsync();
-            return PriceManagementResult.Ok();
+
+            return PriceManagementResult.Ok(schedule.Revision);
         });
-        if (result.Success) await PublishPriceChangeAsync(productId, variantId);
+
+        if (result.Success)
+            await PublishPriceChangeAsync(productId, variantId);
+
         return result;
     }
 
@@ -328,6 +372,11 @@ public sealed class PriceManagementService : IPriceManagementService
             if (result.Success) await transaction.CommitAsync();
             else await transaction.RollbackAsync();
             return result;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await transaction.RollbackAsync();
+            return PriceManagementResult.Fail("Dữ liệu giá đã thay đổi bởi người khác. Vui lòng tải lại trang.");
         }
         catch
         {

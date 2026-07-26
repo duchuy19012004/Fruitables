@@ -26,7 +26,7 @@ public class PriceController : Controller
             Sort = sort is "base" or "effective" ? sort : "name",
             Dir = dir == "desc" ? "desc" : "asc",
             Page = Math.Max(1, page),
-            ScheduleStatus = scheduleStatus is "active" or "scheduled" or "ended" or "cancelled" ? scheduleStatus : null,
+            ScheduleStatus = scheduleStatus is "active" or "scheduled" or "ended" or "cancelled" or "stopped" ? scheduleStatus : null,
             ScheduleSearch = scheduleSearch,
             SchedulePage = Math.Max(1, schedulePage)
         };
@@ -47,9 +47,17 @@ public class PriceController : Controller
         return ResultResponse(await _prices.UpdateScheduleAsync(id, request, CurrentAdminId()));
     }
 
+    private bool TryGetCurrentAdminId(out int adminId) =>
+        int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out adminId) && adminId > 0;
+
     [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> CancelSchedule(int id) =>
-        ResultResponse(await _prices.CancelScheduleAsync(id, CurrentAdminId()));
+    public async Task<IActionResult> CancelSchedule(int id, CancelPriceScheduleRequest request)
+    {
+        if (!TryGetCurrentAdminId(out var adminId))
+            return Unauthorized();
+
+        return ResultResponse(await _prices.CancelScheduleAsync(id, request, adminId));
+    }
 
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> UpdateBasePrice(int productId, int? productVariantId, decimal newPrice) =>
@@ -91,7 +99,7 @@ public class PriceController : Controller
     private IActionResult ResultResponse(PriceManagementResult result)
     {
         if (Request.Headers["X-Requested-With"] == "XMLHttpRequest")
-            return Json(new { success = result.Success, error = result.Error });
+            return Json(new { success = result.Success, error = result.Error, revision = result.Revision });
         SetMessage(result);
         return RedirectToAction(nameof(Index));
     }

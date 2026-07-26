@@ -62,6 +62,7 @@
                 </div>
                 <input type="hidden" name="ProductId" id="scheduleProductId" />
                 <input type="hidden" name="ProductVariantId" id="scheduleVariantId" />
+                <input type="hidden" id="scheduleExpectedRevision" name="ExpectedRevision" value="0" />
                 <div class="field-block">
                     <label class="form-label" for="scheduleType">Kiểu giảm</label>
                     <select name="DiscountType" id="scheduleType" class="form-select">
@@ -109,9 +110,15 @@
             </div>
             <div class="modal-body pt-3">
                 <p class="mb-2">Bạn có chắc muốn hủy lịch giá cho:</p>
-                <div class="target-summary mb-0">
+                <div class="target-summary mb-3">
                     <div class="fw-bold" id="cancelScheduleLabel">-</div>
                     <div class="small text-muted mt-1">Lịch đã hủy sẽ không áp dụng lại. Thao tác này không hoàn tác được.</div>
+                </div>
+                <input type="hidden" id="cancelScheduleExpectedRevision" name="ExpectedRevision" value="0" />
+                <div class="mb-3">
+                    <label for="cancelScheduleReason" class="form-label">Lý do</label>
+                    <textarea id="cancelScheduleReason" name="Reason" class="form-control" maxlength="500" rows="3"
+                              placeholder="Ví dụ: Sai mức giảm hoặc thay đổi chương trình bán hàng"></textarea>
                 </div>
             </div>
             <div class="modal-footer border-0 pt-0">

@@ -48,6 +48,9 @@
         <a class="pp-chip @(currentStatus == "cancelled" ? "active" : "")" href="@StatusUrl("cancelled")">
             <i class="fas fa-ban"></i>Đã hủy <span class="pp-chip-count">@CountOf("cancelled")</span>
         </a>
+        <a class="pp-chip @(currentStatus == "stopped" ? "active" : "")" href="@StatusUrl("stopped")">
+            <i class="fas fa-stop-circle"></i>Đã dừng sớm <span class="pp-chip-count">@CountOf("stopped")</span>
+        </a>
     </div>
 
     <form method="get" class="pp-search">
@@ -109,7 +112,9 @@
                         PriceScheduleStatus.Active => ("running", "Đang chạy", "fa-bolt"),
                         PriceScheduleStatus.Scheduled => ("planned", "Sắp chạy", "fa-clock"),
                         PriceScheduleStatus.Ended => ("done", "Đã kết thúc", "fa-check"),
-                        _ => ("cancelled", "Đã hủy", "fa-ban")
+                        PriceScheduleStatus.Cancelled => ("cancelled", "Đã hủy trước khi chạy", "fa-ban"),
+                        PriceScheduleStatus.StoppedEarly => ("cancelled", "Đã dừng sớm", "fa-stop-circle"),
+                        _ => ("cancelled", status.ToString(), "fa-ban")
                     };
                     <tr>
                         <td class="hist-target">
@@ -141,7 +146,8 @@
                                     <button type="button" class="btn btn-sm btn-outline-primary btn-text-sm schedule-action"
                                             data-mode="edit" data-id="@schedule.Id" data-product="@schedule.ProductId"
                                             data-variant="@schedule.ProductVariantId" data-type="@schedule.DiscountType"
-                                            data-value="@schedule.Value" data-start="@schedule.StartsAt.ToOffset(TimeSpan.FromHours(7)).ToString("yyyy-MM-ddTHH:mm")"
+                                            data-value="@schedule.Value" data-revision="@schedule.Revision"
+                                            data-start="@schedule.StartsAt.ToOffset(TimeSpan.FromHours(7)).ToString("yyyy-MM-ddTHH:mm")"
                                             data-end="@(schedule.EndsAt?.ToOffset(TimeSpan.FromHours(7)).ToString("yyyy-MM-ddTHH:mm") ?? "")"
                                             title="Sửa lịch">
                                         <i class="fas fa-pen me-1"></i>Sửa
@@ -149,7 +155,7 @@
                                 }
                                 <button type="button" class="btn-icon schedule-action"
                                         data-mode="clone" data-product="@schedule.ProductId" data-variant="@schedule.ProductVariantId"
-                                        data-type="@schedule.DiscountType" data-value="@schedule.Value"
+                                        data-type="@schedule.DiscountType" data-value="@schedule.Value" data-revision="@schedule.Revision"
                                         title="Nhân bản lịch" aria-label="Nhân bản lịch">
                                     <i class="fas fa-copy"></i>
                                 </button>
@@ -159,6 +165,7 @@
                                             class="btn btn-sm btn-outline-danger btn-text-sm cancel-schedule-btn"
                                             data-id="@schedule.Id"
                                             data-label="@schedule.Product.Name@(schedule.ProductVariant == null ? "" : " - " + schedule.ProductVariant.Name)"
+                                            data-revision="@schedule.Revision"
                                             title="Hủy lịch">
                                         <i class="fas fa-ban me-1"></i>Hủy
                                     </button>

@@ -28,6 +28,13 @@ public class SavePriceScheduleRequest
     public decimal Value { get; set; }
     public DateTimeOffset StartsAt { get; set; }
     public DateTimeOffset? EndsAt { get; set; }
+    public int ExpectedRevision { get; set; }
+}
+
+public class CancelPriceScheduleRequest
+{
+    public int ExpectedRevision { get; set; }
+    public string? Reason { get; set; }
 }
 
 public enum PriceAdjustmentType { Amount, Percentage }
@@ -41,9 +48,9 @@ public class BulkPriceUpdateRequest
     public decimal Value { get; set; }
 }
 
-public sealed record PriceManagementResult(bool Success, string? Error = null)
+public sealed record PriceManagementResult(bool Success, string? Error = null, int? Revision = null)
 {
-    public static PriceManagementResult Ok() => new(true);
+    public static PriceManagementResult Ok(int? revision = null) => new(true, null, revision);
     public static PriceManagementResult Fail(string error) => new(false, error);
 }
 
