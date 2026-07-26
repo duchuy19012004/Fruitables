@@ -470,12 +470,14 @@
     const tlValueLabel = i => (i.kind === 'fixed' || i.type === 'FixedPrice')
         ? `Còn ${Number(i.value).toLocaleString('vi-VN')}đ`
         : `-${Number(i.value).toLocaleString('vi-VN')}%`;
+    const getTimelineEnd = (schedule, fallbackEnd) =>
+        window.PriceTimelineUtils.getTimelineEnd(schedule, fallbackEnd);
 
     function tlAssignLanes(items, maxTs) {
         const sorted = [...items].sort((a, b) => a._s - b._s || a._e - b._e);
         const laneEnds = [];
         for (const it of sorted) {
-            const end = it.end ? it._e : maxTs;
+            const end = it.end || it.status === 'stoppedearly' ? it._e : maxTs;
             let lane = laneEnds.findIndex(e => e <= it._s);
             if (lane < 0) {
                 lane = laneEnds.length;
@@ -619,14 +621,19 @@
         }
 
         const now = Date.now();
+        const fallbackEnd = new Date(now + 14 * 864e5);
         items.forEach(i => {
             i._s = new Date(i.start).getTime();
-            i._e = i.end ? new Date(i.end).getTime() : now + 14 * 864e5;
+            i._e = getTimelineEnd(i, fallbackEnd).getTime();
         });
 
         let min = Math.min(...items.map(i => i._s), now);
-        let max = Math.max(...items.map(i => i.end ? i._e : now), now + 14 * 864e5);
-        const hasOpen = items.some(i => !i.end);
+        const scheduleEnds = items.map(schedule =>
+            getTimelineEnd(schedule, fallbackEnd));
+        let max = Math.max(
+            fallbackEnd.getTime(),
+            ...scheduleEnds.map(date => date.getTime()));
+        const hasOpen = items.some(i => !i.end && i.status !== 'stoppedearly');
         if (hasOpen) max = Math.max(max, now + 21 * 864e5);
         if (max - min < 7 * 864e5) {
             const pad = (7 * 864e5 - (max - min)) / 2;
@@ -658,14 +665,15 @@
 
         for (const i of items) {
             const s = i._s;
-            const e = i.end ? i._e : max;
+            const e = i.end || i.status === 'stoppedearly' ? i._e : max;
             const left = pctNum(s);
             const width = Math.max(pctNum(e) - left, 0.8);
             const narrow = width < 11;
             const clickable = i.status === 'scheduled';
             const lbl = tlValueLabel(i);
             const top = topPad + i._lane * laneH;
-            chartHtml += `<div class="tl-bar ${i.status}${i.end ? '' : ' open-ended'}${narrow ? ' narrow' : ''}${clickable ? ' is-clickable' : ''}"
+            const openEnded = !i.end && i.status !== 'stoppedearly';
+            chartHtml += `<div class="tl-bar ${i.status}${openEnded ? ' open-ended' : ''}${narrow ? ' narrow' : ''}${clickable ? ' is-clickable' : ''}"
             data-id="${i.id}"
             role="${clickable ? 'button' : 'img'}"
             tabindex="0"
@@ -687,6 +695,21 @@
                 const itemLabel = label || tlValueLabel(i);
                 actions.push(`<button type="button" class="btn btn-sm btn-outline-danger btn-text-sm cancel-schedule-btn" data-id="${i.id}" data-label="${esc(itemLabel)}" data-revision="${i.revision || 0}" title="Hủy lịch"><i class="fas fa-ban me-1"></i>Hủy</button>`);
             }
+            const stoppedAtText =
+                i.status === 'stoppedearly' && i.cancelledAt
+                    ? tlFmtFull(new Date(i.cancelledAt))
+                    : null;
+
+            const cancellationReason =
+                i.cancellationReason?.trim() || 'Không ghi lý do';
+
+            const stoppedDetails = i.status === 'stoppedearly'
+                ? `<div class="tl-stop-detail">` +
+                  `<span><strong>Dừng lúc:</strong> ${esc(stoppedAtText)}</span>` +
+                  `<span><strong>Lý do:</strong> ${esc(cancellationReason)}</span>` +
+                  `</div>`
+                : '';
+
             return `<li class="tl-item" data-id="${i.id}" tabindex="0">
             <span class="tl-item-status ${i.status}"><i class="fas ${tlStatusIcon[i.status] || 'fa-circle'}"></i>${esc(tlStatusText[i.status] || i.status)}</span>
             <div class="tl-item-main">
@@ -696,6 +719,7 @@
                     <span class="sep"><i class="fas fa-arrow-right"></i></span>
                     <span>${i.end ? esc(tlFmtFull(new Date(i.end))) : 'Không giới hạn'}</span>
                 </div>
+                ${stoppedDetails}
             </div>
             <div class="tl-item-actions">${actions.join('')}</div>
         </li>`;
@@ -709,6 +733,7 @@
                 <span><i class="dot scheduled"></i> Sắp chạy</span>
                 <span><i class="dot ended"></i> Đã kết thúc</span>
                 <span><i class="dot cancelled"></i> Đã hủy</span>
+                <span><i class="dot stoppedearly"></i>Đã dừng sớm</span>
             </div>
             <span class="tl-count">${items.length} lịch</span>
         </div>

@@ -113,7 +113,7 @@
                         PriceScheduleStatus.Scheduled => ("planned", "Sắp chạy", "fa-clock"),
                         PriceScheduleStatus.Ended => ("done", "Đã kết thúc", "fa-check"),
                         PriceScheduleStatus.Cancelled => ("cancelled", "Đã hủy trước khi chạy", "fa-ban"),
-                        PriceScheduleStatus.StoppedEarly => ("cancelled", "Đã dừng sớm", "fa-stop-circle"),
+                        PriceScheduleStatus.StoppedEarly => ("stoppedearly", "Đã dừng sớm", "fa-stop-circle"),
                         _ => ("cancelled", status.ToString(), "fa-ban")
                     };
                     <tr>
@@ -133,6 +133,24 @@
                             @schedule.StartsAt.ToOffset(TimeSpan.FromHours(7)).ToString("dd/MM/yyyy HH:mm")
                             <span class="sep"><i class="fas fa-arrow-right" style="font-size:.65rem"></i></span>
                             @(schedule.EndsAt?.ToOffset(TimeSpan.FromHours(7)).ToString("dd/MM/yyyy HH:mm") ?? "Không giới hạn")
+                            @if (status == PriceScheduleStatus.StoppedEarly &&
+                                 schedule.CancelledAt.HasValue)
+                            {
+                                <div class="small text-warning-emphasis mt-1">
+                                    <i class="fas fa-stop-circle me-1"></i>
+                                    Dừng thực tế:
+                                    @schedule.CancelledAt.Value
+                                        .ToOffset(TimeSpan.FromHours(7))
+                                        .ToString("dd/MM/yyyy HH:mm")
+                                </div>
+
+                                <div class="small text-muted mt-1">
+                                    Lý do:
+                                    @(string.IsNullOrWhiteSpace(schedule.CancellationReason)
+                                        ? "Không ghi lý do"
+                                        : schedule.CancellationReason)
+                                </div>
+                            }
                         </td>
                         <td>
                             <span class="badge-status @badgeClass">

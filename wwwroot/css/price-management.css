@@ -1174,3 +1174,35 @@
     font-size: .85rem;
 }
 .price-page .pp-banner-dismiss:hover { color: #78350f; }
+
+.price-page .tl-legend .dot.stoppedearly {
+    background: repeating-linear-gradient(
+        45deg,
+        #d97706 0 3px,
+        #fbbf24 3px 6px);
+}
+
+.price-page .tl-bar.stoppedearly {
+    background: repeating-linear-gradient(
+        45deg,
+        #b45309 0 6px,
+        #d97706 6px 12px);
+}
+
+.price-page .tl-item-status.stoppedearly {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.price-page .tl-stop-detail {
+    display: grid;
+    gap: .15rem;
+    margin-top: .3rem;
+    font-size: .72rem;
+    color: #92400e;
+}
+
+.price-page .badge-status.stoppedearly {
+    background: #fef3c7;
+    color: #92400e;
+}

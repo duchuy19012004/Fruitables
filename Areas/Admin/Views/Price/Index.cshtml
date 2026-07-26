@@ -64,6 +64,7 @@
 @await Html.PartialAsync("_ScheduleModals", Model)
 
 @section Scripts {
+    <script src="~/js/price-timeline-utils.js" asp-append-version="true"></script>
     <script src="~/js/price-management.js" asp-append-version="true"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function () {
