@@ -1,87 +1,49 @@
 ---
 type: srs-flows
 feature: price-schedule
-updated: 2026-07-16
+updated: 2026-07-17
 ---
 
 # Price schedule — Flows (Activity swimlane)
 
-**Spec:** [[../../superpowers/specs/2026-07-16-price-schedule-activity-design.md]]
-
 **Lanes:** Admin · Hệ thống  
-**Scope:** ProductVariant · 1 lịch chờ / variant · diagram only
+**Scope:** ProductVariant · 1 lịch chờ / variant · diagram only  
+**Quy ước vẽ:** lỗi / không xác nhận → **quay lại** chỉnh tiếp; chỉ **stop** khi Admin thoát màn hình hoặc lịch kết thúc.  
+**Artifact:** chỉ giữ **`.puml` + `.svg`** (không dùng PNG).
 
 | ID | Flow | Source | SVG |
 |----|------|--------|-----|
-| A | Đổi giá ngay | [puml](./price-a-immediate-swimlane.puml) | [svg](./price-a-immediate-swimlane.svg) |
-| B | Đặt lịch hẹn giá | [puml](./price-b-schedule-swimlane.puml) | [svg](./price-b-schedule-swimlane.svg) |
-| C | Hủy lịch chờ | [puml](./price-c-cancel-swimlane.puml) | [svg](./price-c-cancel-swimlane.svg) |
-| D | Hệ thống áp dụng lịch | [puml](./price-d-apply-swimlane.puml) | [svg](./price-d-apply-swimlane.svg) |
+| E | Tạo và tự động áp dụng lịch giảm giá | [puml](./price-e-create-apply-swimlane.puml) | [svg](./price-e-create-apply-swimlane.svg) |
 
-**Quan hệ:**
-
-```
-A  Đổi ngay ──────────────────────────► giá hiện tại
-B  Đặt lịch ──(Chờ)──► D Áp dụng ─────► giá hiện tại
-C  Hủy lịch ──► hết Chờ (D không còn gì cho variant đó)
-```
-
-**Regen + đóng khung StarUML (header ô + viền ngoài):**
+**Regen (chỉ SVG) + đóng khung StarUML:**
 
 ```bash
-node .agents/scripts/plantuml-render.mjs docs/price-schedule/srs/price-a-immediate-swimlane.puml --png
-node docs/chatbox/srs/frame-svg.mjs docs/price-schedule/srs/price-a-immediate-swimlane.svg --lanes "Admin,Hệ thống"
-node .agents/scripts/plantuml-render.mjs docs/price-schedule/srs/price-b-schedule-swimlane.puml --png
-node docs/chatbox/srs/frame-svg.mjs docs/price-schedule/srs/price-b-schedule-swimlane.svg --lanes "Admin,Hệ thống"
-node .agents/scripts/plantuml-render.mjs docs/price-schedule/srs/price-c-cancel-swimlane.puml --png
-node docs/chatbox/srs/frame-svg.mjs docs/price-schedule/srs/price-c-cancel-swimlane.svg --lanes "Admin,Hệ thống"
-node .agents/scripts/plantuml-render.mjs docs/price-schedule/srs/price-d-apply-swimlane.puml --png
-node docs/chatbox/srs/frame-svg.mjs docs/price-schedule/srs/price-d-apply-swimlane.svg --lanes "Hệ thống"
+node .agents/scripts/plantuml-render.mjs docs/price-schedule/srs/price-e-create-apply-swimlane.puml
+node docs/chatbox/srs/frame-svg.mjs docs/price-schedule/srs/price-e-create-apply-swimlane.svg --lanes "Admin,Hệ thống"
 ```
 
 ---
 
-## Flow A: Đổi giá ngay (Swimlane)
+## Flow E: Tạo và tự động áp dụng lịch giảm giá (Swimlane)
 
-**Trigger:** Admin xác nhận đổi giá ngay  
-**Related:** Spec §6
+**Trigger:** Admin xác nhận tạo lịch; job hệ thống quét lịch mỗi phút, tự áp dụng khi tới hạn  
+**Lanes:** Admin · Hệ thống (job tự chạy nằm trong lane Hệ thống)  
+**Statuses:** Chờ → Đang chạy → Đã kết thúc  
+**Note:** Không ghi đè giá gốc — giá hiệu lực tính từ lịch đang chạy; hết hạn giá tự quay về giá gốc.
 
-![A — Đổi giá ngay](./price-a-immediate-swimlane.svg)
+![E — Tạo và tự động áp dụng lịch giảm giá](./price-e-create-apply-swimlane.svg)
 
-> Nguồn: `price-a-immediate-swimlane.puml`
+> Nguồn: `price-e-create-apply-swimlane.puml`. Sửa .puml → chạy lại 2 lệnh regen ở trên.
 
----
+## Price integrity rules
 
-## Flow B: Đặt lịch hẹn giá (Swimlane)
-
-**Trigger:** Admin xác nhận đặt lịch  
-**Related:** Spec §7  
-**Note:** Không ghi giá ngay — chỉ lưu lịch **Chờ**; áp dụng ở D.
-
-![B — Đặt lịch hẹn giá](./price-b-schedule-swimlane.svg)
-
-> Nguồn: `price-b-schedule-swimlane.puml`
-
----
-
-## Flow C: Hủy lịch chờ (Swimlane)
-
-**Trigger:** Admin xác nhận hủy lịch  
-**Related:** Spec §8  
-**Note:** Giá hiện tại không đổi.
-
-![C — Hủy lịch chờ](./price-c-cancel-swimlane.svg)
-
-> Nguồn: `price-c-cancel-swimlane.puml`
-
----
-
-## Flow D: Hệ thống áp dụng lịch (Swimlane)
-
-**Trigger:** Tới giờ lịch / job  
-**Related:** Spec §9  
-**Statuses:** Chờ → Đã áp dụng | Lỗi
-
-![D — Hệ thống áp dụng lịch](./price-d-apply-swimlane.svg)
-
-> Nguồn: `price-d-apply-swimlane.puml`
+- Giá gốc được lưu tại `Products.Price` hoặc `ProductVariants.Price`; giá hiệu lực không được ghi đè vào hai cột này.
+- Lịch giá dùng khoảng thời gian nửa mở: bắt đầu được tính, thời điểm kết thúc không còn được tính.
+- Một đối tượng chỉ có một lịch đang hiệu lực. Nếu dữ liệu cũ vi phạm, hệ thống chọn lịch có `StartsAt` mới nhất, sau đó chọn `Id` lớn nhất.
+- Giá cố định phải lớn hơn 0 và nhỏ hơn giá gốc. Giảm phần trăm phải từ 1% đến 99%.
+- Hủy trước khi lịch bắt đầu có trạng thái `Cancelled`; dừng sau khi đã bắt đầu có trạng thái `StoppedEarly`.
+- Mỗi lần sửa giá/lịch phải gửi revision đã xem. Revision không khớp thì hệ thống từ chối và yêu cầu tải lại.
+- Bulk update là nguyên tử: một dòng sai hoặc stale thì không dòng nào được cập nhật.
+- Checkout định giá lại trong cùng transaction `Serializable` với tạo đơn và trừ kho.
+- `OrderItems.BasePrice`, `OrderItems.Price`, `OrderItems.PromotionDiscount`, và `OrderItems.PriceScheduleId` là snapshot bất biến tại thời điểm đặt hàng.
+- Khi tắt biến thể hoạt động cuối cùng, hệ thống chỉ cho phép nếu không còn lịch biến thể đang chạy/sắp tới; sau đó sao chép giá và tồn kho của biến thể sang sản phẩm gốc.
