@@ -36,36 +36,6 @@
 </div>
 <!-- Page Header End -->
 
-<!-- Toast Container -->
-<div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1100;">
-    @if (TempData["SuccessMessage"] != null)
-    {
-        <div class="toast show" role="alert" data-bs-autohide="true" data-bs-delay="5000">
-            <div class="toast-header bg-success text-white">
-                <i class="fa fa-check-circle me-2"></i>
-                <strong class="me-auto">Thành công</strong>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
-            </div>
-            <div class="toast-body">
-                @TempData["SuccessMessage"]
-            </div>
-        </div>
-    }
-    @if (TempData["ErrorMessage"] != null)
-    {
-        <div class="toast show" role="alert" data-bs-autohide="true" data-bs-delay="5000">
-            <div class="toast-header bg-danger text-white">
-                <i class="fa fa-exclamation-circle me-2"></i>
-                <strong class="me-auto">Lỗi</strong>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
-            </div>
-            <div class="toast-body">
-                @TempData["ErrorMessage"]
-            </div>
-        </div>
-    }
-</div>
-
 <!-- Order Details Start -->
 <div class="container-fluid py-5">
     <div class="container py-5">
@@ -139,6 +109,14 @@
                                                     }
                                                     <div>
                                                         <h6 class="mb-0">@item.ProductName</h6>
+                                                        @if (item.SourceComboId.HasValue)
+                                                        {
+                                                            <small class="badge bg-success-subtle text-success">@item.ComboName</small>
+                                                            @if (item.ComboDiscount > 0)
+                                                            {
+                                                                <small class="d-block text-success">Giảm combo: -@item.ComboDiscount.ToString("N0")₫</small>
+                                                            }
+                                                        }
                                                     </div>
                                                 </div>
                                             </td>

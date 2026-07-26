@@ -23,4 +23,5 @@ public class Cart
     // Navigation properties
     public virtual User? User { get; set; }
     public virtual ICollection<CartItem> Items { get; set; } = new List<CartItem>();
+    public virtual ICollection<CartGroup> Groups { get; set; } = new List<CartGroup>();
 }

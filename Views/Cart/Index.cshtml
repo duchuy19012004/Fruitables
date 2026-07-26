@@ -193,44 +193,96 @@
                     </div>
 
                     <div id="cart-items" class="space-y-4">
-                        @foreach (var item in Model.Items)
+                        @foreach (var group in Model.Groups)
                         {
-                            <div class="cart-item bg-white dark:bg-slate-900 p-4 rounded-3xl border shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] border-slate-100 dark:border-slate-800 flex gap-6 items-center transition-all" data-cart-item-id="@item.CartItemId" data-product-id="@item.ProductId" data-variant-id="@item.ProductVariantId" data-stock="@item.StockQuantity">
-                                <div class="w-24 h-24 md:w-28 md:h-28 rounded-2xl overflow-hidden bg-slate-50 dark:bg-slate-800 flex-shrink-0">
+                            <section class="bg-white dark:bg-slate-900 rounded-3xl border-2 @(group.IsValid ? "border-primary/20" : "border-red-300") overflow-hidden shadow-sm">
+                                <div class="p-4 bg-primary/5 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                                    <div>
+                                        <span class="inline-flex px-2 py-1 rounded-full bg-primary text-white text-[10px] font-bold uppercase">Combo</span>
+                                        <h4 class="font-bold text-slate-800 mt-1 mb-0">@group.ComboName</h4>
+                                        @if (!group.IsValid)
+                                        {
+                                            <p class="text-red-500 text-xs mb-0">Combo đã thay đổi hoặc ngừng bán. Vui lòng xóa và thêm lại.</p>
+                                        }
+                                        else if (!group.AllowCouponStacking)
+                                        {
+                                            <p class="text-slate-500 text-xs mb-0">Không cộng dồn coupon</p>
+                                        }
+                                    </div>
+                                    <div class="flex items-center gap-4">
+                                        <div class="flex items-center gap-1">
+                                            <form asp-controller="Cart" asp-action="UpdateComboQuantity" method="post">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="cartGroupId" value="@group.Id" />
+                                                <input type="hidden" name="quantity" value="@(group.Quantity - 1)" />
+                                                <button type="submit" class="w-8 h-8 rounded-full border bg-white">−</button>
+                                            </form>
+                                            <strong class="w-8 text-center">@group.Quantity</strong>
+                                            <form asp-controller="Cart" asp-action="UpdateComboQuantity" method="post">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="cartGroupId" value="@group.Id" />
+                                                <input type="hidden" name="quantity" value="@(group.Quantity + 1)" />
+                                                <button type="submit" class="w-8 h-8 rounded-full border bg-white" @(!group.IsValid ? "disabled" : null)>+</button>
+                                            </form>
+                                        </div>
+                                        <div class="text-right min-w-28">
+                                            @if (group.Discount > 0)
+                                            {
+                                                <small class="block text-slate-400 line-through">@group.OriginalTotal.ToString("N0")đ</small>
+                                            }
+                                            <strong class="text-primary">@group.FinalTotal.ToString("N0")đ</strong>
+                                            @if (group.Discount > 0)
+                                            {
+                                                <small class="block text-red-500">Tiết kiệm @group.Discount.ToString("N0")đ</small>
+                                            }
+                                        </div>
+                                        <form asp-controller="Cart" asp-action="RemoveCombo" method="post">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="cartGroupId" value="@group.Id" />
+                                            <button type="submit" class="p-2 text-slate-400 hover:text-red-500 border-0 bg-transparent" title="Xóa toàn bộ combo">
+                                                <span class="material-icons-outlined">delete_outline</span>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </div>
+                                <div class="divide-y divide-slate-100">
+                                    @foreach (var item in group.Items)
+                                    {
+                                        <div class="p-4 flex items-center gap-4">
+                                            <img alt="@item.ProductName" class="w-16 h-16 rounded-xl object-cover bg-slate-50" src="@(string.IsNullOrEmpty(item.ProductImage) ? Url.Content("~/img/vegetable-item-3.png") : item.ProductImage)" />
+                                            <div class="flex-grow">
+                                                <a asp-controller="Shop" asp-action="Detail" asp-route-slug="@item.ProductSlug" class="font-semibold text-slate-800 hover:text-primary">@item.ProductName</a>
+                                                @if (!string.IsNullOrEmpty(item.VariantName)) { <small class="block text-slate-500">@item.VariantName · @item.VariantSKU</small> }
+                                                <small class="text-slate-500">@item.Quantity × @item.Price.ToString("N0")đ</small>
+                                                @if (item.ComboDiscount > 0) { <small class="block text-primary">Giảm theo combo: @item.ComboDiscount.ToString("N0")đ</small> }
+                                            </div>
+                                            <strong>@item.Total.ToString("N0")đ</strong>
+                                        </div>
+                                    }
+                                </div>
+                            </section>
+                        }
+
+                        @foreach (var item in Model.Items.Where(item => item.CartGroupId == null))
+                        {
+                            <div class="cart-item bg-white dark:bg-slate-900 p-4 rounded-3xl border shadow-sm border-slate-100 flex gap-6 items-center" data-cart-item-id="@item.CartItemId" data-product-id="@item.ProductId" data-variant-id="@item.ProductVariantId" data-stock="@item.StockQuantity">
+                                <div class="w-24 h-24 rounded-2xl overflow-hidden bg-slate-50 flex-shrink-0">
                                     <img alt="@item.ProductName" class="w-full h-full object-cover" src="@(string.IsNullOrEmpty(item.ProductImage) ? Url.Content("~/img/vegetable-item-3.png") : item.ProductImage)" />
                                 </div>
                                 <div class="flex-grow flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                    <div class="space-y-1">
-                                        <h4 class="text-base font-bold text-slate-800 dark:text-slate-100 mb-0">
-                                            <a asp-controller="Shop" asp-action="Detail" asp-route-slug="@item.ProductSlug" class="hover:text-primary">@item.ProductName</a>
-                                        </h4>
-                                        @if (!string.IsNullOrEmpty(item.VariantName)) { <p class="text-[12px] text-slate-500 mb-0">@item.VariantName · @item.VariantSKU</p> }
-                                        <p class="text-[13px] text-slate-500 mb-0">Đơn giá: @item.Price.ToString("N0")đ</p>
-                                        @if (item.IsAvailable)
-                                        {
-                                            <p class="text-[12px] text-primary font-medium stock-info mb-0">Còn @item.StockQuantity sản phẩm</p>
-                                        }
-                                        else
-                                        {
-                                            <p class="text-[12px] text-red-500 font-semibold mb-0">Biến thể này đã ngừng bán</p>
-                                        }
+                                    <div>
+                                        <a asp-controller="Shop" asp-action="Detail" asp-route-slug="@item.ProductSlug" class="font-bold text-slate-800 hover:text-primary">@item.ProductName</a>
+                                        @if (!string.IsNullOrEmpty(item.VariantName)) { <p class="text-xs text-slate-500 mb-0">@item.VariantName · @item.VariantSKU</p> }
+                                        <p class="text-xs text-slate-500 mb-0">Đơn giá: @item.Price.ToString("N0")đ · Còn @item.StockQuantity</p>
                                     </div>
-                                    <div class="flex items-center gap-8">
-                                        <div class="flex flex-col items-center">
-                                            <div class="flex items-center border border-slate-200 dark:border-slate-700 rounded-full p-0.5 bg-white dark:bg-slate-800 h-9 w-24">
-                                                <button class="btn-minus w-7 text-lg flex items-center justify-center text-slate-400 hover:text-black hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition-all" onclick="updateQuantity(@item.CartItemId, @(item.Quantity - 1))">-</button>
-                                                <input type="text" class="item-quantity w-8 text-center text-sm font-semibold bg-transparent border-0 focus:ring-0 p-0 text-slate-800 dark:text-slate-200" value="@item.Quantity" readonly />
-                                                <button class="btn-plus w-7 text-lg flex items-center justify-center text-slate-400 hover:text-black hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition-all @(item.Quantity >= item.StockQuantity ? "opacity-30 cursor-not-allowed" : "")" onclick="updateQuantity(@item.CartItemId, @(item.Quantity + 1))" @(item.Quantity >= item.StockQuantity ? "disabled" : "")>+</button>
-                                            </div>
-                                            @if (item.Quantity >= item.StockQuantity)
-                                            {
-                                                <small class="text-red-500 text-[10px] mt-1 block text-center max-msg">Đã đạt tối đa</small>
-                                            }
+                                    <div class="flex items-center gap-6">
+                                        <div class="flex items-center border rounded-full h-9 w-24">
+                                            <button class="btn-minus w-7" onclick="updateQuantity(@item.CartItemId, @(item.Quantity - 1))">−</button>
+                                            <input type="text" class="item-quantity w-8 text-center border-0 p-0" value="@item.Quantity" readonly />
+                                            <button class="btn-plus w-7" onclick="updateQuantity(@item.CartItemId, @(item.Quantity + 1))" @(item.Quantity >= item.StockQuantity ? "disabled" : "")>+</button>
                                         </div>
-                                        <span class="text-base font-bold text-slate-800 dark:text-slate-100 item-total w-20 text-right">@item.Total.ToString("N0")đ</span>
-                                        <button class="p-2 text-slate-300 hover:text-red-500 transition-colors" onclick="removeFromCart(@item.CartItemId)">
-                                            <span class="material-icons-outlined text-xl">delete_outline</span>
-                                        </button>
+                                        <strong class="item-total w-24 text-right">@item.Total.ToString("N0")đ</strong>
+                                        <button class="p-2 text-slate-300 hover:text-red-500" onclick="removeFromCart(@item.CartItemId)"><span class="material-icons-outlined">delete_outline</span></button>
                                     </div>
                                 </div>
                             </div>

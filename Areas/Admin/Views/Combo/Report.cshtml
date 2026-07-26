@@ -1,0 +1,52 @@
+@model Fruitables.ViewModels.ComboReportViewModel
+@{
+    ViewData["Title"] = "Hiệu quả combo";
+    Layout = "~/Areas/Admin/Views/Shared/_AdminDashboardLayout.cshtml";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="mb-1">Hiệu quả combo</h4>
+        <a asp-action="Index" class="text-decoration-none"><i class="fas fa-arrow-left me-1"></i>Danh sách combo</a>
+    </div>
+</div>
+
+<form method="get" class="admin-card p-3 mb-4">
+    <div class="row align-items-end">
+        <div class="col-md-4 mb-2"><label class="form-label">Từ ngày</label><input name="from" type="date" value="@Model.From.ToString("yyyy-MM-dd")" class="form-control" /></div>
+        <div class="col-md-4 mb-2"><label class="form-label">Đến ngày</label><input name="to" type="date" value="@Model.To.ToString("yyyy-MM-dd")" class="form-control" /></div>
+        <div class="col-md-4 mb-2"><button class="btn btn-primary" type="submit"><i class="fas fa-filter me-2"></i>Xem báo cáo</button></div>
+    </div>
+</form>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-6"><div class="admin-card p-3"><small class="text-muted">Combo đã giao</small><div class="fs-3 fw-bold">@Model.BundlesSold.ToString("N0")</div></div></div>
+    <div class="col-md-6"><div class="admin-card p-3"><small class="text-muted">Doanh thu thuần</small><div class="fs-3 fw-bold text-success">@Model.NetRevenue.ToString("N0") đ</div></div></div>
+</div>
+
+<div class="admin-card">
+    <div class="card-header"><i class="fas fa-chart-bar me-2"></i>Chi tiết theo combo</div>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead><tr><th>Combo</th><th class="text-end">Đã giao</th><th class="text-end">Đơn hàng</th><th class="text-end">Giảm combo</th><th class="text-end">Doanh thu giao</th><th class="text-end">Hoàn tiền</th><th class="text-end">Thuần</th></tr></thead>
+            <tbody>
+            @if (Model.Rows.Count == 0)
+            {
+                <tr><td colspan="7" class="text-center text-muted py-5">Không có dữ liệu combo trong khoảng thời gian này.</td></tr>
+            }
+            @foreach (var row in Model.Rows)
+            {
+                <tr>
+                    <td><strong>@row.ComboName</strong><small class="d-block text-muted">#@row.ComboId</small></td>
+                    <td class="text-end">@row.BundlesSold.ToString("N0")</td>
+                    <td class="text-end">@row.OrderCount.ToString("N0")</td>
+                    <td class="text-end text-success">@row.ComboDiscount.ToString("N0") đ</td>
+                    <td class="text-end">@row.DeliveredRevenue.ToString("N0") đ</td>
+                    <td class="text-end text-danger">@row.RefundedRevenue.ToString("N0") đ</td>
+                    <td class="text-end fw-bold">@row.NetRevenue.ToString("N0") đ</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</div>

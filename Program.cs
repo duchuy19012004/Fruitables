@@ -58,7 +58,9 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<IProductPricingService, ProductPricingService>();
 builder.Services.AddScoped<IPriceManagementService, PriceManagementService>();
 builder.Services.AddHostedService<PriceScheduleWorker>();
+builder.Services.AddHostedService<ComboMaintenanceWorker>();
 builder.Services.AddScoped<IImageUploadService, ImageUploadService>();
+builder.Services.AddScoped<ProductImageNormalizationService>();
 builder.Services.AddScoped<IProductLogService, ProductLogService>();
 builder.Services.AddScoped<IAddressService, AddressService>();
 builder.Services.AddScoped<IOrderAdminService, OrderAdminService>();
@@ -190,6 +192,38 @@ builder.Services.AddDataProtection()
     .SetApplicationName("FruitablesApp");
 
 var app = builder.Build();
+
+var rollbackArgument = args.FirstOrDefault(argument =>
+    argument.StartsWith("--rollback-product-images=", StringComparison.OrdinalIgnoreCase));
+if (rollbackArgument != null)
+{
+    var backupPath = rollbackArgument.Split('=', 2)[1].Trim('"');
+    using var rollbackScope = app.Services.CreateScope();
+    var normalizer = rollbackScope.ServiceProvider.GetRequiredService<ProductImageNormalizationService>();
+    var restored = await normalizer.RollbackAsync(backupPath);
+    app.Logger.LogInformation("Restored {Restored} product image records from {BackupPath}", restored, backupPath);
+    return;
+}
+
+if (args.Contains("--normalize-product-images", StringComparer.OrdinalIgnoreCase))
+{
+    var apply = args.Contains("--apply", StringComparer.OrdinalIgnoreCase);
+    var includeWebp = args.Contains("--include-webp", StringComparer.OrdinalIgnoreCase);
+    var force = args.Contains("--force", StringComparer.OrdinalIgnoreCase);
+    using var normalizationScope = app.Services.CreateScope();
+    var normalizer = normalizationScope.ServiceProvider.GetRequiredService<ProductImageNormalizationService>();
+    var result = await normalizer.NormalizeAsync(apply, includeWebp, force);
+    app.Logger.LogInformation(
+        "Product image normalization ({Mode}): discovered {Discovered}, eligible {Eligible}, converted {Converted}, skipped {Skipped}, failed {Failed}, backup {BackupPath}",
+        apply ? "apply" : "dry-run",
+        result.Discovered,
+        result.Eligible,
+        result.Converted,
+        result.Skipped,
+        result.Failed,
+        result.BackupPath ?? "not-created");
+    return;
+}
 
 // Seed default settings
 using (var scope = app.Services.CreateScope())

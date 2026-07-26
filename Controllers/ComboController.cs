@@ -17,6 +17,7 @@ public class ComboController : Controller
 
     [HttpPost]
     [Authorize]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> AddToCart(int id)
     {
         var sessionId = GetSessionId();

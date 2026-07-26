@@ -1,0 +1,110 @@
+@startuml
+' Gần StarUML: initial = chấm đen đặc, final = hai vòng (bullseye)
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+skinparam dpi 120
+skinparam RoundCorner 12
+skinparam ArrowColor #000000
+skinparam ArrowThickness 1.25
+skinparam ArrowFontSize 11
+skinparam NoteBackgroundColor #FFFFFF
+skinparam NoteBorderColor #000000
+skinparam NoteFontSize 11
+skinparam NoteFontName Arial
+
+skinparam activity {
+  BackgroundColor #FFFFFF
+  BorderColor #000000
+  FontColor #000000
+  FontSize 12
+  FontName Arial
+  DiamondBackgroundColor #FFFFFF
+  DiamondBorderColor #000000
+  DiamondFontSize 11
+  StartColor #000000
+  EndColor #000000
+  BarColor #000000
+}
+
+skinparam partition {
+  BackgroundColor #FFFFFF
+  BorderColor #000000
+  FontColor #000000
+  FontSize 13
+  FontStyle bold
+  BorderThickness 1.5
+}
+
+title Luồng người dùng sử dụng Chatbox Fruitables
+
+|Người dùng|
+start
+:Mở khung chat;
+
+|Giao diện Chat|
+:Hiển thị khung chat;
+:Kiểm tra còn cuộc chat cũ không;
+
+|API Chat|
+:Mở cuộc chat\n(dùng lại hoặc tạo mới);
+
+if (Mở được không?) then (Không)
+  |Giao diện Chat|
+  :Báo lỗi;
+  |Người dùng|
+  :Đóng chat;
+  stop
+else (Có)
+  |Giao diện Chat|
+  :Hiện lời chào và ô nhập;
+endif
+
+|Người dùng|
+repeat
+  :Gõ câu hỏi hoặc chọn gợi ý;
+  :Gửi tin;
+
+  |Giao diện Chat|
+  :Hiện tin vừa gửi\nvà trạng thái đang trả lời;
+  :Chuyển tin sang xử lý;
+
+  |API Chat|
+  if (Nhận tin được không?) then (Không)
+    |Giao diện Chat|
+    :Báo lỗi gửi tin;
+    |Người dùng|
+    :Đọc thông báo lỗi;
+    note right
+      Vẫn ở trong chat
+      Có thể gõ lại
+    end note
+  else (Có)
+    |API Chat|
+    :Ghi nhận tin;
+    :Yêu cầu soạn câu trả lời;
+
+    |RAG / AI|
+    :Tìm thông tin liên quan;
+    :Soạn câu trả lời\n(hoặc báo chưa hỗ trợ được);
+    :Gửi câu trả lời dần;
+
+    |API Chat|
+    :Lưu câu trả lời;
+    :Báo đã xong;
+
+    |Giao diện Chat|
+    :Hiện câu trả lời trên màn hình;
+
+    |Người dùng|
+    :Đọc phản hồi;
+  endif
+
+  |Người dùng|
+repeat while (Hỏi tiếp / gửi lại?) is (Có) not (Không)
+
+|Người dùng|
+:Đóng chat;
+stop
+
+@enduml

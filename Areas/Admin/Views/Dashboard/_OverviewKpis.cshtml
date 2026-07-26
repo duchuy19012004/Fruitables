@@ -1,0 +1,22 @@
+@model Fruitables.ViewModels.DashboardViewModel
+@{
+    var growthPrefix = Model.Revenue.MonthlyGrowthPercent >= 0 ? "+" : string.Empty;
+}
+
+<section class="overview-kpis" aria-label="Chỉ số vận hành">
+    <article class="overview-kpi overview-kpi--revenue">
+        <span class="overview-kpi__label">Doanh thu tháng</span>
+        <strong class="overview-kpi__value">@Model.Revenue.MonthlyRevenue.ToString("N0")đ</strong>
+        <span class="overview-kpi__note">@growthPrefix@Model.Revenue.MonthlyGrowthPercent.ToString("N1")% so với tháng trước</span>
+    </article>
+    <article class="overview-kpi">
+        <span class="overview-kpi__label">Đơn hôm nay</span>
+        <strong class="overview-kpi__value">@Model.Orders.TodayOrders</strong>
+        <span class="overview-kpi__note">@Model.Orders.PendingOrders đơn đang chờ xử lý</span>
+    </article>
+    <article class="overview-kpi">
+        <span class="overview-kpi__label">Kho cần chú ý</span>
+        <strong class="overview-kpi__value">@Model.Inventory.LowStockProducts</strong>
+        <span class="overview-kpi__note">@Model.Inventory.OutOfStockProducts sản phẩm đã hết hàng</span>
+    </article>
+</section>

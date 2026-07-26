@@ -1,10 +1,32 @@
 @using Fruitables.Models
 @{
     ViewData["Title"] = "Trang chủ";
+    ViewData["MetaDescription"] = "Mua rau củ, trái cây và combo nông sản tươi tại Fruitables. Đặt hàng nhanh, giao tận nơi và hỗ trợ đổi trả rõ ràng.";
 
     var products = ViewBag.AllProducts as List<Product> ?? new List<Product>();
-    var categories = ViewBag.Categories as List<Category> ?? new List<Category>();
+    var categories = (ViewBag.Categories as List<Category> ?? new List<Category>())
+        .Where(category => category.IsActive && !category.IsDeleted)
+        .ToList();
     var testimonials = ViewBag.Testimonials as List<Testimonial> ?? new List<Testimonial>();
+    List<(Category Category, string? ParentName)> shoppingCategories = categories
+        .SelectMany(parent => parent.Children
+            .Where(child => child.IsActive && !child.IsDeleted)
+            .OrderBy(child => child.SortOrder)
+            .Select(child => (child, (string?)parent.Name)))
+        .Take(6)
+        .ToList();
+    if (!shoppingCategories.Any())
+    {
+        shoppingCategories = categories
+            .Take(6)
+            .Select(category => (category, (string?)null))
+            .ToList();
+    }
+    var categoryIcons = new[]
+    {
+        "fas fa-apple-alt", "fas fa-lemon", "fas fa-seedling",
+        "fas fa-leaf", "fas fa-carrot", "fas fa-pepper-hot"
+    };
 
     var saleProducts = products
         .Where(p => !p.Variants.Any(v => v.IsActive) && p.DisplayMinPrice < p.Price)
@@ -12,11 +34,12 @@
         .ToList();
     var featuredProducts = products
         .Where(p => p.IsFeatured)
+        .OrderByDescending(p => p.CreatedAt);
+    var displayProducts = featuredProducts
+        .Concat(products.OrderByDescending(p => p.CreatedAt))
+        .DistinctBy(p => p.Id)
         .Take(8)
         .ToList();
-    var displayProducts = featuredProducts.Any()
-        ? featuredProducts
-        : products.Take(8).ToList();
 
     string ProductImage(Product product) =>
         product.Images?.FirstOrDefault(i => i.IsPrimary)?.ImageUrl
@@ -31,6 +54,14 @@
 
     int DiscountPercent(Product product) =>
         HasSale(product) ? (int)Math.Round((1 - product.DisplayMinPrice / product.Price) * 100) : 0;
+
+    bool HasVariants(Product product) =>
+        product.Variants.Any(v => v.IsActive);
+
+    bool InStock(Product product) =>
+        HasVariants(product)
+            ? product.Variants.Any(v => v.IsActive && v.StockQuantity > 0)
+            : product.StockQuantity > 0;
 }
 
 <main class="home-marketplace">
@@ -47,10 +78,38 @@
                         {
                             @foreach (var category in categories.Take(8))
                             {
-                                <a asp-controller="Shop" asp-action="Index" asp-route-categoryId="@category.Id">
-                                    <span>@category.Name</span>
-                                    <i class="fas fa-chevron-right"></i>
-                                </a>
+                                var children = category.Children
+                                    .Where(child => child.IsActive && !child.IsDeleted)
+                                    .OrderBy(child => child.SortOrder)
+                                    .ToList();
+                                var childrenId = $"home-category-children-{category.Id}";
+
+                                <div class="market-category-item">
+                                    <div class="market-category-row">
+                                        <a asp-controller="Shop" asp-action="Index" asp-route-categoryId="@category.Id">
+                                            <span>@category.Name</span>
+                                        </a>
+                                        @if (children.Any())
+                                        {
+                                            <button type="button" class="market-category-toggle"
+                                                    aria-expanded="false" aria-controls="@childrenId"
+                                                    aria-label="Xem danh mục con của @category.Name">
+                                                <i class="fas fa-chevron-right" aria-hidden="true"></i>
+                                            </button>
+                                        }
+                                    </div>
+                                    @if (children.Any())
+                                    {
+                                        <div class="market-category-children" id="@childrenId" hidden>
+                                            @foreach (var child in children)
+                                            {
+                                                <a asp-controller="Shop" asp-action="Index" asp-route-categoryId="@child.Id">
+                                                    <span>@child.Name</span>
+                                                </a>
+                                            }
+                                        </div>
+                                    }
+                                </div>
                             }
                         }
                         else
@@ -77,8 +136,8 @@
                                     <h1>Rau củ sạch cho bữa cơm hàng ngày</h1>
                                     <p>Chọn rau củ tươi, giá hợp lý. Fruitables giao đến tận nhà.</p>
                                     <form asp-controller="Shop" asp-action="Index" method="get" class="market-search">
-                                        <input name="search" type="search" data-search-suggest class="form-control" placeholder="Tìm rau củ, trái cây, combo..." />
-                                        <button type="submit" class="btn btn-secondary text-white">Tìm kiếm</button>
+                                        <input name="search" type="search" data-search-suggest class="form-control" placeholder="Tìm rau củ, trái cây, combo..." aria-label="Tìm rau củ, trái cây hoặc combo" autocomplete="off" />
+                                        <button type="submit" class="btn btn-secondary text-dark">Tìm kiếm</button>
                                     </form>
                                     <div class="market-hero-actions">
                                         <a asp-controller="Shop" asp-action="Index" class="btn btn-primary">Mua ngay</a>
@@ -92,11 +151,11 @@
                             <div class="market-hero-banner market-hero-banner-orange">
                                 <div class="market-hero-content">
                                     <span class="market-label">Trái cây chọn lọc</span>
-                                    <h1>Trái cây tươi cho cả tuần</h1>
+                                    <p class="market-hero-title">Trái cây tươi cho cả tuần</p>
                                     <p>Mua trái cây đúng mùa, chọn nhanh và thêm vào giỏ cho bữa phụ hàng ngày.</p>
                                     <form asp-controller="Shop" asp-action="Index" method="get" class="market-search">
-                                        <input name="search" type="search" data-search-suggest class="form-control" placeholder="Tìm táo, cam, nho, dâu..." />
-                                        <button type="submit" class="btn btn-secondary text-white">Tìm kiếm</button>
+                                        <input name="search" type="search" data-search-suggest class="form-control" placeholder="Tìm táo, cam, nho, dâu..." aria-label="Tìm trái cây" autocomplete="off" />
+                                        <button type="submit" class="btn btn-secondary text-dark">Tìm kiếm</button>
                                     </form>
                                     <div class="market-hero-actions">
                                         <a asp-controller="Shop" asp-action="Index" asp-route-search="trái cây" class="btn btn-primary">Mua trái cây</a>
@@ -110,11 +169,11 @@
                             <div class="market-hero-banner market-hero-banner-deep">
                                 <div class="market-hero-content">
                                     <span class="market-label">Combo tiết kiệm</span>
-                                    <h1>Đi chợ nhanh với combo hàng ngày</h1>
+                                    <p class="market-hero-title">Đi chợ nhanh với combo hàng ngày</p>
                                     <p>Gợi ý theo nhu cầu, để bạn chọn hàng nhanh hơn.</p>
                                     <form asp-controller="Shop" asp-action="Index" method="get" class="market-search">
-                                        <input name="search" type="search" data-search-suggest class="form-control" placeholder="Tìm combo bữa ăn, rau, củ..." />
-                                        <button type="submit" class="btn btn-secondary text-white">Tìm kiếm</button>
+                                        <input name="search" type="search" data-search-suggest class="form-control" placeholder="Tìm combo bữa ăn, rau, củ..." aria-label="Tìm combo bữa ăn" autocomplete="off" />
+                                        <button type="submit" class="btn btn-secondary text-dark">Tìm kiếm</button>
                                     </form>
                                     <div class="market-hero-actions">
                                         <a asp-controller="Shop" asp-action="Index" asp-route-search="combo" class="btn btn-primary">Chọn combo</a>
@@ -154,7 +213,7 @@
 
             <div class="market-shortcuts">
                 <a href="#uu-dai-hom-nay"><i class="fas fa-bolt"></i><span>Ưu đãi hôm nay</span></a>
-                <a href="#san-pham-noi-bat"><i class="fas fa-star"></i><span>Sản phẩm nổi bật</span></a>
+                <a href="#san-pham-noi-bat"><i class="fas fa-star"></i><span>Nổi bật &amp; mới nhất</span></a>
                 <a asp-controller="Shop" asp-action="Index" asp-route-search="rau"><i class="fas fa-seedling"></i><span>Rau củ</span></a>
                 <a asp-controller="Shop" asp-action="Index" asp-route-search="trái cây"><i class="fas fa-apple-alt"></i><span>Trái cây</span></a>
                 <a asp-controller="Shop" asp-action="Index" asp-route-search="combo"><i class="fas fa-box-open"></i><span>Combo tiết kiệm</span></a>
@@ -210,18 +269,28 @@
                             </a>
                             <div class="market-product-body">
                                 <a asp-controller="Shop" asp-action="Detail" asp-route-slug="@product.Slug" class="market-product-name">@product.Name</a>
-                                <p>@(product.ShortDescription ?? product.Description?.Substring(0, Math.Min(product.Description.Length, 70)) ?? "Tươi ngon, phù hợp cho bữa ăn gia đình.")</p>
+                                <div class="market-product-meta">
+                                    <span><i class="fas fa-map-marker-alt" aria-hidden="true"></i> @(string.IsNullOrWhiteSpace(product.CountryOrigin) ? product.Category?.Name ?? "Nông sản chọn lọc" : product.CountryOrigin)</span>
+                                    <span class="@(InStock(product) ? "is-in-stock" : "is-out-of-stock")">@(InStock(product) ? "Còn hàng" : "Tạm hết hàng")</span>
+                                </div>
                                 <div class="market-product-footer">
                                     <div>
                                         <strong>@DisplayPrice(product).ToString("N0")đ</strong>
                                         <small>/ @product.Unit</small>
                                     </div>
-                                    <form asp-controller="Cart" asp-action="AddToCart" method="post">
-                                        <input type="hidden" name="productId" value="@product.Id" />
-                                        <button type="submit" aria-label="Thêm @product.Name vào giỏ hàng">
-                                            <i class="fa fa-shopping-bag"></i>
-                                        </button>
-                                    </form>
+                                    @if (HasVariants(product))
+                                    {
+                                        <a asp-controller="Shop" asp-action="Detail" asp-route-slug="@product.Slug" class="market-product-select" aria-label="Chọn loại @product.Name">Chọn loại</a>
+                                    }
+                                    else
+                                    {
+                                        <form asp-controller="Cart" asp-action="AddToCart" method="post">
+                                            <input type="hidden" name="productId" value="@product.Id" />
+                                            <button type="submit" aria-label="Thêm @product.Name vào giỏ hàng" disabled="@(!InStock(product))">
+                                                <i class="fa fa-shopping-bag" aria-hidden="true"></i>
+                                            </button>
+                                        </form>
+                                    }
                                 </div>
                             </div>
                         </article>
@@ -236,28 +305,45 @@
             <div class="market-section-heading">
                 <div>
                     <span>Mua theo danh mục</span>
-                    <h2>Chọn nhanh nhóm sản phẩm bạn cần</h2>
+                    <h2>Khám phá theo loại trái cây</h2>
                 </div>
-                <a asp-controller="Shop" asp-action="Index">Vào cửa hàng</a>
+                <a asp-controller="Shop" asp-action="Index">Xem tất cả</a>
             </div>
             <div class="market-category-grid">
-                @if (categories.Any())
+                @if (shoppingCategories.Any())
                 {
-                    @foreach (var category in categories.Take(6))
+                    @for (var index = 0; index < shoppingCategories.Count; index++)
                     {
+                        var item = shoppingCategories[index];
+                        var category = item.Category;
                         <a asp-controller="Shop" asp-action="Index" asp-route-categoryId="@category.Id">
-                            <i class="fas fa-seedling"></i>
+                            <span class="market-category-visual">
+                                @if (!string.IsNullOrWhiteSpace(category.Image))
+                                {
+                                    <img src="@category.Image" alt="" loading="lazy" />
+                                }
+                                else
+                                {
+                                    <i class="@categoryIcons[index % categoryIcons.Length]" aria-hidden="true"></i>
+                                }
+                            </span>
+                            @if (!string.IsNullOrWhiteSpace(item.ParentName))
+                            {
+                                <small>@item.ParentName</small>
+                            }
                             <strong>@category.Name</strong>
-                            <span>Xem sản phẩm</span>
+                            <span class="market-category-action">Xem sản phẩm</span>
                         </a>
                     }
                 }
                 else
                 {
                     <a asp-controller="Shop" asp-action="Index">
-                        <i class="fas fa-store"></i>
+                        <span class="market-category-visual">
+                            <i class="fas fa-store" aria-hidden="true"></i>
+                        </span>
                         <strong>Tất cả sản phẩm</strong>
-                        <span>Xem cửa hàng</span>
+                        <span class="market-category-action">Xem cửa hàng</span>
                     </a>
                 }
             </div>
@@ -271,11 +357,11 @@
                 <div class="market-section-heading">
                     <div>
                         <span>Gợi ý cho bạn</span>
-                        <h2>Sản phẩm nổi bật</h2>
+                        <h2>Nổi bật và mới nhất</h2>
                     </div>
-                    <a asp-controller="Shop" asp-action="Index">Mua thêm</a>
+                    <a asp-controller="Shop" asp-action="Index">Xem tất cả sản phẩm</a>
                 </div>
-                <div class="market-product-grid">
+                <div class="market-product-grid @(displayProducts.Count == 6 ? "market-product-grid-six" : "")">
                     @foreach (var product in displayProducts)
                     {
                         <article class="market-product-card">
@@ -288,18 +374,32 @@
                             </a>
                             <div class="market-product-body">
                                 <a asp-controller="Shop" asp-action="Detail" asp-route-slug="@product.Slug" class="market-product-name">@product.Name</a>
-                                <p>@(product.ShortDescription ?? product.Description?.Substring(0, Math.Min(product.Description.Length, 70)) ?? "Tươi ngon, phù hợp cho bữa ăn gia đình.")</p>
+                                <div class="market-product-meta">
+                                    <span><i class="fas fa-map-marker-alt" aria-hidden="true"></i> @(string.IsNullOrWhiteSpace(product.CountryOrigin) ? product.Category?.Name ?? "Nông sản chọn lọc" : product.CountryOrigin)</span>
+                                    @if (product.ReviewCount > 0)
+                                    {
+                                        <span><i class="fas fa-star" aria-hidden="true"></i> @product.AverageRating.ToString("0.0") (@product.ReviewCount)</span>
+                                    }
+                                    <span class="@(InStock(product) ? "is-in-stock" : "is-out-of-stock")">@(InStock(product) ? "Còn hàng" : "Tạm hết hàng")</span>
+                                </div>
                                 <div class="market-product-footer">
                                     <div>
                                         <strong>@DisplayPrice(product).ToString("N0")đ</strong>
                                         <small>/ @product.Unit</small>
                                     </div>
-                                    <form asp-controller="Cart" asp-action="AddToCart" method="post">
-                                        <input type="hidden" name="productId" value="@product.Id" />
-                                        <button type="submit" aria-label="Thêm @product.Name vào giỏ hàng">
-                                            <i class="fa fa-shopping-bag"></i>
-                                        </button>
-                                    </form>
+                                    @if (HasVariants(product))
+                                    {
+                                        <a asp-controller="Shop" asp-action="Detail" asp-route-slug="@product.Slug" class="market-product-select" aria-label="Chọn loại @product.Name">Chọn loại</a>
+                                    }
+                                    else
+                                    {
+                                        <form asp-controller="Cart" asp-action="AddToCart" method="post">
+                                            <input type="hidden" name="productId" value="@product.Id" />
+                                            <button type="submit" aria-label="Thêm @product.Name vào giỏ hàng" disabled="@(!InStock(product))">
+                                                <i class="fa fa-shopping-bag" aria-hidden="true"></i>
+                                            </button>
+                                        </form>
+                                    }
                                 </div>
                             </div>
                         </article>
@@ -445,10 +545,15 @@
         padding: 8px;
     }
 
-    .market-category-list a {
+    .market-category-row {
         display: flex;
         align-items: center;
-        justify-content: space-between;
+    }
+
+    .market-category-list a {
+        display: flex;
+        flex: 1;
+        align-items: center;
         min-height: 42px;
         padding: 8px 10px;
         border-radius: 6px;
@@ -458,14 +563,49 @@
         text-decoration: none;
     }
 
-    .market-category-list a:hover {
+    .market-category-list a:hover,
+    .market-category-toggle:hover {
         background: #f1f8df;
-        color: #5f9307;
+        color: #315800;
     }
 
-    .market-category-list i {
+    .market-category-toggle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 38px;
+        min-height: 38px;
+        padding: 0;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
         color: #a0aec0;
+    }
+
+    .market-category-toggle i {
         font-size: 0.72rem;
+        transition: transform 0.2s ease;
+    }
+
+    .market-category-toggle[aria-expanded="true"] i {
+        transform: rotate(90deg);
+    }
+
+    .market-category-children {
+        margin: 0 8px 4px 18px;
+        padding-left: 10px;
+        border-left: 2px solid #e4edcf;
+    }
+
+    .market-category-children[hidden] {
+        display: none;
+    }
+
+    .market-category-children a {
+        min-height: 34px;
+        padding: 6px 8px;
+        font-size: 0.86rem;
+        font-weight: 500;
     }
 
     .market-hero-carousel {
@@ -531,7 +671,7 @@
     .market-promo-grid span {
         display: inline-flex;
         margin-bottom: 6px;
-        color: #e8590c;
+        color: #a83f00;
         font-size: 0.82rem;
         font-weight: 900;
         text-transform: uppercase;
@@ -544,13 +684,16 @@
         color: #ffffff;
     }
 
-    .market-hero-banner h1 {
+    .market-hero-banner h1,
+    .market-hero-title {
         max-width: 520px;
         margin: 8px 0 12px;
         color: #ffffff;
         font-size: clamp(2rem, 4vw, 3.35rem);
         font-weight: 900;
         line-height: 1.08;
+        letter-spacing: -0.035em;
+        text-wrap: balance;
     }
 
     .market-hero-banner p {
@@ -649,6 +792,7 @@
     .market-search .btn {
         min-width: 118px;
         border-radius: 999px;
+        color: #273438 !important;
     }
 
     .market-hero-actions {
@@ -684,7 +828,7 @@
     }
 
     .market-side-card span {
-        color: #e8590c;
+        color: #a83f00;
         font-size: 0.78rem;
         font-weight: 900;
         text-transform: uppercase;
@@ -731,7 +875,7 @@
     }
 
     .market-shortcuts a:hover {
-        color: #5f9307;
+        color: #315800;
     }
 
     .market-shortcuts i {
@@ -806,7 +950,7 @@
     }
 
     .market-section-heading a {
-        color: #5f9307;
+        color: #315800;
         font-weight: 800;
         text-decoration: none;
         white-space: nowrap;
@@ -816,6 +960,10 @@
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 18px;
+    }
+
+    .market-product-grid-six {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
     .market-product-card {
@@ -836,13 +984,14 @@
     }
 
     .market-product-card:hover .market-product-name {
-        color: #5f9307;
+        color: #315800;
     }
 
-    .market-product-card:hover .market-product-footer button {
-        background: #81c408;
+    .market-product-card:hover .market-product-footer button,
+    .market-product-card:hover .market-product-select {
+        background: #477900;
         color: #ffffff;
-        border-color: #81c408;
+        border-color: #477900;
         box-shadow: 0 8px 18px rgba(129, 196, 8, 0.35);
     }
 
@@ -860,7 +1009,7 @@
         height: 210px;
         align-items: center;
         justify-content: center;
-        background: #f8fafc;
+        background: #ffffff;
         overflow: hidden;
     }
 
@@ -901,14 +1050,38 @@
     }
 
     .market-product-name:hover {
-        color: #5f9307;
+        color: #315800;
     }
 
-    .market-product-body p {
-        min-height: 42px;
-        margin: 8px 0 14px;
-        color: #64748b;
-        font-size: 0.9rem;
+    .market-product-meta {
+        display: flex;
+        min-height: 48px;
+        flex-wrap: wrap;
+        align-content: flex-start;
+        gap: 6px 12px;
+        margin: 7px 0 14px;
+        color: #526568;
+        font-size: 0.8rem;
+    }
+
+    .market-product-meta span {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+    }
+
+    .market-product-meta i {
+        color: #a83f00;
+    }
+
+    .market-product-meta .is-in-stock {
+        color: #315800;
+        font-weight: 700;
+    }
+
+    .market-product-meta .is-out-of-stock {
+        color: #9b1c1c;
+        font-weight: 700;
     }
 
     .market-product-footer {
@@ -931,55 +1104,99 @@
         margin: 0;
     }
 
-    .market-product-footer button {
+    .market-product-footer button,
+    .market-product-select {
         display: flex;
-        width: 42px;
+        min-width: 42px;
         height: 42px;
         align-items: center;
         justify-content: center;
-        border: 1px solid #81c408;
-        border-radius: 50%;
+        border: 1px solid #477900;
+        border-radius: 999px;
         background: #ffffff;
-        color: #81c408;
+        color: #315800;
+        font-size: 0.78rem;
+        font-weight: 800;
+        text-decoration: none;
     }
 
-    .market-product-footer button:hover {
-        background: #81c408;
+    .market-product-select {
+        padding: 0 12px;
+    }
+
+    .market-product-footer button:hover,
+    .market-product-select:hover {
+        background: #477900;
         color: #ffffff;
+    }
+
+    .market-product-footer button:disabled {
+        cursor: not-allowed;
+        border-color: #94a3b8;
+        color: #64748b;
+        background: #f1f5f9;
+        box-shadow: none;
     }
 
     .market-category-grid {
         display: grid;
-        grid-template-columns: repeat(6, minmax(0, 1fr));
-        gap: 14px;
+        grid-template-columns: repeat(auto-fit, minmax(210px, 260px));
+        justify-content: center;
+        gap: 16px;
     }
 
     .market-category-grid a {
         display: flex;
-        min-height: 150px;
+        min-height: 190px;
         flex-direction: column;
+        align-items: center;
         justify-content: center;
-        padding: 18px;
+        padding: 20px;
         color: #273438;
         text-align: center;
         text-decoration: none;
     }
 
     .market-category-grid a:hover {
-        color: #5f9307;
+        color: #315800;
         transform: translateY(-2px);
     }
 
-    .market-category-grid i {
-        margin-bottom: 14px;
-        font-size: 2rem;
+    .market-category-visual {
+        display: flex;
+        width: 68px;
+        height: 68px;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 12px;
+        overflow: hidden;
+        border-radius: 50%;
+        background: #f1f8df;
+        color: #81c408;
+    }
+
+    .market-category-visual img {
+        width: 100%;
+        height: 100%;
+        padding: 6px;
+        object-fit: contain;
+    }
+
+    .market-category-visual i {
+        font-size: 1.8rem;
+    }
+
+    .market-category-grid small {
+        margin-bottom: 3px;
+        color: #7a8a8d;
+        font-size: 0.72rem;
     }
 
     .market-category-grid strong {
         font-size: 1rem;
     }
 
-    .market-category-grid span {
+    .market-category-grid .market-category-action {
         margin-top: 5px;
         color: #64748b;
         font-size: 0.86rem;
@@ -1122,13 +1339,11 @@
         }
 
         .market-product-grid,
+        .market-product-grid-six,
         .market-trust-grid {
             grid-template-columns: repeat(2, minmax(0, 1fr));
         }
 
-        .market-category-grid {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-        }
     }
 
     @@media (max-width: 991.98px) {
@@ -1160,7 +1375,44 @@
 
     @@media (max-width: 575.98px) {
         .market-hero {
-            padding-top: 108px;
+            padding-top: 84px;
+        }
+
+        .market-category-panel {
+            display: none;
+        }
+
+        .market-deal-stack,
+        .market-shortcuts,
+        .market-category-grid {
+            display: flex;
+            gap: 12px;
+            overflow-x: auto;
+            overscroll-behavior-inline: contain;
+            scroll-snap-type: inline mandatory;
+            scrollbar-width: thin;
+            padding-bottom: 8px;
+        }
+
+        .market-side-card {
+            flex: 0 0 82%;
+            min-height: 128px;
+            scroll-snap-align: start;
+        }
+
+        .market-shortcuts a {
+            flex: 0 0 72%;
+            scroll-snap-align: start;
+        }
+
+        .market-category-grid {
+            justify-content: flex-start;
+        }
+
+        .market-category-grid a {
+            flex: 0 0 170px;
+            min-height: 176px;
+            scroll-snap-align: start;
         }
 
         .market-hero-carousel,
@@ -1203,22 +1455,112 @@
             margin-top: 8px;
         }
 
-        .market-shortcuts,
         .market-product-grid,
-        .market-trust-grid,
-        .market-category-grid {
-            grid-template-columns: 1fr;
+        .market-product-grid-six {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .market-trust-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .market-trust-grid > div {
+            display: flex;
+            min-height: 126px;
+            flex-direction: column;
+            gap: 6px;
+            padding: 14px;
+        }
+
+        .market-trust-grid i {
+            width: 36px;
+            height: 36px;
+        }
+
+        .market-trust-grid span {
+            font-size: 0.78rem;
+        }
+
+        .market-section {
+            padding: 40px 0;
         }
 
         .market-section-heading {
             align-items: start;
             flex-direction: column;
+            margin-bottom: 18px;
+        }
+
+        .market-product-image {
+            height: 145px;
+        }
+
+        .market-product-image img {
+            padding: 10px;
+        }
+
+        .market-product-body {
+            padding: 12px;
+        }
+
+        .market-product-name {
+            min-height: 42px;
+            font-size: 0.92rem;
+        }
+
+        .market-product-meta {
+            min-height: 42px;
+            margin-bottom: 10px;
+            font-size: 0.72rem;
+        }
+
+        .market-product-meta span:first-child {
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .market-product-footer {
+            align-items: flex-end;
+        }
+
+        .market-product-footer strong {
+            display: block;
+            font-size: 0.96rem;
+        }
+
+        .market-product-footer button {
+            width: 38px;
+            min-width: 38px;
+            height: 38px;
+        }
+
+        .market-product-select {
+            min-width: 38px;
+            height: 38px;
+            padding: 0 8px;
+            font-size: 0.68rem;
         }
     }
 </style>
 
 @section Scripts {
     <script>
+        document.querySelector('.market-category-list')?.addEventListener('click', function (event) {
+            const toggle = event.target.closest('.market-category-toggle');
+            if (!toggle) return;
+
+            const children = document.getElementById(toggle.getAttribute('aria-controls'));
+            if (!children) return;
+
+            const willOpen = toggle.getAttribute('aria-expanded') !== 'true';
+            toggle.setAttribute('aria-expanded', willOpen.toString());
+            children.hidden = !willOpen;
+        });
+
         if (window.ecommerceHub) window.ecommerceHub.on('PriceChanged', () => window.location.reload());
     </script>
 }

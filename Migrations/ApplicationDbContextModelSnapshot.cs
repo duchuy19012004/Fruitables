@@ -128,6 +128,66 @@ namespace Fruitables.Migrations
                     b.ToTable("Carts");
                 });
 
+            modelBuilder.Entity("Fruitables.Models.CartGroup", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("AllowCouponStacking")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("CartId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ComboId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ComboName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<int>("ComboRevision")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("Discount")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("FinalTotal")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<decimal>("OriginalTotal")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ComboId");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("UpdatedAt");
+
+                    b.HasIndex("CartId", "ComboId", "ComboRevision")
+                        .IsUnique();
+
+                    b.ToTable("CartGroups");
+                });
+
             modelBuilder.Entity("Fruitables.Models.CartItem", b =>
                 {
                     b.Property<int>("Id")
@@ -136,8 +196,14 @@ namespace Fruitables.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<int?>("CartGroupId")
+                        .HasColumnType("int");
+
                     b.Property<int>("CartId")
                         .HasColumnType("int");
+
+                    b.Property<decimal>("ComboDiscount")
+                        .HasColumnType("decimal(12,2)");
 
                     b.Property<decimal>("Price")
                         .HasColumnType("decimal(10,2)");
@@ -157,14 +223,23 @@ namespace Fruitables.Migrations
 
                     b.HasIndex("ProductVariantId");
 
+                    b.HasIndex("CartGroupId", "ProductId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_CartItems_CartGroupId_ProductId_NoVariant")
+                        .HasFilter("[CartGroupId] IS NOT NULL AND [ProductVariantId] IS NULL");
+
                     b.HasIndex("CartId", "ProductId")
                         .IsUnique()
                         .HasDatabaseName("IX_CartItems_CartId_ProductId_NoVariant")
-                        .HasFilter("[ProductVariantId] IS NULL");
+                        .HasFilter("[CartGroupId] IS NULL AND [ProductVariantId] IS NULL");
+
+                    b.HasIndex("CartGroupId", "ProductId", "ProductVariantId")
+                        .IsUnique()
+                        .HasFilter("[CartGroupId] IS NOT NULL AND [ProductVariantId] IS NOT NULL");
 
                     b.HasIndex("CartId", "ProductId", "ProductVariantId")
                         .IsUnique()
-                        .HasFilter("[ProductVariantId] IS NOT NULL");
+                        .HasFilter("[CartGroupId] IS NULL AND [ProductVariantId] IS NOT NULL");
 
                     b.ToTable("CartItems");
                 });
@@ -294,11 +369,25 @@ namespace Fruitables.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<bool>("AllowCouponStacking")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
                     b.Property<string>("Description")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal?>("DiscountValue")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<DateTimeOffset?>("EndsAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<decimal?>("FixedPrice")
+                        .HasColumnType("decimal(12,2)");
 
                     b.Property<string>("ImageUrl")
                         .HasMaxLength(500)
@@ -312,6 +401,15 @@ namespace Fruitables.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)");
 
+                    b.Property<int>("PricingType")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Revision")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(1);
+
                     b.Property<string>("Slug")
                         .IsRequired()
                         .HasMaxLength(255)
@@ -319,6 +417,14 @@ namespace Fruitables.Migrations
 
                     b.Property<int>("SortOrder")
                         .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("StartsAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("Status")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(2);
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -328,7 +434,47 @@ namespace Fruitables.Migrations
                     b.HasIndex("Slug")
                         .IsUnique();
 
+                    b.HasIndex("Status", "StartsAt", "EndsAt");
+
                     b.ToTable("Combos");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.ComboAuditLog", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<int?>("AdminId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ComboId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Details")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AdminId");
+
+                    b.HasIndex("ComboId", "CreatedAt");
+
+                    b.ToTable("ComboAuditLogs");
                 });
 
             modelBuilder.Entity("Fruitables.Models.ComboItem", b =>
@@ -360,7 +506,16 @@ namespace Fruitables.Migrations
 
                     b.HasIndex("ProductVariantId");
 
+                    b.HasIndex("ComboId", "ProductId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_ComboItems_ComboId_ProductId_NoVariant")
+                        .HasFilter("[ProductVariantId] IS NULL");
+
                     b.HasIndex("ComboId", "SortOrder");
+
+                    b.HasIndex("ComboId", "ProductId", "ProductVariantId")
+                        .IsUnique()
+                        .HasFilter("[ProductVariantId] IS NOT NULL");
 
                     b.ToTable("ComboItems");
                 });
@@ -691,6 +846,19 @@ namespace Fruitables.Migrations
                     b.Property<decimal>("BasePrice")
                         .HasColumnType("decimal(10,2)");
 
+                    b.Property<decimal>("ComboDiscount")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<string>("ComboNameSnapshot")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<int?>("ComboQuantity")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ComboRevision")
+                        .HasColumnType("int");
+
                     b.Property<int>("OrderId")
                         .HasColumnType("int");
 
@@ -715,6 +883,9 @@ namespace Fruitables.Migrations
                         .HasColumnType("decimal(10,2)");
 
                     b.Property<int>("Quantity")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("SourceComboId")
                         .HasColumnType("int");
 
                     b.Property<decimal>("Total")
@@ -1944,8 +2115,32 @@ namespace Fruitables.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("Fruitables.Models.CartGroup", b =>
+                {
+                    b.HasOne("Fruitables.Models.Cart", "Cart")
+                        .WithMany("Groups")
+                        .HasForeignKey("CartId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Fruitables.Models.Combo", "Combo")
+                        .WithMany()
+                        .HasForeignKey("ComboId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Cart");
+
+                    b.Navigation("Combo");
+                });
+
             modelBuilder.Entity("Fruitables.Models.CartItem", b =>
                 {
+                    b.HasOne("Fruitables.Models.CartGroup", "CartGroup")
+                        .WithMany("Items")
+                        .HasForeignKey("CartGroupId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Fruitables.Models.Cart", "Cart")
                         .WithMany("Items")
                         .HasForeignKey("CartId")
@@ -1964,6 +2159,8 @@ namespace Fruitables.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Cart");
+
+                    b.Navigation("CartGroup");
 
                     b.Navigation("Product");
 
@@ -1999,6 +2196,23 @@ namespace Fruitables.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.ComboAuditLog", b =>
+                {
+                    b.HasOne("Fruitables.Models.User", "Admin")
+                        .WithMany()
+                        .HasForeignKey("AdminId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Fruitables.Models.Combo", "Combo")
+                        .WithMany("AuditLogs")
+                        .HasForeignKey("ComboId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Admin");
+
+                    b.Navigation("Combo");
                 });
 
             modelBuilder.Entity("Fruitables.Models.ComboItem", b =>
@@ -2104,7 +2318,7 @@ namespace Fruitables.Migrations
                     b.HasOne("Fruitables.Models.User", "CancelledByAdmin")
                         .WithMany()
                         .HasForeignKey("CancelledByAdminId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("Fruitables.Models.User", "CreatedByAdmin")
                         .WithMany()
@@ -2412,6 +2626,13 @@ namespace Fruitables.Migrations
 
             modelBuilder.Entity("Fruitables.Models.Cart", b =>
                 {
+                    b.Navigation("Groups");
+
+                    b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.CartGroup", b =>
+                {
                     b.Navigation("Items");
                 });
 
@@ -2429,6 +2650,8 @@ namespace Fruitables.Migrations
 
             modelBuilder.Entity("Fruitables.Models.Combo", b =>
                 {
+                    b.Navigation("AuditLogs");
+
                     b.Navigation("Items");
                 });
 

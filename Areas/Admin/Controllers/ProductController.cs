@@ -92,7 +92,12 @@ public class ProductController : Controller
         // Upload images if provided
         if (images != null && images.Any() && result.Product != null)
         {
-            await _productAdminService.AddImagesAsync(result.Product.Id, images);
+            var imageResult = await _productAdminService.AddImagesAsync(result.Product.Id, images);
+            if (!imageResult.Success)
+            {
+                TempData["Error"] = $"Sản phẩm đã được tạo nhưng ảnh chưa được lưu: {imageResult.ErrorMessage}";
+                return RedirectToAction(nameof(Edit), new { id = result.Product.Id });
+            }
         }
 
         TempData["Success"] = "Tạo sản phẩm thành công!";
@@ -179,7 +184,12 @@ public class ProductController : Controller
         // Upload additional images if provided
         if (images != null && images.Any())
         {
-            await _productAdminService.AddImagesAsync(id, images);
+            var imageResult = await _productAdminService.AddImagesAsync(id, images);
+            if (!imageResult.Success)
+            {
+                TempData["Error"] = imageResult.ErrorMessage;
+                return RedirectToAction(nameof(Edit), new { id });
+            }
         }
 
         if (oldStock != request.StockQuantity)

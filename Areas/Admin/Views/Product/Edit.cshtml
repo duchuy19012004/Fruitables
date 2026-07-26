@@ -142,7 +142,7 @@
                             {
                                 <div class="col-md-3" data-image-id="@image.Id">
                                     <div class="card">
-                                        <img src="@image.ImageUrl" class="card-img-top" alt="Product image" style="height: 150px; object-fit: cover;" />
+                                        <img src="@image.ImageUrl" class="card-img-top bg-white" alt="Ảnh sản phẩm" style="height: 150px; object-fit: contain;" />
                                         <div class="card-body p-2">
                                             <div class="d-flex justify-content-between align-items-center">
                                                 @if (image.IsPrimary)
@@ -169,8 +169,8 @@
                     <!-- Upload New Images -->
                     <div class="mb-3">
                         <label class="form-label">Thêm hình ảnh mới</label>
-                        <input type="file" name="images" id="imageUploadInput" class="form-control" multiple accept="image/*" />
-                        <small class="text-muted">Chọn nhiều ảnh (tối đa 5MB/ảnh)</small>
+                        <input type="file" name="images" id="imageUploadInput" class="form-control" multiple accept="image/jpeg,image/png,image/webp" />
+                        <small class="text-muted">Tối đa 10 ảnh, 5MB/ảnh. Ảnh giữ nguyên tỷ lệ, cạnh dài tối đa 1000px và được chuyển thành WebP.</small>
                     </div>
                     
                     <!-- Image Preview Section -->

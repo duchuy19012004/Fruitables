@@ -9,48 +9,114 @@
         var primaryImage = product.Images?.FirstOrDefault(i => i.IsPrimary)?.ImageUrl
             ?? product.Images?.FirstOrDefault()?.ImageUrl
             ?? "~/img/fruite-item-5.jpg";
-        var hasVariants = product.Variants.Any(v => v.IsActive);
-        var isSale = !hasVariants && product.DisplayMinPrice < product.Price;
+        var activeVariants = product.Variants.Where(v => v.IsActive).ToList();
+        var hasVariants = activeVariants.Count > 0;
+        var availableVariantCount = activeVariants.Count(v => v.StockQuantity >= product.MinOrderQuantity);
+        var isAvailable = hasVariants
+            ? availableVariantCount > 0
+            : product.StockQuantity >= product.MinOrderQuantity;
+        var isLowStock = !hasVariants && isAvailable && product.StockQuantity <= 5;
+        var isSale = !hasVariants && product.Price > 0 && product.DisplayMinPrice < product.Price;
         var displayPrice = product.DisplayMinPrice;
         var discountPercent = isSale ? (int)Math.Round((1 - product.DisplayMinPrice / product.Price) * 100) : 0;
+        var rawDescription = !string.IsNullOrWhiteSpace(product.ShortDescription)
+            ? product.ShortDescription
+            : product.Description;
+        var description = !string.IsNullOrWhiteSpace(rawDescription) && rawDescription.Length > 90
+            ? rawDescription.Substring(0, 87).TrimEnd() + "…"
+            : rawDescription;
 
-        <article class="shop-product-card">
-            <a asp-controller="Shop" asp-action="Detail" asp-route-slug="@product.Slug" class="shop-product-image">
-                <img src="@primaryImage" alt="@product.Name">
-                @if (isSale)
-                {
-                    <span class="shop-sale-badge">-@discountPercent%</span>
-                }
-                @if (product.Category != null)
-                {
-                    <span class="shop-category-badge">@product.Category.Name</span>
-                }
+        <article class="shop-product-card @(!isAvailable ? "is-unavailable" : null)">
+            <a asp-controller="Shop" asp-action="Detail" asp-route-slug="@product.Slug" class="shop-product-image" aria-label="Xem @product.Name">
+                <img src="@primaryImage" alt="@product.Name" loading="lazy" decoding="async">
+                <div class="shop-product-badges" aria-hidden="true">
+                    @if (isSale)
+                    {
+                        <span class="shop-sale-badge">Giảm @discountPercent%</span>
+                    }
+                    @if (!isAvailable)
+                    {
+                        <span class="shop-stock-badge is-out">Hết hàng</span>
+                    }
+                    else if (isLowStock)
+                    {
+                        <span class="shop-stock-badge">Còn @product.StockQuantity</span>
+                    }
+                </div>
+                <span class="shop-image-action">Xem sản phẩm <i class="fas fa-arrow-right"></i></span>
             </a>
+
             <div class="shop-product-body">
+                <div class="shop-product-overline">
+                    <span>@(product.Category?.Name ?? "Nông sản")</span>
+                    @if (product.ReviewCount > 0)
+                    {
+                        <span class="shop-rating" aria-label="@product.AverageRating.ToString("0.0") trên 5 sao, @product.ReviewCount đánh giá">
+                            <i class="fas fa-star" aria-hidden="true"></i>
+                            @product.AverageRating.ToString("0.0") <small>(@product.ReviewCount)</small>
+                        </span>
+                    }
+                </div>
+
                 <a asp-controller="Shop" asp-action="Detail" asp-route-slug="@product.Slug" class="shop-product-name">@product.Name</a>
-                <p>@(product.ShortDescription ?? product.Description?.Substring(0, Math.Min(product.Description?.Length ?? 0, 76)) ?? "Sản phẩm tươi ngon cho gia đình.")</p>
-                <div class="shop-product-footer">
+
+                <div class="shop-product-facts">
+                    @if (!string.IsNullOrWhiteSpace(product.CountryOrigin))
+                    {
+                        <span><i class="fas fa-map-marker-alt" aria-hidden="true"></i>@product.CountryOrigin</span>
+                    }
+                    @if (hasVariants)
+                    {
+                        <span><i class="fas fa-layer-group" aria-hidden="true"></i>@availableVariantCount lựa chọn</span>
+                    }
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(description))
+                {
+                    <p class="shop-product-description">@description</p>
+                }
+
+                <div class="shop-product-purchase">
                     <div class="shop-price">
-                        <strong>@(hasVariants ? $"{product.DisplayMinPrice:N0}đ{(product.DisplayMaxPrice != product.DisplayMinPrice ? $" – {product.DisplayMaxPrice:N0}đ" : "")}" : $"{displayPrice:N0}đ")</strong>
-                        <small>/ @product.Unit</small>
+                        <span class="shop-price-label">Giá bán</span>
+                        <div>
+                            <strong>
+                                @if (hasVariants && product.DisplayMaxPrice != product.DisplayMinPrice)
+                                {
+                                    @:@product.DisplayMinPrice.ToString("N0")–@product.DisplayMaxPrice.ToString("N0")đ
+                                }
+                                else
+                                {
+                                    @:@displayPrice.ToString("N0")đ
+                                }
+                            </strong>
+                            <small>/ @product.Unit</small>
+                        </div>
                         @if (isSale)
                         {
                             <del>@product.Price.ToString("N0")đ</del>
                         }
                     </div>
+
                     @if (hasVariants)
                     {
-                        <a asp-controller="Shop" asp-action="Detail" asp-route-slug="@product.Slug" class="btn btn-outline-primary">Chọn</a>
+                        <a asp-controller="Shop" asp-action="Detail" asp-route-slug="@product.Slug"
+                           class="shop-product-cta @(!isAvailable ? "is-disabled" : null)"
+                           aria-disabled="@(!isAvailable)" tabindex="@(!isAvailable ? -1 : 0)">
+                            <span>@(isAvailable ? "Chọn loại" : "Tạm hết hàng")</span>
+                            <i class="fas fa-arrow-right" aria-hidden="true"></i>
+                        </a>
                     }
                     else
                     {
-                    <form asp-controller="Cart" asp-action="AddToCart" method="post">
-                        <input type="hidden" name="productId" value="@product.Id" />
-                        <button type="submit" aria-label="Thêm @product.Name vào giỏ hàng">
-                            <i class="fa fa-shopping-bag"></i>
-                            <span>Thêm</span>
-                        </button>
-                    </form>
+                        <form asp-controller="Cart" asp-action="AddToCart" method="post">
+                            <input type="hidden" name="productId" value="@product.Id" />
+                            <input type="hidden" name="quantity" value="@product.MinOrderQuantity" />
+                            <button type="submit" class="shop-product-cta" disabled="@(!isAvailable)" aria-label="@(isAvailable ? $"Thêm {product.Name} vào giỏ hàng" : $"{product.Name} hiện hết hàng")">
+                                <i class="fas fa-shopping-basket" aria-hidden="true"></i>
+                                <span>@(isAvailable ? "Thêm vào giỏ" : "Tạm hết hàng")</span>
+                            </button>
+                        </form>
                     }
                 </div>
             </div>
@@ -59,296 +125,38 @@
 
     @if (Model.TotalPages > 1)
     {
+        var startPage = Math.Max(1, Model.CurrentPage - 2);
+        var endPage = Math.Min(Model.TotalPages, Model.CurrentPage + 2);
         <nav class="shop-pagination" aria-label="Phân trang sản phẩm">
-            @if (Model.CurrentPage > 1)
+            <a asp-controller="Shop" asp-action="Index" asp-route-categoryId="@Model.SelectedCategoryId" asp-route-search="@Model.SearchTerm" asp-route-minPrice="@Model.MinPrice" asp-route-maxPrice="@Model.MaxPrice" asp-route-sortBy="@Model.SortBy" asp-route-page="@(Model.CurrentPage - 1)" class="shop-page-arrow @(Model.CurrentPage == 1 ? "is-disabled" : null)" aria-disabled="@(Model.CurrentPage == 1)" tabindex="@(Model.CurrentPage == 1 ? -1 : 0)" aria-label="Trang trước">
+                <i class="fas fa-chevron-left" aria-hidden="true"></i>
+            </a>
+            @if (startPage > 1)
             {
-                <a asp-controller="Shop" asp-action="Index"
-                   asp-route-categoryId="@Model.SelectedCategoryId"
-                   asp-route-search="@Model.SearchTerm"
-                   asp-route-minPrice="@Model.MinPrice"
-                   asp-route-maxPrice="@Model.MaxPrice"
-                   asp-route-sortBy="@Model.SortBy"
-                   asp-route-page="@(Model.CurrentPage - 1)" aria-label="Trang trước">
-                    <i class="fas fa-chevron-left"></i>
-                </a>
+                <a asp-controller="Shop" asp-action="Index" asp-route-categoryId="@Model.SelectedCategoryId" asp-route-search="@Model.SearchTerm" asp-route-minPrice="@Model.MinPrice" asp-route-maxPrice="@Model.MaxPrice" asp-route-sortBy="@Model.SortBy" asp-route-page="1">1</a>
+                @if (startPage > 2) { <span class="shop-page-gap">…</span> }
             }
-            @for (int i = 1; i <= Model.TotalPages; i++)
+            @for (var pageNumber = startPage; pageNumber <= endPage; pageNumber++)
             {
-                <a asp-controller="Shop" asp-action="Index"
-                   asp-route-categoryId="@Model.SelectedCategoryId"
-                   asp-route-search="@Model.SearchTerm"
-                   asp-route-minPrice="@Model.MinPrice"
-                   asp-route-maxPrice="@Model.MaxPrice"
-                   asp-route-sortBy="@Model.SortBy"
-                   asp-route-page="@i"
-                   class="@(i == Model.CurrentPage ? "active" : "")">@i</a>
+                <a asp-controller="Shop" asp-action="Index" asp-route-categoryId="@Model.SelectedCategoryId" asp-route-search="@Model.SearchTerm" asp-route-minPrice="@Model.MinPrice" asp-route-maxPrice="@Model.MaxPrice" asp-route-sortBy="@Model.SortBy" asp-route-page="@pageNumber" class="@(pageNumber == Model.CurrentPage ? "active" : null)" aria-current="@(pageNumber == Model.CurrentPage ? "page" : null)">@pageNumber</a>
             }
-            @if (Model.CurrentPage < Model.TotalPages)
+            @if (endPage < Model.TotalPages)
             {
-                <a asp-controller="Shop" asp-action="Index"
-                   asp-route-categoryId="@Model.SelectedCategoryId"
-                   asp-route-search="@Model.SearchTerm"
-                   asp-route-minPrice="@Model.MinPrice"
-                   asp-route-maxPrice="@Model.MaxPrice"
-                   asp-route-sortBy="@Model.SortBy"
-                   asp-route-page="@(Model.CurrentPage + 1)" aria-label="Trang tiếp theo">
-                    <i class="fas fa-chevron-right"></i>
-                </a>
+                @if (endPage < Model.TotalPages - 1) { <span class="shop-page-gap">…</span> }
+                <a asp-controller="Shop" asp-action="Index" asp-route-categoryId="@Model.SelectedCategoryId" asp-route-search="@Model.SearchTerm" asp-route-minPrice="@Model.MinPrice" asp-route-maxPrice="@Model.MaxPrice" asp-route-sortBy="@Model.SortBy" asp-route-page="@Model.TotalPages">@Model.TotalPages</a>
             }
+            <a asp-controller="Shop" asp-action="Index" asp-route-categoryId="@Model.SelectedCategoryId" asp-route-search="@Model.SearchTerm" asp-route-minPrice="@Model.MinPrice" asp-route-maxPrice="@Model.MaxPrice" asp-route-sortBy="@Model.SortBy" asp-route-page="@(Model.CurrentPage + 1)" class="shop-page-arrow @(Model.CurrentPage == Model.TotalPages ? "is-disabled" : null)" aria-disabled="@(Model.CurrentPage == Model.TotalPages)" tabindex="@(Model.CurrentPage == Model.TotalPages ? -1 : 0)" aria-label="Trang tiếp theo">
+                <i class="fas fa-chevron-right" aria-hidden="true"></i>
+            </a>
         </nav>
     }
 }
 else
 {
     <div class="shop-empty-state">
-        <i class="fas fa-search"></i>
+        <i class="fas fa-search" aria-hidden="true"></i>
         <h2>Không tìm thấy sản phẩm</h2>
         <p>Hãy thử đổi từ khóa, danh mục hoặc mức giá để xem thêm sản phẩm phù hợp.</p>
         <a asp-controller="Shop" asp-action="Index" class="btn btn-primary">Xem tất cả sản phẩm</a>
     </div>
 }
-
-<style>
-    .shop-product-card {
-        overflow: hidden;
-        position: relative;
-        transition:
-            transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
-            box-shadow 0.28s cubic-bezier(0.22, 1, 0.36, 1),
-            border-color 0.28s ease;
-    }
-
-    .shop-product-card:hover {
-        transform: translateY(-8px);
-        border-color: rgba(129, 196, 8, 0.45);
-        box-shadow:
-            0 16px 28px rgba(31, 41, 55, 0.08),
-            0 28px 48px rgba(129, 196, 8, 0.14);
-    }
-
-    .shop-product-image {
-        position: relative;
-        display: flex;
-        height: 220px;
-        align-items: center;
-        justify-content: center;
-        background: #f8fafc;
-        overflow: hidden;
-    }
-
-    .shop-product-image img {
-        width: 100%;
-        height: 100%;
-        object-fit: contain;
-        padding: 16px;
-        transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
-        will-change: transform;
-    }
-
-    .shop-product-card:hover .shop-product-image img {
-        transform: scale(1.08);
-    }
-
-    .shop-product-card:hover .shop-product-name {
-        color: #5f9307;
-    }
-
-    .shop-product-card:hover .shop-product-footer button {
-        background: #81c408;
-        color: #ffffff;
-        border-color: #81c408;
-        box-shadow: 0 8px 18px rgba(129, 196, 8, 0.35);
-    }
-
-    .shop-product-card:hover .shop-sale-badge {
-        transform: scale(1.06);
-    }
-
-    .shop-sale-badge {
-        transition: transform 0.28s ease;
-    }
-
-    .shop-sale-badge,
-    .shop-category-badge {
-        position: absolute;
-        top: 12px;
-        max-width: calc(100% - 24px);
-        padding: 5px 9px;
-        border-radius: 6px;
-        color: #ffffff;
-        font-size: 0.78rem;
-        font-weight: 900;
-    }
-
-    .shop-sale-badge {
-        left: 12px;
-        background: #df2f2f;
-    }
-
-    .shop-category-badge {
-        right: 12px;
-        overflow: hidden;
-        background: #81c408;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-
-    .shop-product-body {
-        padding: 16px;
-    }
-
-    .shop-product-name {
-        display: block;
-        min-height: 46px;
-        color: #273438;
-        font-size: 1.04rem;
-        font-weight: 900;
-        line-height: 1.35;
-        text-decoration: none;
-    }
-
-    .shop-product-name:hover {
-        color: #5f9307;
-    }
-
-    .shop-product-body p {
-        min-height: 44px;
-        margin: 8px 0 14px;
-        color: #64748b;
-        font-size: 0.9rem;
-    }
-
-    .shop-product-footer {
-        display: flex;
-        align-items: end;
-        justify-content: space-between;
-        gap: 10px;
-    }
-
-    .shop-price strong {
-        color: #df2f2f;
-        font-size: 1.16rem;
-    }
-
-    .shop-price small,
-    .shop-price del {
-        display: block;
-        color: #64748b;
-        font-size: 0.86rem;
-    }
-
-    .shop-product-footer form {
-        margin: 0;
-    }
-
-    .shop-product-footer button {
-        display: inline-flex;
-        align-items: center;
-        gap: 7px;
-        min-height: 42px;
-        padding: 0 14px;
-        border: 1px solid #81c408;
-        border-radius: 999px;
-        background: #ffffff;
-        color: #5f9307;
-        font-weight: 900;
-    }
-
-    .shop-product-footer button:hover {
-        background: #81c408;
-        color: #ffffff;
-    }
-
-    .shop-pagination {
-        grid-column: 1 / -1;
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: center;
-        gap: 8px;
-        margin-top: 28px;
-    }
-
-    .shop-pagination a {
-        display: inline-flex;
-        width: 42px;
-        height: 42px;
-        align-items: center;
-        justify-content: center;
-        border-radius: 50%;
-        background: #ffffff;
-        color: #45595b;
-        font-weight: 900;
-        text-decoration: none;
-        box-shadow: 0 8px 22px rgba(31, 41, 55, 0.08);
-    }
-
-    .shop-pagination a:hover,
-    .shop-pagination a.active {
-        background: #81c408;
-        color: #ffffff;
-    }
-
-    .shop-empty-state {
-        grid-column: 1 / -1;
-        padding: 52px 24px;
-        text-align: center;
-    }
-
-    .shop-empty-state i {
-        display: inline-flex;
-        width: 58px;
-        height: 58px;
-        align-items: center;
-        justify-content: center;
-        margin-bottom: 16px;
-        border-radius: 50%;
-        background: #f1f8df;
-        color: #81c408;
-        font-size: 1.3rem;
-    }
-
-    .shop-empty-state h2 {
-        color: #273438;
-        font-weight: 900;
-    }
-
-    .shop-empty-state p {
-        max-width: 520px;
-        margin: 0 auto 18px;
-        color: #64748b;
-    }
-
-    .shop-empty-state .btn {
-        border-radius: 999px;
-        font-weight: 800;
-    }
-
-    @@media (max-width: 575.98px) {
-        .shop-product-footer {
-            align-items: stretch;
-            flex-direction: column;
-        }
-
-        .shop-product-footer button {
-            width: 100%;
-            justify-content: center;
-        }
-    }
-
-    @@media (prefers-reduced-motion: reduce) {
-        .shop-product-card,
-        .shop-product-image img,
-        .shop-sale-badge {
-            transition: none;
-        }
-
-        .shop-product-card:hover {
-            transform: none;
-        }
-
-        .shop-product-card:hover .shop-product-image img,
-        .shop-product-card:hover .shop-sale-badge {
-            transform: none;
-        }
-    }
-</style>

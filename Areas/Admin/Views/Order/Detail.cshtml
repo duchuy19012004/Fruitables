@@ -128,6 +128,14 @@
                                                 <div>
                                                     <p class="font-medium text-slate-800">@item.ProductName</p>
                                                     <p class="text-xs text-slate-500">ID: #@item.ProductId</p>
+                                                    @if (item.SourceComboId.HasValue)
+                                                    {
+                                                        <span class="inline-flex text-xs px-2 py-0.5 rounded-full bg-lime-100 text-lime-700">@item.ComboNameSnapshot · rev @item.ComboRevision</span>
+                                                        @if (item.ComboDiscount > 0)
+                                                        {
+                                                            <p class="text-xs text-lime-600 mt-1">Giảm combo: -@item.ComboDiscount.ToString("N0")₫</p>
+                                                        }
+                                                    }
                                                 </div>
                                             </div>
                                         </td>

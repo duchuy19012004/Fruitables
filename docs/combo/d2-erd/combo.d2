@@ -1,0 +1,53 @@
+direction: right
+
+# ERD phạm vi chức năng Combo sản phẩm
+
+COMBO: "Combo (Combos)" {
+  shape: sql_table
+  "Mã": "số nguyên" {constraint: primary_key}
+  "Tên combo": "chuỗi"
+  "Đường dẫn (slug)": "chuỗi"
+  "Mô tả": "chuỗi (trống được)"
+  "Ảnh": "chuỗi (trống được)"
+  "Đang hoạt động": "đúng/sai"
+  "Thứ tự sắp xếp": "số nguyên"
+  "Ngày tạo": "ngày giờ"
+  "Ngày cập nhật": "ngày giờ"
+}
+
+MUC_COMBO: "Mục combo (ComboItems)" {
+  shape: sql_table
+  "Mã": "số nguyên" {constraint: primary_key}
+  "Mã combo": "số nguyên" {constraint: foreign_key}
+  "Mã sản phẩm": "số nguyên" {constraint: foreign_key}
+  "Mã phân loại": "số nguyên (trống được)" {constraint: foreign_key}
+  "Số lượng": "số nguyên"
+  "Thứ tự sắp xếp": "số nguyên"
+}
+
+SAN_PHAM: "Sản phẩm (Products — các cột chính)" {
+  shape: sql_table
+  "Mã": "số nguyên" {constraint: primary_key}
+  "Tên sản phẩm": "chuỗi"
+  "Giá gốc": "số thập phân"
+  "Đơn vị tính": "chuỗi"
+  "Tồn kho": "số nguyên"
+  "Đang hoạt động": "đúng/sai"
+  "Đã xóa": "đúng/sai"
+}
+
+PHAN_LOAI: "Phân loại (ProductVariants — các cột chính)" {
+  shape: sql_table
+  "Mã": "số nguyên" {constraint: primary_key}
+  "Mã sản phẩm": "số nguyên" {constraint: foreign_key}
+  "Mã SKU": "chuỗi"
+  "Tên phân loại": "chuỗi"
+  "Giá": "số thập phân"
+  "Tồn kho": "số nguyên"
+  "Đang hoạt động": "đúng/sai"
+}
+
+# ===== Quan hệ =====
+COMBO -> MUC_COMBO: "1-N: gồm các mục"
+SAN_PHAM -> MUC_COMBO: "1-N: nằm trong combo"
+PHAN_LOAI -> MUC_COMBO: "1-N: chọn theo phân loại (trống được)"

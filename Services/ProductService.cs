@@ -78,6 +78,8 @@ public class ProductService : IProductService
 
     public async Task<ShopViewModel> GetShopViewModelAsync(int? categoryId, string? search, decimal? minPrice, decimal? maxPrice, string? sortBy, int page, int pageSize)
     {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 60);
         var catalogQuery = _unitOfWork.Products.Query().AsNoTracking().Where(p => p.IsActive && !p.IsDeleted);
 
         // Filter by category
@@ -101,6 +103,7 @@ public class ProductService : IProductService
         };
         var totalItems = priced.Count();
         var totalPages = (int)Math.Ceiling(totalItems / (double)pageSize);
+        if (totalPages > 0) page = Math.Min(page, totalPages);
         var pagePrices = priced
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
@@ -126,6 +129,7 @@ public class ProductService : IProductService
             MaxPrice = maxPrice,
             SortBy = sortBy,
             CurrentPage = page,
+            TotalItems = totalItems,
             TotalPages = totalPages,
             PageSize = pageSize
         };

@@ -2,43 +2,51 @@
 @{
     var index = (int)(ViewData["Index"] ?? 0);
     var products = (List<Fruitables.ViewModels.ComboProductOptionViewModel>)ViewData["Products"]!;
+    var selectedProduct = products.FirstOrDefault(product => product.Id == Model.ProductId);
+    var variantRequired = selectedProduct?.Variants.Count > 0;
 }
 
-<div class="row combo-item-row align-items-end mb-2">
+<div class="row combo-item-row align-items-end mb-3 p-3 border rounded bg-light-subtle">
+    <div class="col-12 mb-2 d-flex justify-content-between align-items-center">
+        <strong class="combo-item-number">Sản phẩm @(index + 1)</strong>
+        <small class="combo-stock-note text-muted"></small>
+    </div>
     <div class="col-md-5">
-        <label class="form-label">Sản phẩm</label>
-        <select name="Items[@index].ProductId" class="form-select product-select" required>
-            <option value="">-- chọn --</option>
-            @foreach (var p in products)
+        <label class="form-label" for="combo-product-@index">Sản phẩm <span class="text-danger">*</span></label>
+        <select id="combo-product-@index" name="Items[@index].ProductId" class="form-select product-select" required>
+            <option value="">-- chọn sản phẩm --</option>
+            @foreach (var product in products)
             {
-                <option value="@p.Id" selected="@(p.Id == Model.ProductId)">@p.Name</option>
+                var stockLabel = product.Variants.Count == 0 ? $" · tồn {product.StockQuantity}" : $" · {product.Variants.Count} biến thể";
+                <option value="@product.Id" selected="@(product.Id == Model.ProductId)">@product.Name@stockLabel</option>
             }
         </select>
     </div>
     <div class="col-md-3">
-        <label class="form-label">Biến thể</label>
-        <select name="Items[@index].ProductVariantId" class="form-select variant-select">
-            <option value="">-- mặc định --</option>
-            @{
-                var selectedProduct = products.FirstOrDefault(p => p.Id == Model.ProductId);
-            }
-            @if (selectedProduct != null)
+        <label class="form-label" for="combo-variant-@index">Biến thể <span class="variant-required-mark text-danger @(variantRequired ? "" : "d-none")">*</span></label>
+        <select id="combo-variant-@index" name="Items[@index].ProductVariantId" class="form-select variant-select" required="@variantRequired">
+            @if (variantRequired)
             {
-                @foreach (var v in selectedProduct.Variants)
+                <option value="">-- bắt buộc chọn --</option>
+                @foreach (var variant in selectedProduct!.Variants)
                 {
-                    <option value="@v.Id" selected="@(v.Id == Model.ProductVariantId)">@v.Name</option>
+                    <option value="@variant.Id" selected="@(variant.Id == Model.ProductVariantId)">@variant.Name · @variant.SKU · tồn @variant.StockQuantity</option>
                 }
+            }
+            else
+            {
+                <option value="">Không có biến thể</option>
             }
         </select>
     </div>
     <div class="col-md-2">
-        <label class="form-label">SL</label>
-        <input name="Items[@index].Quantity" class="form-control" type="number" min="1" value="@Model.Quantity" required />
+        <label class="form-label" for="combo-quantity-@index">Số lượng <span class="text-danger">*</span></label>
+        <input id="combo-quantity-@index" name="Items[@index].Quantity" class="form-control quantity-input" type="number" min="1" value="@Model.Quantity" required />
     </div>
     <div class="col-md-2">
-        <button type="button" class="btn btn-outline-danger remove-item w-100">
-            <i class="fas fa-trash"></i>
+        <button type="button" class="btn btn-outline-danger remove-item w-100" aria-label="Xóa sản phẩm khỏi combo">
+            <i class="fas fa-trash me-1" aria-hidden="true"></i>Xóa
         </button>
     </div>
-    <input type="hidden" name="Items[@index].SortOrder" value="@index" />
+    <input class="sort-order-input" type="hidden" name="Items[@index].SortOrder" value="@index" />
 </div>

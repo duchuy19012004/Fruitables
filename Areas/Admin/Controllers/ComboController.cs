@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Fruitables.Services.Interfaces;
 using Fruitables.ViewModels;
+using System.Security.Claims;
 
 namespace Fruitables.Areas.Admin.Controllers;
 
@@ -41,6 +42,7 @@ public class ComboController : Controller
             return View(model);
         }
 
+        model.ImageUrl = null;
         var uploadedUrl = await TryUploadComboImageAsync(model.ImageFile);
         if (uploadedUrl == null && model.ImageFile != null)
         {
@@ -51,15 +53,18 @@ public class ComboController : Controller
         if (!string.IsNullOrEmpty(uploadedUrl))
             model.ImageUrl = uploadedUrl;
 
-        var result = await _comboService.CreateAsync(model);
+        var result = await _comboService.CreateAsync(model, GetAdminId());
         if (!result.Success)
         {
+            if (!string.IsNullOrEmpty(uploadedUrl))
+                await _imageUploadService.DeleteImageAsync(uploadedUrl);
+
             ModelState.AddModelError("", result.ErrorMessage ?? "Có lỗi xảy ra");
             model.Products = (await _comboService.GetProductOptionsAsync()).ToList();
             return View(model);
         }
 
-        TempData["Success"] = "Tạo combo món ăn thành công!";
+        TempData["Success"] = "Tạo combo sản phẩm thành công!";
         return RedirectToAction(nameof(Index));
     }
 
@@ -78,19 +83,26 @@ public class ComboController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Edit(int id, ComboFormViewModel model)
     {
+        var existing = await _comboService.GetForEditAsync(id);
+        if (existing == null)
+        {
+            TempData["Error"] = "Không tìm thấy combo";
+            return RedirectToAction(nameof(Index));
+        }
+
         if (!ModelState.IsValid)
         {
+            model.ImageUrl = existing.ImageUrl;
             model.Products = (await _comboService.GetProductOptionsAsync()).ToList();
             return View(model);
         }
 
+        var oldImageUrl = existing.ImageUrl;
+        string? uploadedUrl = null;
+        model.ImageUrl = oldImageUrl;
         if (model.ImageFile != null)
         {
-            var existing = await _comboService.GetForEditAsync(id);
-            if (!string.IsNullOrEmpty(existing?.ImageUrl))
-                await _imageUploadService.DeleteImageAsync(existing.ImageUrl);
-
-            var uploadedUrl = await TryUploadComboImageAsync(model.ImageFile);
+            uploadedUrl = await TryUploadComboImageAsync(model.ImageFile);
             if (uploadedUrl == null)
             {
                 model.Products = (await _comboService.GetProductOptionsAsync()).ToList();
@@ -100,15 +112,21 @@ public class ComboController : Controller
             model.ImageUrl = uploadedUrl;
         }
 
-        var result = await _comboService.UpdateAsync(id, model);
+        var result = await _comboService.UpdateAsync(id, model, GetAdminId());
         if (!result.Success)
         {
+            if (!string.IsNullOrEmpty(uploadedUrl))
+                await _imageUploadService.DeleteImageAsync(uploadedUrl);
+
             ModelState.AddModelError("", result.ErrorMessage ?? "Có lỗi xảy ra");
             model.Products = (await _comboService.GetProductOptionsAsync()).ToList();
             return View(model);
         }
 
-        TempData["Success"] = "Cập nhật combo món ăn thành công!";
+        if (!string.IsNullOrEmpty(uploadedUrl) && !string.IsNullOrEmpty(oldImageUrl))
+            await _imageUploadService.DeleteImageAsync(oldImageUrl);
+
+        TempData["Success"] = "Cập nhật combo sản phẩm thành công!";
         return RedirectToAction(nameof(Index));
     }
 
@@ -116,11 +134,27 @@ public class ComboController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Delete(int id)
     {
-        var result = await _comboService.DeleteAsync(id);
+        var result = await _comboService.DeleteAsync(id, GetAdminId());
         TempData[result.Success ? "Success" : "Error"] = result.Success
-            ? "Xóa combo món ăn thành công!"
-            : result.ErrorMessage ?? "Không thể xóa combo";
+            ? "Đã ngừng bán combo sản phẩm."
+            : result.ErrorMessage ?? "Không thể ngừng bán combo";
         return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Audit(int id)
+    {
+        var model = await _comboService.GetAuditAsync(id);
+        if (model == null) return NotFound();
+        return View(model);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Report(DateTime? from = null, DateTime? to = null)
+    {
+        var end = (to ?? DateTime.Today).Date;
+        var start = (from ?? end.AddDays(-29)).Date;
+        return View(await _comboService.GetReportAsync(start, end));
     }
 
     [HttpGet]
@@ -130,6 +164,9 @@ public class ComboController : Controller
         var product = products.FirstOrDefault(p => p.Id == productId);
         return Json(product?.Variants ?? new List<ComboVariantOptionViewModel>());
     }
+
+    private int? GetAdminId() =>
+        int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var adminId) ? adminId : null;
 
     private async Task<string?> TryUploadComboImageAsync(IFormFile? imageFile)
     {

@@ -1,0 +1,63 @@
+@startuml
+!theme plain
+title E. Tạo và tự động áp dụng lịch giảm giá
+
+skinparam shadowing false
+skinparam nodesep 60
+skinparam ranksep 50
+skinparam activity {
+  StartColor #000000
+  EndColor #000000
+  BackgroundColor #FFFFFF
+  BorderColor #000000
+  DiamondBackgroundColor #FFFFFF
+  DiamondBorderColor #000000
+  FontSize 12
+}
+
+|Admin|
+start
+:Mở trang Quản lý giá;
+:Chọn sản phẩm / phân loại;
+
+|Hệ thống|
+:Hiển thị giá hiện tại\nvà các lịch giảm giá;
+
+|Admin|
+repeat
+  :Nhập mức giảm giá\nvà mốc bắt đầu / kết thúc;
+  :Xác nhận tạo lịch;
+
+  |Hệ thống|
+  if (Thông tin lịch hợp lệ?) then (Không hợp lệ)
+    :Hiển thị thông báo lỗi;
+  else (Hợp lệ)
+    :Lưu lịch giảm giá mới;
+    |Admin|
+    :Thấy lịch mới đang chờ áp dụng;
+  endif
+
+  |Admin|
+repeat while (Chỉnh hoặc tạo tiếp?) is (Có) not (Xong)
+
+:Chờ tới ngày bắt đầu giảm giá;
+
+|Hệ thống|
+repeat
+  :Tự kiểm tra lịch mỗi phút;
+repeat while (Đã tới giờ áp dụng?) is (Chưa) not (Tới hạn)
+
+:Tự động áp dụng giá giảm\n(giá gốc không đổi);
+:Cập nhật giá mới trên cửa hàng,\nkhách thấy ngay;
+
+|Admin|
+:Thấy giá đã giảm\nvà lịch đang chạy;
+
+|Hệ thống|
+:Hết hạn giảm giá,\ngiá quay về giá gốc;
+:Cập nhật lại giá trên cửa hàng;
+
+|Admin|
+:Thấy lịch đã kết thúc;
+stop
+@enduml

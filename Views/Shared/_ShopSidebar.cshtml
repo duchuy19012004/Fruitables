@@ -54,19 +54,22 @@
 
 <div class="offcanvas offcanvas-lg offcanvas-start shop-filter-canvas" tabindex="-1" id="shopFilterOffcanvas" aria-labelledby="shopFilterOffcanvasLabel">
     <div class="offcanvas-header">
-        <h5 class="offcanvas-title" id="shopFilterOffcanvasLabel">Bộ lọc sản phẩm</h5>
+        <div>
+            <span>Tùy chỉnh kết quả</span>
+            <h2 class="offcanvas-title" id="shopFilterOffcanvasLabel">Bộ lọc sản phẩm</h2>
+        </div>
         <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#shopFilterOffcanvas" aria-label="Đóng bộ lọc"></button>
     </div>
     <div class="offcanvas-body">
         <div class="shop-filter-panel">
             <section class="shop-filter-section">
                 <div class="shop-filter-title">
-                    <i class="fas fa-bars"></i>
                     <span>Danh mục</span>
+                    <small>Chọn nhóm hàng</small>
                 </div>
                 <ul class="shop-category-list">
                     <li>
-                        <a asp-controller="Shop" asp-action="Index" asp-route-search="@shopModel?.SearchTerm" asp-route-minPrice="@shopModel?.MinPrice" asp-route-maxPrice="@shopModel?.MaxPrice" asp-route-sortBy="@shopModel?.SortBy" class="@(!selectedCategoryId.HasValue ? "active" : "")">
+                        <a asp-controller="Shop" asp-action="Index" asp-route-search="@shopModel?.SearchTerm" asp-route-minPrice="@shopModel?.MinPrice" asp-route-maxPrice="@shopModel?.MaxPrice" asp-route-sortBy="@shopModel?.SortBy" class="@(!selectedCategoryId.HasValue ? "active" : "")" data-shop-filter-link>
                             <span>Tất cả sản phẩm</span>
                             <small>@(shopModel?.Products.Count ?? 0)</small>
                         </a>
@@ -80,8 +83,8 @@
 
             <section class="shop-filter-section">
                 <div class="shop-filter-title">
-                    <i class="fas fa-coins"></i>
                     <span>Khoảng giá</span>
+                    <small>Ngân sách tối đa</small>
                 </div>
                 <form asp-controller="Shop" asp-action="Index" method="get" class="shop-price-form" id="shopPriceForm">
                     @if (selectedCategoryId.HasValue)
@@ -96,12 +99,13 @@
                     {
                         <input type="hidden" name="sortBy" value="@shopModel.SortBy" />
                     }
+                    <label for="rangeInput" class="visually-hidden">Giá tối đa</label>
                     <input type="range" class="form-range" id="rangeInput" name="maxPrice" min="0" max="5000000" step="100000" value="@maxPrice">
                     <div class="shop-price-output">
                         <span>Tối đa</span>
                         <strong><output id="amount" for="rangeInput">@maxPrice.ToString("N0")</output>đ</strong>
                     </div>
-                    <button type="submit" class="btn btn-primary" id="shopPriceSubmit">Áp dụng</button>
+                    <button type="submit" class="btn btn-primary" id="shopPriceSubmit">Áp dụng mức giá</button>
                 </form>
             </section>
 
@@ -109,19 +113,18 @@
             {
                 <section class="shop-filter-section">
                     <div class="shop-filter-title">
-                        <i class="fas fa-star"></i>
-                        <span>Gợi ý nổi bật</span>
+                        <span>Được quan tâm</span>
+                        <small>Sản phẩm nổi bật</small>
                     </div>
                     <div class="shop-featured-list">
                         @foreach (var product in featuredProducts.Take(3))
                         {
                             var primaryImage = product.Images?.FirstOrDefault(i => i.IsPrimary)?.ImageUrl ?? product.Images?.FirstOrDefault()?.ImageUrl ?? "~/img/featur-1.jpg";
-                            var displayPrice = product.DisplayMinPrice;
                             <a asp-controller="Shop" asp-action="Detail" asp-route-slug="@product.Slug" class="shop-featured-item">
                                 <img src="@primaryImage" alt="@product.Name">
                                 <span>
                                     <strong>@product.Name</strong>
-                                    <small>@displayPrice.ToString("N0")đ</small>
+                                    <small>@product.DisplayMinPrice.ToString("N0")đ</small>
                                 </span>
                             </a>
                         }
@@ -129,218 +132,11 @@
                 </section>
             }
 
-            <a asp-controller="Shop" asp-action="Index" asp-route-search="combo" class="shop-side-promo">
-                <span>Combo tiết kiệm</span>
-                <strong>Đi chợ nhanh hơn cho cả tuần</strong>
+            <a asp-controller="Shop" asp-action="Index" asp-route-search="combo" class="shop-side-promo" data-shop-filter-link>
+                <span>Combo trong tuần</span>
+                <strong>Mua đủ món, tiết kiệm hơn</strong>
+                <small>Xem các bộ sản phẩm</small>
             </a>
         </div>
     </div>
 </div>
-
-<style>
-    .shop-filter-canvas {
-        border: 0;
-    }
-
-    .shop-filter-canvas .offcanvas-header {
-        border-bottom: 1px solid #edf1e5;
-    }
-
-    .shop-filter-canvas .offcanvas-body {
-        padding: 0;
-    }
-
-    .shop-filter-panel {
-        overflow: hidden;
-    }
-
-    .shop-filter-section {
-        padding: 18px;
-        border-bottom: 1px solid #edf1e5;
-    }
-
-    .shop-filter-title {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin-bottom: 14px;
-        color: #273438;
-        font-weight: 900;
-    }
-
-    .shop-filter-title i {
-        color: #81c408;
-    }
-
-    .shop-category-list {
-        display: grid;
-        gap: 4px;
-        margin: 0;
-        padding: 0;
-        list-style: none;
-    }
-
-    .shop-category-list a {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        min-height: 40px;
-        padding: 8px 10px;
-        border-radius: 6px;
-        color: #45595b;
-        font-weight: 700;
-        text-decoration: none;
-    }
-
-    .shop-category-list a:hover,
-    .shop-category-list a.active {
-        background: #f1f8df;
-        color: #5f9307;
-    }
-
-    .shop-category-list small {
-        color: #94a3b8;
-        font-size: 0.78rem;
-    }
-
-    .shop-price-form {
-        display: grid;
-        gap: 12px;
-    }
-
-    .shop-price-output {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        color: #64748b;
-        font-weight: 700;
-    }
-
-    .shop-price-output strong {
-        color: #273438;
-    }
-
-    .shop-price-form .btn {
-        border-radius: 999px;
-        font-weight: 800;
-    }
-
-    .shop-featured-list {
-        display: grid;
-        gap: 12px;
-    }
-
-    .shop-featured-item {
-        display: grid;
-        grid-template-columns: 68px minmax(0, 1fr);
-        gap: 12px;
-        align-items: center;
-        color: #273438;
-        text-decoration: none;
-    }
-
-    .shop-featured-item img {
-        width: 68px;
-        height: 68px;
-        border-radius: 8px;
-        background: #f8fafc;
-        object-fit: contain;
-        padding: 6px;
-    }
-
-    .shop-featured-item strong,
-    .shop-featured-item small {
-        display: block;
-    }
-
-    .shop-featured-item strong {
-        margin-bottom: 4px;
-        line-height: 1.3;
-    }
-
-    .shop-featured-item small {
-        color: #df2f2f;
-        font-weight: 900;
-    }
-
-    .shop-side-promo {
-        display: grid;
-        gap: 6px;
-        margin: 18px;
-        padding: 20px;
-        border-radius: 8px;
-        background:
-            linear-gradient(135deg, rgba(223, 47, 47, 0.88), rgba(255, 181, 36, 0.72)),
-            url('/img/baner-1.png') center/cover;
-        color: #ffffff;
-        text-decoration: none;
-    }
-
-    .shop-side-promo span {
-        font-size: 0.82rem;
-        font-weight: 900;
-        text-transform: uppercase;
-    }
-
-    .shop-side-promo strong {
-        max-width: 180px;
-        color: #ffffff;
-        font-size: 1.15rem;
-        line-height: 1.25;
-    }
-</style>
-
-<script>
-    document.addEventListener('DOMContentLoaded', function () {
-        const priceForm = document.getElementById('shopPriceForm');
-        const rangeInput = document.getElementById('rangeInput');
-        const amountOutput = document.getElementById('amount');
-        let priceTimer;
-        let priceRequest;
-
-        if (!priceForm || !rangeInput || !amountOutput) return;
-
-        function updateShopPrice() {
-            const url = new URL(priceForm.action || window.location.href, window.location.origin);
-            const formData = new FormData(priceForm);
-
-            for (const [key, value] of formData.entries()) {
-                if (value) url.searchParams.set(key, value.toString());
-            }
-
-            priceRequest?.abort();
-            priceRequest = new AbortController();
-
-            const productGrid = document.querySelector('.shop-products-grid');
-            productGrid?.classList.add('is-loading');
-
-            fetch(url.toString(), {
-                headers: { 'X-Requested-With': 'XMLHttpRequest' },
-                signal: priceRequest.signal
-            })
-                .then(function (response) { return response.text(); })
-                .then(function (html) {
-                    const doc = new DOMParser().parseFromString(html, 'text/html');
-                    const nextGrid = doc.querySelector('.shop-products-grid');
-                    const nextToolbar = doc.querySelector('.shop-toolbar > div:first-child');
-                    const currentToolbar = document.querySelector('.shop-toolbar > div:first-child');
-
-                    if (nextGrid && productGrid) productGrid.innerHTML = nextGrid.innerHTML;
-                    if (nextToolbar && currentToolbar) currentToolbar.innerHTML = nextToolbar.innerHTML;
-                    window.history.replaceState({}, '', url.toString());
-                })
-                .catch(function (error) {
-                    if (error.name !== 'AbortError') priceForm.submit();
-                })
-                .finally(function () {
-                    productGrid?.classList.remove('is-loading');
-                });
-        }
-
-        rangeInput.addEventListener('input', function () {
-            amountOutput.textContent = Number(this.value).toLocaleString('vi-VN');
-            clearTimeout(priceTimer);
-            priceTimer = setTimeout(updateShopPrice, 450);
-        });
-    });
-</script>

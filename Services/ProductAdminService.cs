@@ -324,6 +324,7 @@ public class ProductAdminService : IProductAdminService
         // Delete related data
         var images = await _unitOfWork.ProductImages
             .FindAsync(pi => pi.ProductId == id);
+        var imageUrls = images.Select(image => image.ImageUrl).ToList();
         foreach (var image in images)
         {
             _unitOfWork.ProductImages.Remove(image);
@@ -342,6 +343,18 @@ public class ProductAdminService : IProductAdminService
         var productId = product.Id;
         _unitOfWork.Products.Remove(product);
         await _unitOfWork.SaveChangesAsync();
+
+        foreach (var imageUrl in imageUrls)
+        {
+            try
+            {
+                await _imageUploadService.DeleteImageAsync(imageUrl);
+            }
+            catch (Exception exception)
+            {
+                _logger.LogWarning(exception, "Could not delete product image file {ImageUrl}", imageUrl);
+            }
+        }
 
         // Missing product deactivates knowledge chunks in IndexingService.
         await TryIndexProductAsync(productId);
@@ -363,6 +376,9 @@ public class ProductAdminService : IProductAdminService
         if (product == null)
             return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy sản phẩm với ID {productId}");
 
+        if (files.Count > 10)
+            return ProductResult.Fail(ProductErrorType.ValidationError, "Mỗi lần chỉ được tải lên tối đa 10 ảnh");
+
         // Validate files
         foreach (var file in files)
         {
@@ -378,23 +394,44 @@ public class ProductAdminService : IProductAdminService
             .FindAsync(pi => pi.ProductId == productId);
         var maxSortOrder = existingImages.Any() ? existingImages.Max(i => i.SortOrder) : -1;
 
-        // Upload and save images
-        foreach (var file in files)
+        var uploadedUrls = new List<string>();
+        try
         {
-            var imageUrl = await _imageUploadService.UploadImageAsync(file, "products");
-            
-            var productImage = new ProductImage
+            foreach (var file in files)
             {
-                ProductId = productId,
-                ImageUrl = imageUrl,
-                IsPrimary = !existingImages.Any() && maxSortOrder == -1, // First image is primary
-                SortOrder = ++maxSortOrder
-            };
+                var imageUrl = await _imageUploadService.UploadProductImageAsync(file);
+                uploadedUrls.Add(imageUrl);
 
-            await _unitOfWork.ProductImages.AddAsync(productImage);
+                var productImage = new ProductImage
+                {
+                    ProductId = productId,
+                    ImageUrl = imageUrl,
+                    IsPrimary = !existingImages.Any() && maxSortOrder == -1,
+                    SortOrder = ++maxSortOrder
+                };
+
+                await _unitOfWork.ProductImages.AddAsync(productImage);
+            }
+
+            await _unitOfWork.SaveChangesAsync();
         }
+        catch (Exception exception)
+        {
+            foreach (var uploadedUrl in uploadedUrls)
+            {
+                try
+                {
+                    await _imageUploadService.DeleteImageAsync(uploadedUrl);
+                }
+                catch (Exception cleanupException)
+                {
+                    _logger.LogWarning(cleanupException, "Could not remove rolled-back product image {ImageUrl}", uploadedUrl);
+                }
+            }
 
-        await _unitOfWork.SaveChangesAsync();
+            _logger.LogError(exception, "Could not add images for product {ProductId}", productId);
+            return ProductResult.Fail(ProductErrorType.ValidationError, exception.Message);
+        }
 
         return ProductResult.Ok(product);
     }
@@ -450,12 +487,28 @@ public class ProductAdminService : IProductAdminService
         if (image == null)
             return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy ảnh với ID {imageId}");
 
-        // Delete physical file
-        await _imageUploadService.DeleteImageAsync(image.ImageUrl);
-
-        // Delete database record
+        var wasPrimary = image.IsPrimary;
         _unitOfWork.ProductImages.Remove(image);
+
+        if (wasPrimary)
+        {
+            var replacement = (await _unitOfWork.ProductImages
+                    .FindAsync(pi => pi.ProductId == productId && pi.Id != imageId))
+                .OrderBy(pi => pi.SortOrder)
+                .FirstOrDefault();
+            if (replacement != null)
+                replacement.IsPrimary = true;
+        }
+
         await _unitOfWork.SaveChangesAsync();
+        try
+        {
+            await _imageUploadService.DeleteImageAsync(image.ImageUrl);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(exception, "Could not delete product image file {ImageUrl}", image.ImageUrl);
+        }
 
         return ProductResult.Ok(product);
     }

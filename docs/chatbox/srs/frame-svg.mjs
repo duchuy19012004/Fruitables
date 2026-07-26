@@ -344,6 +344,12 @@ svg = svg.replace(
   `</g>\n${frameParts.join('\n')}\n</svg>`
 );
 
+// Final (stop) nodes: match chatbox style — outer ring + filled dark center
+// (PlantUML often renders stop inner as fill="#FFF"; chatbox uses fill="#222")
+svg = recolorStopNodesLikeChatbox(svg);
+// Decision (amber) vs merge (blue-gray) diamonds
+svg = recolorDecisionAndMergeDiamonds(svg);
+
 fs.writeFileSync(svgPath, svg);
 
 console.log('✅ Framed (no overlap):', svgPath);
@@ -357,3 +363,160 @@ console.log(
   headerBottom.toFixed(1)
 );
 console.log('   new height:', newH);
+
+/**
+ * UML activity final = concentric ellipses. Chatbox SVG:
+ *   outer: fill="none" stroke="#222"
+ *   inner: fill="#222" stroke="#222"
+ * Initial stays solid fill="#000".
+ */
+function recolorStopNodesLikeChatbox(svgText) {
+  const ellipses = [];
+  const re =
+    /<ellipse\b([^>]*)\/>|<ellipse\b([^>]*)><\/ellipse>/gi;
+  let em;
+  while ((em = re.exec(svgText))) {
+    const attrs = em[1] || em[2] || '';
+    const cx = +(attrs.match(/\bcx="([\d.]+)"/) || [])[1];
+    const cy = +(attrs.match(/\bcy="([\d.]+)"/) || [])[1];
+    const rx = +(attrs.match(/\brx="([\d.]+)"/) || [])[1];
+    if (Number.isNaN(cx) || Number.isNaN(cy) || Number.isNaN(rx)) continue;
+    ellipses.push({ full: em[0], attrs, cx, cy, rx, index: em.index });
+  }
+
+  // Group by center (rounded)
+  const groups = new Map();
+  for (const e of ellipses) {
+    const key = `${Math.round(e.cx * 10) / 10},${Math.round(e.cy * 10) / 10}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(e);
+  }
+
+  let out = svgText;
+  for (const group of groups.values()) {
+    if (group.length < 2) continue; // start node is single filled circle
+    group.sort((a, b) => b.rx - a.rx);
+    const outer = group[0];
+    const inner = group[group.length - 1];
+    if (outer.rx <= inner.rx) continue;
+
+    const outerNew = outer.full
+      .replace(/\bfill="[^"]*"/i, 'fill="none"')
+      .replace(/stroke:#[0-9a-fA-F]+/g, 'stroke:#222')
+      .replace(/\bstroke="[^"]*"/i, 'stroke="#222"');
+    // ensure fill none
+    let o = outerNew;
+    if (!/\bfill=/i.test(o)) {
+      o = o.replace('<ellipse', '<ellipse fill="none"');
+    }
+
+    let i = inner.full
+      .replace(/\bfill="[^"]*"/i, 'fill="#222"')
+      .replace(/stroke:#[0-9a-fA-F]+/g, 'stroke:#222')
+      .replace(/\bstroke="[^"]*"/i, 'stroke="#222"');
+    if (!/\bfill=/i.test(i)) {
+      i = i.replace('<ellipse', '<ellipse fill="#222"');
+    }
+    // style="...fill:#FFF..." variants
+    i = i.replace(/fill:#(?:FFF|fff|FFFFFF|ffffff)/g, 'fill:#222');
+    o = o.replace(/fill:#(?:FFF|fff|FFFFFF|ffffff)/g, 'fill:none');
+
+    out = out.replace(outer.full, o);
+    out = out.replace(inner.full, i);
+  }
+
+  // Also normalize start node stroke like chatbox
+  out = out.replace(
+    /(<ellipse\b[^>]*\bfill="#000"[^>]*style="stroke:)#000/gi,
+    '$1#222'
+  );
+  out = out.replace(
+    /(<ellipse\b[^>]*\bfill="#000"[^>]*)\bstroke="#000"/gi,
+    '$1stroke="#222"'
+  );
+
+  return out;
+}
+
+/**
+ * PlantUML activity diamonds vs arrow-head polygons.
+ * - Decision: 6+ vertices, wide hexagon (question node)
+ * - Merge: small ~square diamond, 4 vertices, size ~20–36
+ * - Arrow heads: tiny 4-pt chevrons (max side < 16) — leave alone
+ */
+function recolorDecisionAndMergeDiamonds(svgText) {
+  const DECISION_FILL = '#FFF3E0';
+  const DECISION_STROKE = '#EF6C00';
+  const MERGE_FILL = '#E3F2FD';
+  const MERGE_STROKE = '#1565C0';
+
+  return svgText.replace(/<polygon\b([^>]*?)(\s*\/>|>)/gi, (full, attrs, end) => {
+    const pm = attrs.match(/\bpoints="([^"]+)"/i);
+    if (!pm) return full;
+
+    const nums = pm[1]
+      .trim()
+      .split(/[\s,]+/)
+      .map(Number)
+      .filter((n) => !Number.isNaN(n));
+    const nPts = Math.floor(nums.length / 2);
+    if (nPts < 4) return full;
+
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (let i = 0; i < nPts * 2; i += 2) {
+      minX = Math.min(minX, nums[i]);
+      maxX = Math.max(maxX, nums[i]);
+      minY = Math.min(minY, nums[i + 1]);
+      maxY = Math.max(maxY, nums[i + 1]);
+    }
+    const w = maxX - minX;
+    const h = maxY - minY;
+    if (w < 4 || h < 4) return full;
+
+    // Arrow tip markers (PlantUML uses tiny polygons)
+    if (Math.max(w, h) < 16) return full;
+
+    // Decision: wide multi-point diamond with question text (often 6–7 pts closed)
+    const isDecision =
+      (nPts >= 6 && w >= 40 && h >= 14 && h <= 50) ||
+      (nPts >= 6 && w >= 60 && h <= 60);
+
+    // Merge: small diamond; PlantUML may list 4 pts or 5 (closed loop)
+    const isMerge =
+      (nPts === 4 || nPts === 5) &&
+      w >= 16 &&
+      h >= 16 &&
+      w <= 40 &&
+      h <= 40 &&
+      Math.abs(w - h) <= 14;
+
+    if (isDecision) {
+      return paintPolygon(attrs, end, DECISION_FILL, DECISION_STROKE);
+    }
+    if (isMerge) {
+      return paintPolygon(attrs, end, MERGE_FILL, MERGE_STROKE);
+    }
+    return full;
+  });
+}
+
+function paintPolygon(attrs, end, fill, stroke) {
+  let a = ' ' + attrs.trim();
+  if (/\bfill="/i.test(a)) {
+    a = a.replace(/\bfill="[^"]*"/i, `fill="${fill}"`);
+  } else {
+    a += ` fill="${fill}"`;
+  }
+  if (/\bstroke="/i.test(a)) {
+    a = a.replace(/\bstroke="[^"]*"/i, `stroke="${stroke}"`);
+  } else {
+    a += ` stroke="${stroke}"`;
+  }
+  a = a.replace(/stroke:#[0-9a-fA-F]{3,8}/gi, `stroke:${stroke}`);
+  a = a.replace(/fill:#[0-9a-fA-F]{3,8}/gi, `fill:${fill}`);
+  const selfClose = /\/>/.test(end);
+  return selfClose ? `<polygon${a}/>` : `<polygon${a}>`;
+}

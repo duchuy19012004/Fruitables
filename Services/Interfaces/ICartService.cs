@@ -10,6 +10,12 @@ public interface ICartService
         int productId,
         int quantity = 1,
         int? variantId = null);
+    Task<CartMutationResult> AddItemsToCartAsync(
+        string sessionId,
+        IReadOnlyCollection<CartAddItemRequest> items);
+    Task<CartMutationResult> AddComboToCartAsync(string sessionId, int comboId);
+    Task<CartMutationResult> UpdateComboQuantityAsync(string sessionId, int cartGroupId, int quantity);
+    Task RemoveComboAsync(string sessionId, int cartGroupId);
     Task UpdateQuantityAsync(string sessionId, int cartItemId, int quantity);
     Task RemoveFromCartAsync(string sessionId, int cartItemId);
     Task<CartViewModel> RepriceForCheckoutAsync(string sessionId);

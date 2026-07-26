@@ -25,6 +25,7 @@ public class UnitOfWork : IUnitOfWork
     
     // New repositories
     private IRepository<Cart>? _carts;
+    private IRepository<CartGroup>? _cartGroups;
     private IRepository<CartItem>? _cartItems;
     private IRepository<ProductImage>? _productImages;
     private IRepository<ProductVariant>? _productVariants;
@@ -33,6 +34,7 @@ public class UnitOfWork : IUnitOfWork
     private IRepository<PriceSchedule>? _priceSchedules;
     private IRepository<Combo>? _combos;
     private IRepository<ComboItem>? _comboItems;
+    private IRepository<ComboAuditLog>? _comboAuditLogs;
     private IRepository<Address>? _addresses;
     
     // RBAC repositories
@@ -87,6 +89,9 @@ public class UnitOfWork : IUnitOfWork
     // New repository properties
     public IRepository<Cart> Carts => 
         _carts ??= new Repository<Cart>(_context);
+
+    public IRepository<CartGroup> CartGroups =>
+        _cartGroups ??= new Repository<CartGroup>(_context);
     
     public IRepository<CartItem> CartItems => 
         _cartItems ??= new Repository<CartItem>(_context);
@@ -111,6 +116,9 @@ public class UnitOfWork : IUnitOfWork
 
     public IRepository<ComboItem> ComboItems =>
         _comboItems ??= new Repository<ComboItem>(_context);
+
+    public IRepository<ComboAuditLog> ComboAuditLogs =>
+        _comboAuditLogs ??= new Repository<ComboAuditLog>(_context);
     
     public IRepository<Address> Addresses =>
         _addresses ??= new Repository<Address>(_context);

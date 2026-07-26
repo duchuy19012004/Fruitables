@@ -20,6 +20,7 @@ public interface IUnitOfWork : IDisposable
     
     // New repositories for CartService
     IRepository<Cart> Carts { get; }
+    IRepository<CartGroup> CartGroups { get; }
     IRepository<CartItem> CartItems { get; }
     
     // New repository for ProductService
@@ -32,6 +33,7 @@ public interface IUnitOfWork : IDisposable
     IRepository<PriceSchedule> PriceSchedules { get; }
     IRepository<Combo> Combos { get; }
     IRepository<ComboItem> ComboItems { get; }
+    IRepository<ComboAuditLog> ComboAuditLogs { get; }
     
     // New repository for Address
     IRepository<Address> Addresses { get; }

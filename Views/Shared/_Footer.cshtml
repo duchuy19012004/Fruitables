@@ -4,6 +4,7 @@
     var contactAddress = await SettingsService.GetSettingAsync(Fruitables.Constants.SettingKeys.ContactAddress, "Địa chỉ cửa hàng");
     var contactEmail = await SettingsService.GetSettingAsync(Fruitables.Constants.SettingKeys.ContactEmail, "hotro@fruitables.vn");
     var contactPhone = await SettingsService.GetSettingAsync(Fruitables.Constants.SettingKeys.ContactPhone, "+0123 4567 8910");
+    var contactPhoneHref = (contactPhone ?? string.Empty).Replace(" ", "");
     var socialFacebook = await SettingsService.GetSettingAsync(Fruitables.Constants.SettingKeys.SocialFacebook);
     var socialTwitter = await SettingsService.GetSettingAsync(Fruitables.Constants.SettingKeys.SocialTwitter);
     var socialYoutube = await SettingsService.GetSettingAsync(Fruitables.Constants.SettingKeys.SocialYoutube);
@@ -101,9 +102,9 @@
                         <a asp-controller="Contact" asp-action="Index">Liên hệ</a>
                         <a asp-controller="Chat" asp-action="Index">Hỗ trợ chat</a>
                         <a asp-controller="Home" asp-action="Privacy">Chính sách bảo mật</a>
-                        <a href="#">Điều khoản sử dụng</a>
-                        <a href="#">Chính sách đổi trả</a>
-                        <a href="#">Câu hỏi thường gặp</a>
+                        <a asp-controller="Home" asp-action="Policies" asp-fragment="terms">Điều khoản sử dụng</a>
+                        <a asp-controller="Home" asp-action="Policies" asp-fragment="returns">Chính sách đổi trả</a>
+                        <a asp-controller="Home" asp-action="Policies" asp-fragment="faq">Câu hỏi thường gặp</a>
                     </nav>
                 </div>
 
@@ -113,7 +114,7 @@
                         <a asp-controller="Profile" asp-action="Index">Tài khoản của tôi</a>
                         <a asp-controller="Shop" asp-action="Index">Cửa hàng</a>
                         <a asp-controller="Cart" asp-action="Index">Giỏ hàng</a>
-                        <a href="#">Sản phẩm yêu thích</a>
+                        <a asp-controller="Shop" asp-action="Index">Danh mục sản phẩm</a>
                         <a asp-controller="OrderHistory" asp-action="Index">Lịch sử đơn hàng</a>
                         <a asp-controller="Contact" asp-action="Index">Hỗ trợ đặt hàng</a>
                     </nav>
@@ -132,7 +133,7 @@
                         </li>
                         <li>
                             <span class="ft-contact-icon" aria-hidden="true"><i class="fas fa-phone-alt"></i></span>
-                            <a href="tel:@contactPhone.Replace(" ", "")">@contactPhone</a>
+                            <a href="tel:@contactPhoneHref">@contactPhone</a>
                         </li>
                     </ul>
                     <p class="ft-pay-label">Thanh toán</p>
@@ -168,8 +169,8 @@
         --ft-text: rgba(255, 255, 255, 0.72);
         --ft-text-soft: rgba(255, 255, 255, 0.52);
         --ft-heading: #ffffff;
-        --ft-accent: #81c408;
-        --ft-accent-dark: #6aa006;
+        --ft-accent: #9bd33a;
+        --ft-accent-dark: #7fb721;
         --ft-gold: #e8a91c;
         margin-top: 4rem;
         background: var(--ft-bg);
@@ -253,7 +254,7 @@
         border: 0;
         border-radius: 999px;
         padding: 0.7rem 1.25rem;
-        background: var(--ft-accent);
+        background: #477900;
         color: #fff;
         font-size: 0.88rem;
         font-weight: 800;
@@ -263,7 +264,7 @@
     }
 
     .ft-newsletter-btn:hover {
-        background: var(--ft-accent-dark);
+        background: #315800;
     }
 
     .ft-newsletter-btn:active {
@@ -471,6 +472,26 @@
             margin-top: 2.5rem;
         }
 
+        .ft-top,
+        .ft-main {
+            padding-top: 1.75rem;
+            padding-bottom: 1.5rem;
+        }
+
+        .ft-cols {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 1.75rem 1rem;
+        }
+
+        .ft-col-about,
+        .ft-col-contact {
+            grid-column: 1 / -1;
+        }
+
+        .ft-links a {
+            line-height: 1.45;
+        }
+
         .ft-newsletter-field {
             flex-direction: column;
             border-radius: 14px;
@@ -487,11 +508,6 @@
             width: 100%;
             border-radius: 10px;
             padding: 0.8rem 1rem;
-        }
-
-        .ft-cols {
-            grid-template-columns: 1fr;
-            gap: 1.75rem;
         }
 
         .ft-bottom-inner {

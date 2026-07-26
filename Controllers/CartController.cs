@@ -61,6 +61,26 @@ public class CartController : Controller
         return RedirectToAction(nameof(Index));
     }
 
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateComboQuantity(int cartGroupId, int quantity)
+    {
+        var sessionId = GetSessionId();
+        var result = await _cartService.UpdateComboQuantityAsync(sessionId, cartGroupId, quantity);
+        if (!result.Success)
+            TempData["Error"] = result.Message;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RemoveCombo(int cartGroupId)
+    {
+        var sessionId = GetSessionId();
+        await _cartService.RemoveComboAsync(sessionId, cartGroupId);
+        return RedirectToAction(nameof(Index));
+    }
+
     // POST: Xóa sản phẩm khỏi giỏ (form submit)
     [HttpPost]
     public async Task<IActionResult> RemoveFromCart(int cartItemId)

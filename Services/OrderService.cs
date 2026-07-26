@@ -64,6 +64,9 @@ public class OrderService : IOrderService
                 "Giá hoặc mã giảm giá vừa thay đổi. Vui lòng kiểm tra tổng tiền và xác nhận lại.");
         }
 
+        if (cart.Items.Any(item => !item.IsAvailable))
+            throw new InvalidOperationException("Một số sản phẩm hoặc combo không còn hợp lệ. Vui lòng cập nhật giỏ hàng.");
+
         var targets = cart.Items
             .Select(item => new PriceTargetKey(item.ProductId, item.ProductVariantId))
             .Distinct()
@@ -168,7 +171,12 @@ public class OrderService : IOrderService
                 Price = quote.EffectivePrice,
                 PromotionDiscount = (quote.BasePrice - quote.EffectivePrice) * item.Quantity,
                 PriceScheduleId = quote.ScheduleId,
-                Total = quote.EffectivePrice * item.Quantity
+                SourceComboId = item.SourceComboId,
+                ComboNameSnapshot = item.ComboName,
+                ComboRevision = item.ComboRevision,
+                ComboQuantity = item.ComboQuantity,
+                ComboDiscount = item.ComboDiscount,
+                Total = quote.EffectivePrice * item.Quantity - item.ComboDiscount
             });
         }
 

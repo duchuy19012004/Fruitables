@@ -111,8 +111,8 @@ public class CategoryService : ICategoryService
         if (request.ParentId.HasValue)
         {
             var parent = await _unitOfWork.Categories.GetByIdAsync(request.ParentId.Value);
-            if (parent == null)
-                return CategoryResult.Fail(CategoryErrorType.InvalidParent, $"Danh mục cha với ID {request.ParentId} không tồn tại");
+            if (parent == null || parent.IsDeleted)
+                return CategoryResult.Fail(CategoryErrorType.InvalidParent, $"Danh mục cha với ID {request.ParentId} không tồn tại hoặc đã bị xóa");
         }
 
         var sortOrder = await _unitOfWork.Categories.GetMaxSortOrderAsync(request.ParentId) + 1;
@@ -162,9 +162,12 @@ public class CategoryService : ICategoryService
                 return CategoryResult.Fail(CategoryErrorType.CircularReference, "Không thể di chuyển danh mục vào danh mục con của nó");
 
             var newParent = await _unitOfWork.Categories.GetByIdAsync(request.ParentId.Value);
-            if (newParent == null)
-                return CategoryResult.Fail(CategoryErrorType.InvalidParent, $"Danh mục cha với ID {request.ParentId} không tồn tại");
+            if (newParent == null || newParent.IsDeleted)
+                return CategoryResult.Fail(CategoryErrorType.InvalidParent, $"Danh mục cha với ID {request.ParentId} không tồn tại hoặc đã bị xóa");
         }
+
+        if (request.ParentId != category.ParentId)
+            category.SortOrder = await _unitOfWork.Categories.GetMaxSortOrderAsync(request.ParentId) + 1;
 
         category.Name = request.Name.Trim();
         category.Slug = slug;
@@ -278,8 +281,8 @@ public class CategoryService : ICategoryService
         if (newParentId.HasValue)
         {
             var newParent = await _unitOfWork.Categories.GetByIdAsync(newParentId.Value);
-            if (newParent == null)
-                return CategoryResult.Fail(CategoryErrorType.InvalidParent, $"Danh mục cha với ID {newParentId} không tồn tại");
+            if (newParent == null || newParent.IsDeleted)
+                return CategoryResult.Fail(CategoryErrorType.InvalidParent, $"Danh mục cha với ID {newParentId} không tồn tại hoặc đã bị xóa");
         }
 
         category.ParentId = newParentId;
@@ -336,10 +339,14 @@ public class CategoryService : ICategoryService
 
     public async Task<CategoryResult> SoftDeleteCategoryAsync(int id)
     {
-        var category = await _unitOfWork.Categories.GetByIdAsync(id);
+        var category = await _unitOfWork.Categories.GetByIdWithChildrenAsync(id);
 
         if (category == null)
             return CategoryResult.Fail(CategoryErrorType.NotFound, $"Không tìm thấy danh mục với ID {id}");
+
+        var activeChildCount = category.Children.Count(child => !child.IsDeleted);
+        if (activeChildCount > 0)
+            return CategoryResult.Fail(CategoryErrorType.HasChildren, $"Không thể chuyển danh mục có {activeChildCount} danh mục con vào thùng rác");
 
         category.IsDeleted = true;
         category.DeletedAt = DateTime.UtcNow;
@@ -359,6 +366,13 @@ public class CategoryService : ICategoryService
 
         if (!category.IsDeleted)
             return CategoryResult.Fail(CategoryErrorType.ValidationError, "Danh mục này chưa bị xóa");
+
+        if (category.ParentId.HasValue)
+        {
+            var parent = await _unitOfWork.Categories.GetByIdAsync(category.ParentId.Value);
+            if (parent == null || parent.IsDeleted)
+                return CategoryResult.Fail(CategoryErrorType.InvalidParent, "Hãy khôi phục danh mục cha trước khi khôi phục danh mục này");
+        }
 
         category.IsDeleted = false;
         category.DeletedAt = null;

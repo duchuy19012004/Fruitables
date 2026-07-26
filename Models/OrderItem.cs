@@ -34,6 +34,18 @@ public class OrderItem
 
     public int? PriceScheduleId { get; set; }
 
+    public int? SourceComboId { get; set; }
+
+    [MaxLength(255)]
+    public string? ComboNameSnapshot { get; set; }
+
+    public int? ComboRevision { get; set; }
+
+    public int? ComboQuantity { get; set; }
+
+    [Column(TypeName = "decimal(12,2)")]
+    public decimal ComboDiscount { get; set; }
+
     [Column(TypeName = "decimal(10,2)")]
     public decimal Total { get; set; }
 

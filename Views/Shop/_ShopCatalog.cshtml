@@ -1,0 +1,78 @@
+@using Fruitables.ViewModels
+@model ShopViewModel
+@{
+    var hasFilter = Model.SelectedCategoryId.HasValue
+        || !string.IsNullOrWhiteSpace(Model.SearchTerm)
+        || Model.MinPrice.HasValue
+        || Model.MaxPrice.HasValue;
+    var selectedCategoryName = Model.SelectedCategoryId.HasValue
+        ? Model.Categories.FirstOrDefault(category => category.Id == Model.SelectedCategoryId)?.Name
+        : null;
+}
+
+<div class="shop-toolbar">
+    <div aria-live="polite">
+        @if (Model.TotalItems > 0)
+        {
+            var firstItem = (Model.CurrentPage - 1) * Model.PageSize + 1;
+            var lastItem = Math.Min(Model.CurrentPage * Model.PageSize, Model.TotalItems);
+            <span>Hiển thị @firstItem–@lastItem trong @Model.TotalItems sản phẩm</span>
+        }
+        else
+        {
+            <span>0 sản phẩm</span>
+        }
+        <strong>@(hasFilter ? "Kết quả phù hợp" : "Nông sản đang bán")</strong>
+    </div>
+    <div class="shop-toolbar-actions">
+        <button class="btn btn-primary d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#shopFilterOffcanvas" aria-controls="shopFilterOffcanvas">
+            <i class="fas fa-filter" aria-hidden="true"></i>
+            <span>Lọc</span>
+        </button>
+        <label for="sortBy">Sắp xếp</label>
+        <select id="sortBy" class="shop-sort" data-shop-sort aria-label="Sắp xếp sản phẩm">
+            <option value="@Url.Action("Index", "Shop", new { categoryId = Model.SelectedCategoryId, search = Model.SearchTerm, minPrice = Model.MinPrice, maxPrice = Model.MaxPrice })" selected="@(string.IsNullOrEmpty(Model.SortBy))">Phù hợp nhất</option>
+            <option value="@Url.Action("Index", "Shop", new { categoryId = Model.SelectedCategoryId, search = Model.SearchTerm, minPrice = Model.MinPrice, maxPrice = Model.MaxPrice, sortBy = "newest" })" selected="@(Model.SortBy == "newest")">Mới nhất</option>
+            <option value="@Url.Action("Index", "Shop", new { categoryId = Model.SelectedCategoryId, search = Model.SearchTerm, minPrice = Model.MinPrice, maxPrice = Model.MaxPrice, sortBy = "price_asc" })" selected="@(Model.SortBy == "price_asc")">Giá tăng dần</option>
+            <option value="@Url.Action("Index", "Shop", new { categoryId = Model.SelectedCategoryId, search = Model.SearchTerm, minPrice = Model.MinPrice, maxPrice = Model.MaxPrice, sortBy = "price_desc" })" selected="@(Model.SortBy == "price_desc")">Giá giảm dần</option>
+            <option value="@Url.Action("Index", "Shop", new { categoryId = Model.SelectedCategoryId, search = Model.SearchTerm, minPrice = Model.MinPrice, maxPrice = Model.MaxPrice, sortBy = "name" })" selected="@(Model.SortBy == "name")">Tên A-Z</option>
+        </select>
+    </div>
+</div>
+
+<div id="shopActiveFilters">
+    @if (hasFilter)
+    {
+        <div class="shop-active-filter" aria-label="Bộ lọc đang áp dụng">
+            <div class="shop-filter-summary">
+                <span class="shop-filter-summary-label">Đang lọc:</span>
+                @if (!string.IsNullOrWhiteSpace(Model.SearchTerm))
+                {
+                    <span class="shop-filter-chip">“@Model.SearchTerm”</span>
+                }
+                @if (!string.IsNullOrWhiteSpace(selectedCategoryName))
+                {
+                    <span class="shop-filter-chip">@selectedCategoryName</span>
+                }
+                @if (Model.MinPrice.HasValue || Model.MaxPrice.HasValue)
+                {
+                    <span class="shop-filter-chip">
+                        @(Model.MinPrice?.ToString("N0") ?? "0")đ – @(Model.MaxPrice?.ToString("N0") ?? "không giới hạn")@(Model.MaxPrice.HasValue ? "đ" : "")
+                    </span>
+                }
+            </div>
+            <a asp-controller="Shop" asp-action="Index" asp-route-sortBy="@Model.SortBy" data-shop-filter-link>Xóa bộ lọc</a>
+        </div>
+    }
+</div>
+
+<div class="shop-layout">
+    <aside class="shop-sidebar-col">
+        <partial name="_ShopSidebar" model="Model" />
+    </aside>
+    <section class="shop-products-col" aria-label="Danh sách sản phẩm">
+        <div class="shop-products-grid">
+            <partial name="_ShopProducts" model="Model" />
+        </div>
+    </section>
+</div>

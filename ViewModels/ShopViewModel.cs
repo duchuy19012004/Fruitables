@@ -13,6 +13,7 @@ public class ShopViewModel
     public decimal? MaxPrice { get; set; }
     public string? SortBy { get; set; }
     public int CurrentPage { get; set; } = 1;
+    public int TotalItems { get; set; }
     public int TotalPages { get; set; }
     public int PageSize { get; set; } = 9;
 }

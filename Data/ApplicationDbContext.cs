@@ -23,6 +23,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<ReviewReport> ReviewReports => Set<ReviewReport>();
     public DbSet<ReviewHelpful> ReviewHelpfuls => Set<ReviewHelpful>();
     public DbSet<Cart> Carts => Set<Cart>();
+    public DbSet<CartGroup> CartGroups => Set<CartGroup>();
     public DbSet<CartItem> CartItems => Set<CartItem>();
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
@@ -37,6 +38,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<PriceSchedule> PriceSchedules => Set<PriceSchedule>();
     public DbSet<Combo> Combos => Set<Combo>();
     public DbSet<ComboItem> ComboItems => Set<ComboItem>();
+    public DbSet<ComboAuditLog> ComboAuditLogs => Set<ComboAuditLog>();
     public DbSet<OrderStatusHistory> OrderStatusHistories => Set<OrderStatusHistory>();
     public DbSet<OrderNote> OrderNotes => Set<OrderNote>();
     public DbSet<UserAccountLog> UserAccountLogs => Set<UserAccountLog>();
@@ -166,12 +168,29 @@ public class ApplicationDbContext : DbContext
         {
             entity.HasIndex(e => new { e.CartId, e.ProductId, e.ProductVariantId })
                   .IsUnique()
-                  .HasFilter("[ProductVariantId] IS NOT NULL");
+                  .HasFilter("[CartGroupId] IS NULL AND [ProductVariantId] IS NOT NULL");
             entity.HasIndex(e => new { e.CartId, e.ProductId })
                   .IsUnique()
                   .HasDatabaseName("IX_CartItems_CartId_ProductId_NoVariant")
-                  .HasFilter("[ProductVariantId] IS NULL");
+                  .HasFilter("[CartGroupId] IS NULL AND [ProductVariantId] IS NULL");
+            entity.HasIndex(e => new { e.CartGroupId, e.ProductId, e.ProductVariantId })
+                  .IsUnique()
+                  .HasFilter("[CartGroupId] IS NOT NULL AND [ProductVariantId] IS NOT NULL");
+            entity.HasIndex(e => new { e.CartGroupId, e.ProductId })
+                  .IsUnique()
+                  .HasDatabaseName("IX_CartItems_CartGroupId_ProductId_NoVariant")
+                  .HasFilter("[CartGroupId] IS NOT NULL AND [ProductVariantId] IS NULL");
             entity.HasOne(e => e.ProductVariant).WithMany().HasForeignKey(e => e.ProductVariantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.CartGroup).WithMany(group => group.Items).HasForeignKey(e => e.CartGroupId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<CartGroup>(entity =>
+        {
+            entity.HasIndex(group => new { group.CartId, group.ComboId, group.ComboRevision }).IsUnique();
+            entity.HasIndex(group => group.ExpiresAt);
+            entity.HasIndex(group => group.UpdatedAt);
+            entity.HasOne(group => group.Cart).WithMany(cart => cart.Groups).HasForeignKey(group => group.CartId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(group => group.Combo).WithMany().HasForeignKey(group => group.ComboId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<OrderItem>(entity =>
@@ -185,12 +204,34 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<Combo>(entity =>
         {
             entity.HasIndex(e => e.Slug).IsUnique();
+            entity.Property(e => e.FixedPrice).HasColumnType("decimal(12,2)");
+            entity.Property(e => e.DiscountValue).HasColumnType("decimal(12,2)");
+            entity.Property(e => e.AllowCouponStacking).HasDefaultValue(true);
+            entity.Property(e => e.Status)
+                  .HasDefaultValue(ComboLifecycleStatus.Active)
+                  .HasSentinel((ComboLifecycleStatus)(-1));
+            entity.Property(e => e.Revision).HasDefaultValue(1).IsConcurrencyToken();
+            entity.HasIndex(e => new { e.Status, e.StartsAt, e.EndsAt });
+        });
+
+        modelBuilder.Entity<ComboAuditLog>(entity =>
+        {
+            entity.HasIndex(e => new { e.ComboId, e.CreatedAt });
+            entity.HasOne(e => e.Combo).WithMany(combo => combo.AuditLogs).HasForeignKey(e => e.ComboId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.Admin).WithMany().HasForeignKey(e => e.AdminId).OnDelete(DeleteBehavior.SetNull);
         });
 
         // ComboItem
         modelBuilder.Entity<ComboItem>(entity =>
         {
             entity.HasIndex(e => new { e.ComboId, e.SortOrder });
+            entity.HasIndex(e => new { e.ComboId, e.ProductId, e.ProductVariantId })
+                  .IsUnique()
+                  .HasFilter("[ProductVariantId] IS NOT NULL");
+            entity.HasIndex(e => new { e.ComboId, e.ProductId })
+                  .IsUnique()
+                  .HasDatabaseName("IX_ComboItems_ComboId_ProductId_NoVariant")
+                  .HasFilter("[ProductVariantId] IS NULL");
             entity.HasOne(i => i.Combo)
                   .WithMany(c => c.Items)
                   .HasForeignKey(i => i.ComboId)
@@ -230,7 +271,7 @@ public class ApplicationDbContext : DbContext
             entity.HasOne(e => e.CancelledByAdmin)
                   .WithMany()
                   .HasForeignKey(e => e.CancelledByAdminId)
-                  .OnDelete(DeleteBehavior.SetNull);
+                  .OnDelete(DeleteBehavior.NoAction);
         });
 
         // ProductLog

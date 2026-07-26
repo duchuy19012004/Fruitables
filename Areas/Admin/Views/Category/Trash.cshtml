@@ -21,32 +21,6 @@
     </div>
 </div>
 
-<!-- Toast Container -->
-<div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1100;">
-    @if (TempData["Success"] != null)
-    {
-        <div class="toast show" role="alert" data-bs-autohide="true" data-bs-delay="5000">
-            <div class="toast-header bg-success text-white">
-                <i class="fas fa-check-circle me-2"></i>
-                <strong class="me-auto">Thành công</strong>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
-            </div>
-            <div class="toast-body">@TempData["Success"]</div>
-        </div>
-    }
-    @if (TempData["Error"] != null)
-    {
-        <div class="toast show" role="alert" data-bs-autohide="true" data-bs-delay="5000">
-            <div class="toast-header bg-danger text-white">
-                <i class="fas fa-exclamation-circle me-2"></i>
-                <strong class="me-auto">Lỗi</strong>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
-            </div>
-            <div class="toast-body">@TempData["Error"]</div>
-        </div>
-    }
-</div>
-
 <div class="admin-card">
     <div class="card-header">
         <i class="fas fa-trash me-2"></i>Danh mục đã xóa (@Model.Count)

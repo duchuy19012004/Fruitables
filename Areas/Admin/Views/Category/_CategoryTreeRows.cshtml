@@ -48,14 +48,16 @@
                     </li>
                     <li><hr class="dropdown-divider"></li>
                     <li>
-                        <a href="#" class="dropdown-item" onclick="confirmSoftDelete(@category.Id, '@category.Name.Replace("'", "\\'")'); return false;">
+                        <button type="button" class="dropdown-item js-soft-delete"
+                                data-category-id="@category.Id" data-category-name="@category.Name">
                             <i class="fas fa-trash-alt me-2 text-warning"></i>Chuyển vào thùng rác
-                        </a>
+                        </button>
                     </li>
                     <li>
-                        <a href="#" class="dropdown-item text-danger" onclick="confirmHardDelete(@category.Id, '@category.Name.Replace("'", "\\'")'); return false;">
+                        <button type="button" class="dropdown-item text-danger js-hard-delete"
+                                data-category-id="@category.Id" data-category-name="@category.Name">
                             <i class="fas fa-trash me-2"></i>Xóa vĩnh viễn
-                        </a>
+                        </button>
                     </li>
                 </ul>
             </div>

@@ -1,0 +1,24 @@
+@model Fruitables.ViewModels.DashboardViewModel
+
+<section class="overview-panel" aria-labelledby="recent-orders-title">
+    <div class="overview-panel__head">
+        <h2 id="recent-orders-title">Đơn hàng vừa cập nhật</h2>
+        <a asp-area="Admin" asp-controller="Order" asp-action="Index">Mở danh sách <i class="fas fa-arrow-right ms-1" aria-hidden="true"></i></a>
+    </div>
+    @if (Model.RecentOrders.Any())
+    {
+        foreach (var order in Model.RecentOrders.Take(5))
+        {
+            <div class="recent-order">
+                <a asp-area="Admin" asp-controller="Order" asp-action="Detail" asp-route-id="@order.Id">#@order.OrderNumber</a>
+                <span>@order.CustomerName</span>
+                <strong>@order.Total.ToString("N0")đ</strong>
+                <span class="badge @order.StatusBadgeClass">@order.Status</span>
+            </div>
+        }
+    }
+    else
+    {
+        <p class="overview-panel__empty">Chưa có đơn hàng nào để hiển thị.</p>
+    }
+</section>

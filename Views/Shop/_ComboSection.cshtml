@@ -2,65 +2,97 @@
 
 @if (Model.Any())
 {
-    <section class="combo-section py-5">
+    <section class="combo-section" aria-labelledby="comboSectionTitle">
         <div class="container">
-            <div class="mb-4">
-                <span class="shop-label">Gợi ý hôm nay</span>
-                <h2 class="mb-0">Mua theo món</h2>
+            <div class="combo-section-heading">
+                <div>
+                    <span>Đi chợ gọn hơn</span>
+                    <h2 id="comboSectionTitle">Combo chuẩn bị sẵn</h2>
+                </div>
+                <p>Chọn trọn bộ sản phẩm cho bữa ăn gia đình và thêm vào giỏ chỉ với một thao tác.</p>
             </div>
-            <div class="row g-4">
+
+            <div class="combo-list">
                 @foreach (var combo in Model)
                 {
-                    <div class="col-md-6 col-lg-4">
-                        <div class="card h-100">
+                    <article class="combo-card">
+                        <div class="combo-media">
                             @if (!string.IsNullOrEmpty(combo.ImageUrl))
                             {
-                                <img src="@combo.ImageUrl" class="card-img-top" alt="@combo.Name" style="height:180px;object-fit:cover" />
+                                <img src="@combo.ImageUrl" alt="@combo.Name" loading="lazy" decoding="async" />
                             }
-                            <div class="card-body d-flex flex-column">
-                                <h5 class="card-title">@combo.Name</h5>
+                            <span>Tiết kiệm @combo.Savings.ToString("N0")đ</span>
+                        </div>
+
+                        <div class="combo-content">
+                            <div class="combo-intro">
+                                <span class="combo-kicker">Bộ sản phẩm</span>
+                                <h3>@combo.Name</h3>
                                 @if (!string.IsNullOrEmpty(combo.Description))
                                 {
-                                    <p class="card-text text-muted">@combo.Description</p>
+                                    <p>@combo.Description</p>
                                 }
-                                <ul class="list-unstyled flex-grow-1">
-                                    @foreach (var item in combo.Items)
-                                    {
-                                        <li class="d-flex justify-content-between align-items-center mb-1">
-                                            <span>
-                                                @item.ProductName
-                                                @if (!string.IsNullOrEmpty(item.VariantName))
-                                                {
-                                                    <small class="text-muted">(@item.VariantName)</small>
-                                                }
-                                                <small class="text-muted">× @item.Quantity</small>
-                                            </span>
+                            </div>
+
+                            <ul class="combo-items" aria-label="Sản phẩm trong @combo.Name">
+                                @foreach (var item in combo.Items)
+                                {
+                                    <li>
+                                        <span>
+                                            <strong>@item.ProductName</strong>
+                                            @if (!string.IsNullOrEmpty(item.VariantName))
+                                            {
+                                                <small>@item.VariantName</small>
+                                            }
+                                        </span>
+                                        <span class="combo-item-price">
+                                            <small>× @item.Quantity</small>
                                             @if (item.IsAvailable)
                                             {
-                                                <span>@((item.UnitPrice * item.Quantity).ToString("N0")) đ</span>
+                                                <strong>@((item.UnitPrice * item.Quantity).ToString("N0"))đ</strong>
                                             }
                                             else
                                             {
-                                                <span class="badge bg-secondary">@item.UnavailableReason</span>
+                                                <strong>@item.UnavailableReason</strong>
                                             }
-                                        </li>
+                                        </span>
+                                    </li>
+                                }
+                            </ul>
+
+                            <div class="combo-purchase">
+                                <div class="combo-price">
+                                    <span>Giá trọn bộ</span>
+                                    <strong>@combo.TotalPrice.ToString("N0")đ</strong>
+                                    @if (combo.Savings > 0)
+                                    {
+                                        <del>@combo.OriginalPrice.ToString("N0")đ</del>
                                     }
-                                </ul>
-                                <div class="d-flex justify-content-between align-items-center mt-3 pt-3 border-top">
-                                    <strong class="text-primary">@combo.TotalPrice.ToString("N0") đ</strong>
-                                    <form asp-controller="Combo" asp-action="AddToCart" method="post">
-                                        @Html.AntiForgeryToken()
-                                        <input type="hidden" name="id" value="@combo.Id" />
-                                        <button type="submit" class="btn btn-primary">
-                                            <i class="fas fa-cart-plus me-1"></i>Thêm cả combo
-                                        </button>
-                                    </form>
                                 </div>
+                                <form asp-controller="Combo" asp-action="AddToCart" method="post" class="combo-add-form">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="id" value="@combo.Id" />
+                                    <button type="submit" class="combo-add-button">
+                                        <i class="fas fa-shopping-basket" aria-hidden="true"></i>
+                                        <span>Thêm cả combo</span>
+                                    </button>
+                                </form>
                             </div>
                         </div>
-                    </div>
+                    </article>
                 }
             </div>
         </div>
     </section>
+
+    <script>
+        document.querySelectorAll('.combo-add-form').forEach(form => {
+            form.addEventListener('submit', () => {
+                const button = form.querySelector('button[type="submit"]');
+                button.disabled = true;
+                button.querySelector('span').textContent = 'Đang thêm...';
+                button.querySelector('i').className = 'fas fa-spinner fa-spin';
+            });
+        });
+    </script>
 }

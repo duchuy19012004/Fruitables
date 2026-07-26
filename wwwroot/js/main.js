@@ -15,6 +15,7 @@
     // Fixed Navbar
     $(window).scroll(function () {
         if ($(window).width() < 992) {
+            $('.fixed-top').css('top', 0);
             if ($(this).scrollTop() > 55) {
                 $('.fixed-top').addClass('shadow');
             } else {

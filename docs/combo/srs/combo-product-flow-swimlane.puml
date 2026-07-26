@@ -1,0 +1,86 @@
+@startuml
+!theme plain
+title Luồng admin tạo combo sản phẩm
+
+|Quản trị viên|
+start
+:Chọn menu Combo sản phẩm;
+
+|Giao diện quản trị|
+:Hiển thị màn hình quản lý combo;
+
+|Hệ thống Fruitables|
+:Lấy danh sách combo;
+:Tính tổng giá hiện tại của từng combo;
+
+|Giao diện quản trị|
+:Hiển thị bảng combo;
+:Hiển thị các nút Thêm, Sửa, Xóa;
+
+|Quản trị viên|
+:Bấm nút Thêm combo;
+
+|Giao diện quản trị|
+:Hiển thị form tạo combo;
+
+|Hệ thống Fruitables|
+:Lấy danh sách sản phẩm và biến thể đang bán;
+
+|Giao diện quản trị|
+:Hiển thị ô nhập thông tin combo;
+:Hiển thị dropdown chọn sản phẩm, biến thể và số lượng;
+
+|Quản trị viên|
+:Nhập tên, mô tả, ảnh và trạng thái;
+:Chọn các sản phẩm trong combo;
+:Bấm Lưu combo;
+
+|Giao diện quản trị|
+:Gửi dữ liệu combo lên hệ thống;
+
+|Hệ thống Fruitables|
+:Kiểm tra dữ liệu combo;
+if (Dữ liệu hợp lệ?) then (Không)
+  |Giao diện quản trị|
+  :Hiển thị lại form tạo combo;
+  :Giữ dữ liệu đã nhập và hiển thị lỗi;
+  |Quản trị viên|
+  if (Muốn tiếp tục chỉnh sửa?) then (Có)
+    :Chỉnh sửa thông tin;
+    :Bấm Lưu lại;
+    |Giao diện quản trị|
+    :Gửi lại dữ liệu combo;
+    |Hệ thống Fruitables|
+    :Kiểm tra lại dữ liệu combo;
+  else (Không)
+    :Hủy thao tác tạo combo;
+    stop
+  endif
+endif
+
+if (Dữ liệu đã hợp lệ?) then (Có)
+  :Lưu combo và danh sách sản phẩm;
+  :Cập nhật danh sách combo;
+  |Giao diện quản trị|
+  :Hiển thị thông báo tạo combo thành công;
+  :Hiển thị lại bảng combo đã cập nhật;
+  |Quản trị viên|
+  :Xem combo vừa tạo trong danh sách;
+  if (Muốn tạo tiếp combo khác?) then (Có)
+    :Bấm nút Thêm combo;
+    |Giao diện quản trị|
+    :Hiển thị form tạo combo mới;
+    |Hệ thống Fruitables|
+    :Lấy danh sách sản phẩm và biến thể đang bán;
+  else (Không)
+    stop
+  endif
+else (Không)
+  |Giao diện quản trị|
+  :Giữ form và thông báo không thể lưu;
+  |Quản trị viên|
+  :Dừng thao tác hoặc tiếp tục chỉnh sửa;
+  stop
+endif
+
+@enduml

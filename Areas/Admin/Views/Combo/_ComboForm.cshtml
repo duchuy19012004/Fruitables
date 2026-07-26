@@ -1,13 +1,25 @@
 @model Fruitables.ViewModels.ComboFormViewModel
 
-<form asp-action="@(Model.Id == 0 ? "Create" : "Edit")" method="post" enctype="multipart/form-data">
+<form id="comboForm" asp-action="@(Model.Id == 0 ? "Create" : "Edit")" method="post" enctype="multipart/form-data" novalidate>
     <input type="hidden" asp-for="Id" />
-    <div asp-validation-summary="ModelOnly" class="alert alert-danger" role="alert"></div>
+    <input type="hidden" asp-for="Revision" />
+    @if (!ViewData.ModelState.IsValid)
+    {
+        <div asp-validation-summary="All" class="alert alert-danger" role="alert"></div>
+    }
+
+    <div class="alert alert-info d-flex gap-2 align-items-start" role="note">
+        <i class="fas fa-circle-info mt-1" aria-hidden="true"></i>
+        <div>
+            <strong>Quy tắc combo:</strong> cần ít nhất 2 sản phẩm khác nhau. Sản phẩm có biến thể phải chọn một biến thể cụ thể.
+            Khi khách mua, toàn bộ combo được thêm vào giỏ hoặc không thêm sản phẩm nào.
+        </div>
+    </div>
 
     <div class="row">
         <div class="col-md-6 mb-3">
             <label asp-for="Name" class="form-label">Tên combo <span class="text-danger">*</span></label>
-            <input asp-for="Name" class="form-control" placeholder="Ví dụ: Canh chua cá" />
+            <input asp-for="Name" class="form-control" placeholder="Ví dụ: Combo rau củ gia đình" />
             <span asp-validation-for="Name" class="text-danger"></span>
         </div>
         <div class="col-md-6 mb-3">
@@ -35,27 +47,93 @@
             <input asp-for="SortOrder" class="form-control" type="number" min="0" />
         </div>
         <div class="col-md-3 mb-3">
-            <label class="form-label">Trạng thái</label>
-            <div class="form-check form-switch mt-2">
-                <input asp-for="IsActive" class="form-check-input" type="checkbox" />
-                <label asp-for="IsActive" class="form-check-label">Kích hoạt combo</label>
-            </div>
+            <label asp-for="Status" class="form-label"></label>
+            <select asp-for="Status" class="form-select" id="comboLifecycleStatus">
+                <option value="0">Bản nháp</option>
+                <option value="1">Hẹn lịch</option>
+                <option value="2">Đang bán</option>
+                <option value="3">Lưu trữ</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6 mb-3">
+            <label asp-for="StartsAt" class="form-label"></label>
+            <input asp-for="StartsAt" class="form-control" type="datetime-local" />
+            <small class="text-muted">Bắt buộc khi chọn Hẹn lịch.</small>
+        </div>
+        <div class="col-md-6 mb-3">
+            <label asp-for="EndsAt" class="form-label"></label>
+            <input asp-for="EndsAt" class="form-control" type="datetime-local" />
+            <small class="text-muted">Để trống nếu không giới hạn thời gian bán.</small>
         </div>
     </div>
 
     <div class="mb-3">
         <label asp-for="Description" class="form-label">Mô tả</label>
-        <textarea asp-for="Description" class="form-control" rows="2" placeholder="Mô tả ngắn về combo"></textarea>
+        <textarea asp-for="Description" class="form-control" rows="2" placeholder="Ví dụ: Rau củ tươi cho gia đình 3–4 người dùng trong một tuần"></textarea>
+    </div>
+
+    <div class="admin-card mt-4">
+        <div class="card-header"><i class="fas fa-tags me-2"></i>Giá bán combo</div>
+        <div class="card-body">
+            <div class="row align-items-end">
+                <div class="col-md-4 mb-3">
+                    <label asp-for="PricingType" class="form-label"></label>
+                    <select asp-for="PricingType" id="comboPricingType" class="form-select">
+                        <option value="0">Tổng giá sản phẩm</option>
+                        <option value="1">Giá combo cố định</option>
+                        <option value="2">Giảm theo phần trăm</option>
+                        <option value="3">Giảm số tiền cố định</option>
+                    </select>
+                </div>
+                <div id="fixedPriceField" class="col-md-4 mb-3 d-none">
+                    <label asp-for="FixedPrice" class="form-label">Giá combo cố định</label>
+                    <div class="input-group">
+                        <input asp-for="FixedPrice" class="form-control" type="number" min="1" step="1000" />
+                        <span class="input-group-text">đ</span>
+                    </div>
+                    <span asp-validation-for="FixedPrice" class="text-danger"></span>
+                </div>
+                <div id="discountValueField" class="col-md-4 mb-3 d-none">
+                    <label asp-for="DiscountValue" id="discountValueLabel" class="form-label">Mức giảm</label>
+                    <div class="input-group">
+                        <input asp-for="DiscountValue" class="form-control" type="number" min="0.01" step="0.01" />
+                        <span id="discountValueUnit" class="input-group-text">%</span>
+                    </div>
+                    <span asp-validation-for="DiscountValue" class="text-danger"></span>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <div class="form-check form-switch">
+                        <input asp-for="AllowCouponStacking" class="form-check-input" type="checkbox" />
+                        <label asp-for="AllowCouponStacking" class="form-check-label"></label>
+                    </div>
+                    <small class="text-muted">Tắt để coupon không tính trên các sản phẩm thuộc combo.</small>
+                </div>
+            </div>
+            <div class="alert alert-light border mb-0 small">
+                Giá combo luôn được tính lại từ giá sản phẩm hiện hành. Nếu admin sửa combo, combo cũ trong giỏ sẽ yêu cầu khách thêm lại.
+            </div>
+        </div>
     </div>
 
     <div class="admin-card mt-4">
         <div class="card-header d-flex justify-content-between align-items-center">
-            <span><i class="fas fa-list me-2"></i>Nguyên liệu</span>
+            <div>
+                <span><i class="fas fa-list me-2"></i>Sản phẩm trong combo</span>
+                <small id="comboItemCount" class="text-muted ms-2"></small>
+            </div>
             <button type="button" id="addComboItem" class="btn btn-sm btn-primary">
-                <i class="fas fa-plus me-1"></i>Thêm món
+                <i class="fas fa-plus me-1"></i>Thêm sản phẩm
             </button>
         </div>
         <div class="card-body">
+            <div id="comboItemsValidation" class="alert alert-danger d-none" role="alert" aria-live="polite"></div>
+            <div id="comboItemsEmpty" class="text-center text-muted py-4 d-none">
+                <i class="fas fa-box-open fa-2x mb-2 d-block" aria-hidden="true"></i>
+                Chưa có sản phẩm. Hãy thêm ít nhất 2 sản phẩm vào combo.
+            </div>
             <div id="comboItemsContainer">
                 @for (int i = 0; i < Model.Items.Count; i++)
                 {
@@ -68,8 +146,8 @@
 
     <hr class="my-3" />
     <div class="d-flex gap-2">
-        <button type="submit" class="btn btn-primary">
-            <i class="fas fa-save me-2"></i>Lưu combo
+        <button type="submit" id="saveComboButton" class="btn btn-primary">
+            <i class="fas fa-save me-2"></i><span>Lưu combo</span>
         </button>
         <a asp-action="Index" class="btn btn-outline-secondary">Hủy</a>
     </div>

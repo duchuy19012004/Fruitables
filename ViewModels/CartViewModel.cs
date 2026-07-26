@@ -5,6 +5,7 @@ namespace Fruitables.ViewModels;
 public class CartViewModel
 {
     public List<CartItemViewModel> Items { get; set; } = new();
+    public List<CartGroupViewModel> Groups { get; set; } = new();
     public decimal Subtotal { get; set; }
     public decimal ShippingFee { get; set; }
     public decimal Total { get; set; }
@@ -24,6 +25,13 @@ public class CartItemViewModel
     public int CartItemId { get; set; }
     public int ProductId { get; set; }
     public int? ProductVariantId { get; set; }
+    public int? CartGroupId { get; set; }
+    public int? SourceComboId { get; set; }
+    public string? ComboName { get; set; }
+    public int? ComboRevision { get; set; }
+    public int? ComboQuantity { get; set; }
+    public bool AllowCouponStacking { get; set; } = true;
+    public decimal ComboDiscount { get; set; }
     public string? VariantName { get; set; }
     public string? VariantSKU { get; set; }
     public string ProductName { get; set; } = string.Empty;
@@ -33,8 +41,28 @@ public class CartItemViewModel
     public int Quantity { get; set; }
     public int StockQuantity { get; set; } = int.MaxValue;
     public bool IsAvailable { get; set; } = true;
-    public decimal Total => Price * Quantity;
+    public decimal Total => Price * Quantity - ComboDiscount;
 }
+
+public class CartGroupViewModel
+{
+    public int Id { get; set; }
+    public int ComboId { get; set; }
+    public int ComboRevision { get; set; }
+    public string ComboName { get; set; } = string.Empty;
+    public int Quantity { get; set; }
+    public decimal OriginalTotal { get; set; }
+    public decimal FinalTotal { get; set; }
+    public decimal Discount { get; set; }
+    public bool AllowCouponStacking { get; set; }
+    public bool IsValid { get; set; }
+    public List<CartItemViewModel> Items { get; set; } = new();
+}
+
+public sealed record CartAddItemRequest(
+    int ProductId,
+    int Quantity,
+    int? ProductVariantId = null);
 
 public sealed record CartMutationResult(
     bool Success,

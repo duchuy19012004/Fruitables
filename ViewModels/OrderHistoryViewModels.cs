@@ -128,6 +128,9 @@ public class OrderItemViewModel
     public int Quantity { get; set; }
     public decimal Price { get; set; }
     public decimal Total { get; set; }
+    public int? SourceComboId { get; set; }
+    public string? ComboName { get; set; }
+    public decimal ComboDiscount { get; set; }
 }
 
 /// <summary>

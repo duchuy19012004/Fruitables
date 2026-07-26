@@ -87,7 +87,17 @@
                                     @foreach (var item in order.Items)
                                     {
                                         <tr>
-                                            <td>@item.ProductName</td>
+                                            <td>
+                                                @item.ProductName
+                                                @if (item.SourceComboId.HasValue)
+                                                {
+                                                    <small class="badge bg-success d-block mt-1" style="width:max-content">@item.ComboNameSnapshot</small>
+                                                    @if (item.ComboDiscount > 0)
+                                                    {
+                                                        <small class="text-success d-block">Giảm combo: -@item.ComboDiscount.ToString("N0")đ</small>
+                                                    }
+                                                }
+                                            </td>
                                             <td>@item.Quantity</td>
                                             <td>@item.Price.ToString("N0")đ</td>
                                             <td>@item.Total.ToString("N0")đ</td>

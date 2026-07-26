@@ -97,7 +97,10 @@ public class OrderHistoryService : IOrderHistoryService
                 ProductImage = item.Product?.Images?.FirstOrDefault()?.ImageUrl,
                 Quantity = item.Quantity,
                 Price = item.Price,
-                Total = item.Quantity * item.Price
+                Total = item.Total,
+                SourceComboId = item.SourceComboId,
+                ComboName = item.ComboNameSnapshot,
+                ComboDiscount = item.ComboDiscount
             }).ToList() ?? new List<OrderItemViewModel>(),
             StatusHistory = statusHistory.Select(sh => new OrderStatusHistoryViewModel
             {

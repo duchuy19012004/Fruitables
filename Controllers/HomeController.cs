@@ -41,6 +41,12 @@ public class HomeController : Controller
         return View();
     }
 
+    // GET: Điều khoản, đổi trả và câu hỏi thường gặp
+    public IActionResult Policies()
+    {
+        return View();
+    }
+
     // GET: Trang lỗi chung (không cache)
     [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
     public IActionResult Error()

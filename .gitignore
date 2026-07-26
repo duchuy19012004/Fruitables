@@ -7,7 +7,9 @@
 .skills
 
 #understand-anything
-.understand-anything
+.understand-anything/
+.understand/
+.codegraph/
 
 # User-specific files
 *.rsuser
@@ -435,3 +437,14 @@ skills-lock.json
 
 # Brainstorm visual companion sessions
 .superpowers/
+
+# Local agent and repository-analysis artifacts
+repomix-output*
+pi-session-*.html
+
+# Temporary browser tests, screenshots, and presentation QA renders
+scratch/**/*.png
+scratch/chat-browser-test.mjs
+scratch/test-uploads/
+outputs/
+wwwroot/uploads/combos/

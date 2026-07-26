@@ -1,8 +1,9 @@
 @model Fruitables.Models.CategoryTreeNode
 @{
     var selectedCategoryId = ViewBag.CategoryId as int? ?? ViewBag.SelectedCategoryId as int?;
+    var children = Model.Children;
     var isActive = selectedCategoryId == Model.Id;
-    var hasChildren = Model.Children != null && Model.Children.Any();
+    var hasChildren = children.Any();
     var searchTerm = ViewBag.SearchTerm as string;
     var minPrice = ViewBag.MinPrice as decimal?;
     var maxPrice = ViewBag.MaxPrice as decimal?;
@@ -11,7 +12,7 @@
 
 <li>
     <div class="shop-category-row" style="padding-left: @(Model.Level * 12)px">
-        <a asp-controller="Shop" asp-action="Index" asp-route-categoryId="@Model.Id" asp-route-search="@searchTerm" asp-route-minPrice="@minPrice" asp-route-maxPrice="@maxPrice" asp-route-sortBy="@sortBy" class="@(isActive ? "active" : "")">
+        <a asp-controller="Shop" asp-action="Index" asp-route-categoryId="@Model.Id" asp-route-search="@searchTerm" asp-route-minPrice="@minPrice" asp-route-maxPrice="@maxPrice" asp-route-sortBy="@sortBy" class="@(isActive ? "active" : "")" data-shop-filter-link>
             @if (hasChildren)
             {
                 <i class="fas fa-folder me-2"></i>
@@ -28,7 +29,7 @@
 
 @if (hasChildren)
 {
-    foreach (var child in Model.Children)
+    foreach (var child in children)
     {
         @await Html.PartialAsync("_CategoryTreeItem", child)
     }

@@ -183,7 +183,15 @@
                                     </div>
                                     <div class="flex-grow-1">
                                         <div class="fw-semibold text-dark" style="font-size:.9rem;">@item.ProductName</div>
-                                        <small class="text-muted">@item.Price.ToString("N0")đ × @item.Quantity</small>
+                                        @if (item.CartGroupId.HasValue)
+                                        {
+                                            <small class="badge bg-success-subtle text-success mb-1">@item.ComboName</small>
+                                        }
+                                        <small class="text-muted d-block">@item.Price.ToString("N0")đ × @item.Quantity</small>
+                                        @if (item.ComboDiscount > 0)
+                                        {
+                                            <small class="text-success">Giảm combo: -@item.ComboDiscount.ToString("N0")đ</small>
+                                        }
                                     </div>
                                     <div class="fw-bold text-dark">@item.Total.ToString("N0")đ</div>
                                 </div>

@@ -4,200 +4,101 @@
     Layout = "~/Areas/Admin/Views/Shared/_AdminDashboardLayout.cshtml";
 }
 
-<!-- Page Header -->
-<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
-    <div>
-        <h4 class="mb-1">Dashboard</h4>
-        <p class="text-muted mb-0">Chào mừng trở lại, @User.Identity?.Name!</p>
-    </div>
-    <div>
-        <span class="badge bg-success fs-6">
-            <i class="fas fa-user-shield me-1"></i>
-            @User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value
-        </span>
-    </div>
+<div class="dashboard-overview">
+    <header class="dashboard-overview__header">
+        <div>
+            <span class="dashboard-overview__eyebrow">Fruitables · Command center</span>
+            <h1 class="dashboard-overview__title">Một ngày bán hàng, nhìn trong một nhịp.</h1>
+            <p class="dashboard-overview__subtitle">Ưu tiên doanh thu, đơn mới và tồn kho cần chú ý.</p>
+        </div>
+        <a asp-area="Admin" asp-controller="Product" asp-action="Create" class="dashboard-overview__primary-action">
+            <i class="fas fa-plus me-2" aria-hidden="true"></i>Thêm sản phẩm
+        </a>
+    </header>
+
+    <partial name="_OverviewKpis" model="Model" />
+
+    <section class="overview-grid" aria-label="Hoạt động gần đây">
+        <partial name="_RecentOrdersPanel" model="Model" />
+        <partial name="_OverviewActions" model="Model" />
+    </section>
 </div>
 
-<!-- Stats Cards -->
-<div class="row g-4 mb-4">
-    <!-- Orders Card -->
-    <div class="col-md-6 col-xl-3">
-        <div class="admin-card p-3">
-            <div class="d-flex align-items-center">
-                <div class="flex-shrink-0">
-                    <div class="bg-primary bg-opacity-10 rounded-circle p-3">
-                        <i class="fas fa-shopping-cart text-primary fa-2x"></i>
-                    </div>
-                </div>
-                <div class="flex-grow-1 ms-3">
-                    <h3 class="mb-0">@Model.Orders.TotalOrders</h3>
-                    <small class="text-muted">Đơn hàng</small>
-                    @if (Model.Orders.TodayOrders > 0)
-                    {
-                        <div class="mt-1">
-                            <span class="badge bg-primary">+@Model.Orders.TodayOrders hôm nay</span>
-                        </div>
-                    }
-                </div>
-            </div>
-        </div>
-    </div>
+@section Styles {
+    <style>
+        .dashboard-overview,
+        .dashboard-overview h1,
+        .dashboard-overview h2,
+        .dashboard-overview p,
+        .dashboard-overview strong,
+        .dashboard-overview span,
+        .dashboard-overview small,
+        .dashboard-overview a {
+            font-family: 'Be Vietnam Pro', sans-serif;
+        }
 
-    <!-- Revenue Card -->
-    <div class="col-md-6 col-xl-3">
-        <div class="admin-card p-3">
-            <div class="d-flex align-items-center">
-                <div class="flex-shrink-0">
-                    <div class="bg-success bg-opacity-10 rounded-circle p-3">
-                        <i class="fas fa-dollar-sign text-success fa-2x"></i>
-                    </div>
-                </div>
-                <div class="flex-grow-1 ms-3">
-                    <h3 class="mb-0">@Model.Revenue.TotalRevenue.ToString("N0")</h3>
-                    <small class="text-muted">Doanh thu (VND)</small>
-                    @if (Model.Revenue.MonthlyGrowthPercent != 0)
-                    {
-                        <div class="mt-1">
-                            <span class="badge @(Model.Revenue.MonthlyGrowthPercent > 0 ? "bg-success" : "bg-danger")">
-                                @(Model.Revenue.MonthlyGrowthPercent > 0 ? "+" : "")@Model.Revenue.MonthlyGrowthPercent.ToString("N1")%
-                            </span>
-                        </div>
-                    }
-                </div>
-            </div>
-        </div>
-    </div>
+        .dashboard-overview { color: #21363a; margin: 0 auto; max-width: 1440px; padding-bottom: 2rem; }
+        .dashboard-overview__header { align-items: end; display: flex; gap: 1.25rem; justify-content: space-between; }
+        .dashboard-overview__eyebrow { color: #668b44; font-size: .72rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+        .dashboard-overview__title { color: #173334; font-size: clamp(1.65rem, 3vw, 2.45rem); font-weight: 800; letter-spacing: -.045em; margin: .4rem 0; }
+        .dashboard-overview__subtitle { color: #6b7a76; font-size: .94rem; margin: 0; }
+        .dashboard-overview__primary-action { background: #285b4d; border-radius: 999px; box-shadow: 0 10px 24px rgba(40, 91, 77, .14); color: #fff; font-size: .9rem; font-weight: 700; padding: .75rem 1rem; text-decoration: none; transition: transform .25s cubic-bezier(.16,1,.3,1), background .25s; white-space: nowrap; }
+        .dashboard-overview__primary-action:hover { background: #1b463a; color: #fff; transform: translateY(-2px); }
+        .dashboard-overview__primary-action:active { transform: translateY(0) scale(.98); }
 
-    <!-- Products Card -->
-    <div class="col-md-6 col-xl-3">
-        <div class="admin-card p-3">
-            <div class="d-flex align-items-center">
-                <div class="flex-shrink-0">
-                    <div class="bg-info bg-opacity-10 rounded-circle p-3">
-                        <i class="fas fa-box text-info fa-2x"></i>
-                    </div>
-                </div>
-                <div class="flex-grow-1 ms-3">
-                    <h3 class="mb-0">@Model.Inventory.TotalProducts</h3>
-                    <small class="text-muted">Sản phẩm</small>
-                    <div class="mt-1">
-                        <span class="badge bg-success">@Model.Inventory.ActiveProducts hoạt động</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+        .overview-kpis { display: grid; gap: 1rem; grid-template-columns: 1.35fr .9fr .9fr; margin-top: 1.75rem; }
+        .overview-kpi { background: #fff; border: 1px solid #e4ebe4; min-height: 148px; overflow: hidden; padding: 1.25rem; position: relative; }
+        .overview-kpi--revenue { background: #edf5e9; border-color: #d9e9d2; }
+        .overview-kpi::after { background: #95c76c; bottom: 0; content: ''; height: 3px; left: 0; position: absolute; right: 100%; transition: right .65s cubic-bezier(.16,1,.3,1); }
+        .overview-kpi:hover::after { right: 0; }
+        .overview-kpi__label { color: #74817c; display: block; font-size: .75rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+        .overview-kpi__value { color: #173334; display: block; font-size: clamp(1.6rem, 3vw, 2.65rem); font-weight: 800; letter-spacing: -.055em; line-height: 1.15; margin-top: .55rem; }
+        .overview-kpi__note { color: #568047; display: block; font-size: .8rem; font-weight: 700; margin-top: .35rem; }
 
-    <!-- Stock Alert Card -->
-    <div class="col-md-6 col-xl-3">
-        <div class="admin-card p-3">
-            <div class="d-flex align-items-center">
-                <div class="flex-shrink-0">
-                    <div class="bg-warning bg-opacity-10 rounded-circle p-3">
-                        <i class="fas fa-exclamation-triangle text-warning fa-2x"></i>
-                    </div>
-                </div>
-                <div class="flex-grow-1 ms-3">
-                    <h3 class="mb-0">@Model.Inventory.LowStockProducts</h3>
-                    <small class="text-muted">Sắp hết hàng</small>
-                    @if (Model.Inventory.OutOfStockProducts > 0)
-                    {
-                        <div class="mt-1">
-                            <span class="badge bg-danger">@Model.Inventory.OutOfStockProducts hết hàng</span>
-                        </div>
-                    }
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
+        .overview-grid { display: grid; gap: 1rem; grid-template-columns: 1.15fr .85fr; margin-top: 1rem; }
+        .overview-panel { background: #fff; border: 1px solid #e4ebe4; }
+        .overview-panel__head { align-items: center; border-bottom: 1px solid #e8eee8; display: flex; justify-content: space-between; padding: 1.05rem 1.25rem; }
+        .overview-panel__head h2 { color: #21363a; font-size: .95rem; font-weight: 800; letter-spacing: -.02em; margin: 0; }
+        .overview-panel__head a { color: #3c7549; font-size: .82rem; font-weight: 800; text-decoration: none; }
+        .overview-panel__head a:hover { color: #173334; text-decoration: underline; }
+        .overview-panel__empty { color: #74817c; margin: 0; padding: 1.4rem 1.25rem; }
+        .recent-order { align-items: center; border-bottom: 1px solid #eef2ee; display: grid; gap: .75rem; grid-template-columns: 290px minmax(0, 1fr) 125px 96px; padding: .9rem 1.25rem; }
+        .recent-order:last-child { border-bottom: 0; }
+        .recent-order a { color: #285b4d; font-size: .83rem; font-weight: 800; text-decoration: none; }
+        .recent-order a:hover { color: #173334; text-decoration: underline; }
+        .recent-order > span:not(.badge) { color: #66746f; font-size: .88rem; }
+        .recent-order strong { color: #253c3d; font-size: .88rem; text-align: right; white-space: nowrap; }
+        .recent-order .badge { border-radius: 999px; font-size: .71rem; font-weight: 800; padding: .28rem .52rem; white-space: nowrap; }
+        .recent-order .bg-warning { color: #704d00; }
 
-<!-- Quick Actions & Recent Orders -->
-<div class="row g-4">
-    <div class="col-lg-4">
-        <div class="admin-card h-100">
-            <div class="card-header">
-                <i class="fas fa-bolt me-2"></i>Thao tác nhanh
-            </div>
-            <div class="card-body">
-                <div class="d-grid gap-2">
-                    <a asp-action="Index" asp-controller="Settings" asp-area="Admin" class="btn btn-outline-primary">
-                        <i class="fas fa-cog me-2"></i>Cài đặt hệ thống
-                    </a>
-                    <a asp-action="Create" asp-controller="Product" asp-area="Admin" class="btn btn-outline-success">
-                        <i class="fas fa-plus me-2"></i>Thêm sản phẩm
-                    </a>
-                    <a asp-action="Index" asp-controller="Product" asp-area="Admin" class="btn btn-outline-info">
-                        <i class="fas fa-box me-2"></i>Quản lý sản phẩm
-                    </a>
-                    <a href="/" class="btn btn-outline-secondary" target="_blank">
-                        <i class="fas fa-external-link-alt me-2"></i>Xem trang chủ
-                    </a>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-lg-8">
-        <div class="admin-card h-100">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <span><i class="fas fa-clock me-2"></i>Đơn hàng gần đây</span>
-                <a asp-action="Index" asp-controller="Order" asp-area="Admin" class="btn btn-sm btn-primary">Xem tất cả</a>
-            </div>
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-hover mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Mã đơn</th>
-                                <th>Khách hàng</th>
-                                <th>Tổng tiền</th>
-                                <th>Trạng thái</th>
-                                <th>Ngày đặt</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @if (Model.RecentOrders.Any())
-                            {
-                                var vnTimeZone = TimeZoneInfo.FindSystemTimeZoneById("SE Asia Standard Time");
-                                foreach (var order in Model.RecentOrders)
-                                {
-                                    var createdAtVN = TimeZoneInfo.ConvertTimeFromUtc(order.CreatedAt, vnTimeZone);
-                                    <tr>
-                                        <td>
-                                            <a asp-action="Detail" asp-controller="Order" asp-area="Admin" asp-route-id="@order.Id">
-                                                <strong>#@order.OrderNumber</strong>
-                                            </a>
-                                        </td>
-                                        <td>@order.CustomerName</td>
-                                        <td>@order.Total.ToString("N0")đ</td>
-                                        <td><span class="badge @order.StatusBadgeClass">@order.Status</span></td>
-                                        <td>@createdAtVN.ToString("dd/MM/yyyy")</td>
-                                    </tr>
-                                }
-                            }
-                            else
-                            {
-                                <tr>
-                                    <td colspan="5" class="text-center text-muted py-4">Chưa có đơn hàng nào</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
+        .overview-actions { display: grid; gap: 1rem; }
+        .overview-pulse { align-items: center; background: #173334; color: #fff; display: flex; gap: .75rem; justify-content: space-between; min-height: 105px; padding: 1.25rem; }
+        .overview-pulse span { color: #b7cbc1; display: block; font-size: .72rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+        .overview-pulse strong { display: block; font-size: 1.15rem; letter-spacing: -.03em; margin-top: .3rem; }
+        .overview-pulse::after { background: repeating-linear-gradient(90deg, #a9d27a 0 8px, transparent 8px 14px); content: ''; height: 46px; opacity: .85; width: 54px; }
+        .overview-action-links { display: grid; gap: .65rem; padding: 1.1rem 1.25rem 1.25rem; }
+        .overview-action-links a { align-items: center; border-bottom: 1px solid #e8eee8; color: #344945; display: flex; font-size: .9rem; font-weight: 700; justify-content: space-between; padding: .72rem 0; text-decoration: none; }
+        .overview-action-links a:last-child { border-bottom: 0; padding-bottom: 0; }
+        .overview-action-links a:hover { color: #477f42; }
+
+        @@media (max-width: 991px) {
+            .dashboard-overview__header, .overview-kpis, .overview-grid { align-items: stretch; grid-template-columns: 1fr; }
+            .dashboard-overview__header { align-items: flex-start; flex-direction: column; }
+        }
+        @@media (max-width: 575px) {
+            .recent-order { grid-template-columns: minmax(0, 1fr) auto; }
+            .recent-order > span:not(.badge) { grid-column: 1; }
+            .recent-order strong { grid-column: 1; grid-row: 2; text-align: left; }
+            .recent-order .badge { grid-column: 2; grid-row: 1 / span 2; }
+        }
+    </style>
+}
 
 @section Scripts {
     <script>
         if (window.ecommerceHub) {
-            window.ecommerceHub.on("OrderCreated", function (data) {
-                window.location.reload();
-            });
-            window.ecommerceHub.on("OrderStatusChanged", function (data) {
-                window.location.reload();
-            });
+            window.ecommerceHub.on("OrderCreated", () => window.location.reload());
+            window.ecommerceHub.on("OrderStatusChanged", () => window.location.reload());
         }
     </script>
 }

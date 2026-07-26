@@ -1,0 +1,532 @@
+direction: right
+
+# Tăng khoảng cách node/cạnh để mũi tên không đè bảng
+elk.spacing.nodeNode: 70
+elk.layered.spacing.nodeNodeBetweenLayers: 90
+elk.spacing.edgeNode: 30
+elk.spacing.edgeEdge: 20
+
+# ===== Nhóm 1: Người dùng & phân quyền =====
+G1: "Người dùng & phân quyền" {
+
+  VAI_TRO: "Vai trò (Roles)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Tên vai trò": "chuỗi"
+    "Mô tả": "chuỗi (trống được)"
+    "Đang hoạt động": "đúng/sai"
+    "Ngày tạo": "ngày giờ"
+    "Ngày cập nhật": "ngày giờ"
+  }
+
+  QUYEN: "Quyền (Permissions)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Tên quyền": "chuỗi"
+    "Mô tả": "chuỗi (trống được)"
+    "Nhóm chức năng": "chuỗi"
+    "Ngày tạo": "ngày giờ"
+  }
+
+  NGUOI_DUNG_VAI_TRO: "Người dùng – Vai trò (UserRoleMappings)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Mã người dùng": "số nguyên" {constraint: foreign_key}
+    "Mã vai trò": "số nguyên" {constraint: foreign_key}
+    "Gán lúc": "ngày giờ"
+    "Gán bởi Admin": "số nguyên (trống được)" {constraint: foreign_key}
+  }
+
+  VAI_TRO_QUYEN: "Vai trò – Quyền (RolePermissions)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Mã vai trò": "số nguyên" {constraint: foreign_key}
+    "Mã quyền": "số nguyên" {constraint: foreign_key}
+    "Gán lúc": "ngày giờ"
+    "Gán bởi Admin": "số nguyên (trống được)" {constraint: foreign_key}
+  }
+
+  NGUOI_DUNG: "Người dùng (Users)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Họ tên": "chuỗi"
+    "Email": "chuỗi"
+    "Mật khẩu (đã mã hóa)": "chuỗi"
+    "Số điện thoại": "chuỗi (trống được)"
+    "Ảnh đại diện": "chuỗi (trống được)"
+    "Vai trò": "Khách | Admin | SuperAdmin"
+    "Đang hoạt động": "đúng/sai"
+    "Đăng nhập lần cuối": "ngày giờ (trống được)"
+    "Mã Google": "chuỗi (trống được)"
+    "Mã đặt lại mật khẩu": "chuỗi (trống được)"
+    "Hạn mã đặt lại MK": "ngày giờ (trống được)"
+    "Kiểu khóa hiện tại": "Tạm thời | Vĩnh viễn (trống được)"
+    "Lý do khóa": "chuỗi (trống được)"
+    "Loại vi phạm": "chuỗi (trống được)"
+    "Thời điểm khóa": "ngày giờ (trống được)"
+    "Hết hạn khóa": "ngày giờ (trống được)"
+    "Bị khóa bởi Admin": "số nguyên (trống được)" {constraint: foreign_key}
+    "Ngày tạo": "ngày giờ"
+    "Ngày cập nhật": "ngày giờ"
+  }
+
+  DIA_CHI: "Địa chỉ (Addresses)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Mã người dùng": "số nguyên (trống được)" {constraint: foreign_key}
+    "Họ tên người nhận": "chuỗi"
+    "Số điện thoại": "chuỗi"
+    "Mã tỉnh/thành": "chuỗi"
+    "Tên tỉnh/thành": "chuỗi"
+    "Mã xã/phường": "chuỗi"
+    "Tên xã/phường": "chuỗi"
+    "Mã quận GHN": "số nguyên (trống được)"
+    "Mã phường GHN": "chuỗi (trống được)"
+    "Địa chỉ chi tiết": "chuỗi"
+    "Là mặc định": "đúng/sai"
+    "Ngày tạo": "ngày giờ"
+    "Ngày cập nhật": "ngày giờ (trống được)"
+  }
+
+  NHAT_KY_TAI_KHOAN: "Nhật ký tài khoản (UserAccountLogs)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Mã người dùng": "số nguyên" {constraint: foreign_key}
+    "Mã admin thực hiện": "số nguyên" {constraint: foreign_key}
+    "Hành động": "chuỗi"
+    "Kiểu khóa": "Tạm thời | Vĩnh viễn (trống được)"
+    "Loại vi phạm": "chuỗi (trống được)"
+    "Lý do": "chuỗi (trống được)"
+    "Hết hạn": "ngày giờ (trống được)"
+    "Địa chỉ IP": "chuỗi (trống được)"
+    "Trình duyệt": "chuỗi (trống được)"
+    "Ngày tạo": "ngày giờ"
+  }
+
+  NHAT_KY_PHAN_QUYEN: "Nhật ký phân quyền (RbacAuditLogs)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Hành động": "chuỗi"
+    "Loại đối tượng": "chuỗi"
+    "Mã đối tượng": "số nguyên"
+    "Đổi bởi Admin": "số nguyên" {constraint: foreign_key}
+    "Thời điểm đổi": "ngày giờ"
+    "Giá trị cũ": "chuỗi (trống được)"
+    "Giá trị mới": "chuỗi (trống được)"
+  }
+}
+
+# ===== Nhóm 2: Sản phẩm =====
+G2: "Sản phẩm" {
+
+  DANH_MUC: "Danh mục (Categories)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Tên danh mục": "chuỗi"
+    "Đường dẫn (slug)": "chuỗi"
+    "Mô tả": "chuỗi (trống được)"
+    "Ảnh": "chuỗi (trống được)"
+    "Danh mục cha": "số nguyên (trống được)" {constraint: foreign_key}
+    "Thứ tự sắp xếp": "số nguyên"
+    "Đang hoạt động": "đúng/sai"
+    "Đã xóa": "đúng/sai"
+    "Ngày xóa": "ngày giờ (trống được)"
+    "Ngày tạo": "ngày giờ"
+    "Ngày cập nhật": "ngày giờ"
+  }
+
+  ANH_SAN_PHAM: "Ảnh sản phẩm (ProductImages)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Mã sản phẩm": "số nguyên" {constraint: foreign_key}
+    "Đường dẫn ảnh": "chuỗi"
+    "Là ảnh chính": "đúng/sai"
+    "Thứ tự": "số nguyên"
+  }
+
+  SAN_PHAM: "Sản phẩm (Products)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Mã danh mục": "số nguyên" {constraint: foreign_key}
+    "Tên sản phẩm": "chuỗi"
+    "Đường dẫn (slug)": "chuỗi"
+    "Mô tả chi tiết": "chuỗi (trống được)"
+    "Mô tả ngắn": "chuỗi (trống được)"
+    "Giá gốc": "số thập phân"
+    "Đơn vị tính": "chuỗi"
+    "Khối lượng": "số thập phân (trống được)"
+    "Xuất xứ": "chuỗi (trống được)"
+    "Chất lượng": "chuỗi (trống được)"
+    "Tồn kho": "số nguyên"
+    "Số lượng đặt tối thiểu": "số nguyên"
+    "Nổi bật": "đúng/sai"
+    "Đang hoạt động": "đúng/sai"
+    "Đã xóa": "đúng/sai"
+    "Ngày xóa": "ngày giờ (trống được)"
+    "Điểm đánh giá TB": "số thập phân"
+    "Số lượt đánh giá": "số nguyên"
+    "Ngày tạo": "ngày giờ"
+    "Ngày cập nhật": "ngày giờ"
+  }
+
+  PHAN_LOAI: "Phân loại (ProductVariants)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Mã sản phẩm": "số nguyên" {constraint: foreign_key}
+    "Mã SKU": "chuỗi"
+    "Tên phân loại": "chuỗi"
+    "Giá": "số thập phân"
+    "Tồn kho": "số nguyên"
+    "Đang hoạt động": "đúng/sai"
+    "Ngày tạo": "ngày giờ"
+  }
+
+  LICH_GIAM_GIA: "Lịch giảm giá (PriceSchedules)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Mã sản phẩm": "số nguyên" {constraint: foreign_key}
+    "Mã phân loại": "số nguyên (trống được)" {constraint: foreign_key}
+    "Kiểu giảm": "Giá cố định | Phần trăm"
+    "Giá trị giảm": "số thập phân"
+    "Bắt đầu": "ngày giờ"
+    "Kết thúc": "ngày giờ (trống được)"
+    "Đã hủy": "đúng/sai"
+    "Tạo bởi Admin": "số nguyên (trống được)" {constraint: foreign_key}
+    "Ngày tạo": "ngày giờ"
+    "Ngày cập nhật": "ngày giờ"
+  }
+
+  SAN_PHAM_THE: "Sản phẩm – Thẻ (ProductTagMapping)" {
+    shape: sql_table
+    "Mã sản phẩm": "số nguyên" {constraint: foreign_key}
+    "Mã thẻ": "số nguyên" {constraint: foreign_key}
+  }
+
+  THE: "Thẻ (ProductTags)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Tên thẻ": "chuỗi"
+    "Đường dẫn (slug)": "chuỗi"
+  }
+
+  NHAT_KY_SAN_PHAM: "Nhật ký sản phẩm (ProductLogs)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Mã sản phẩm": "số nguyên (trống được)" {constraint: foreign_key}
+    "Mã admin": "số nguyên" {constraint: foreign_key}
+    "Hành động": "chuỗi"
+    "Chi tiết": "chuỗi (trống được)"
+    "Ngày tạo": "ngày giờ"
+  }
+}
+
+# ===== Nhóm 3: Giỏ hàng & đơn hàng =====
+G3: "Giỏ hàng & đơn hàng" {
+
+  GIO_HANG: "Giỏ hàng (Carts)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Mã người dùng": "số nguyên (trống được)" {constraint: foreign_key}
+    "Mã phiên khách": "chuỗi (trống được)"
+    "Mã giảm giá": "chuỗi (trống được)"
+    "Số tiền giảm": "số thập phân"
+    "Ngày tạo": "ngày giờ"
+    "Ngày cập nhật": "ngày giờ"
+  }
+
+  MUC_GIO_HANG: "Mục giỏ hàng (CartItems)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Mã giỏ hàng": "số nguyên" {constraint: foreign_key}
+    "Mã sản phẩm": "số nguyên" {constraint: foreign_key}
+    "Mã phân loại": "số nguyên (trống được)" {constraint: foreign_key}
+    "Số lượng": "số nguyên"
+    "Đơn giá": "số thập phân"
+  }
+
+  DON_HANG: "Đơn hàng (Orders)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Mã khách": "số nguyên (trống được)" {constraint: foreign_key}
+    "Mã địa chỉ giao": "số nguyên (trống được)" {constraint: foreign_key}
+    "Thông tin giao hàng (chụp)": "chuỗi (trống được)"
+    "Mã đơn hàng": "chuỗi"
+    "Trạng thái đơn": "Chờ xử lý | Đang xử lý | Đang giao | Đã giao | Đã hủy | Đã trả"
+    "Tạm tính": "số thập phân"
+    "Phí vận chuyển": "số thập phân"
+    "Giảm giá": "số thập phân"
+    "Tổng cộng": "số thập phân"
+    "Hình thức thanh toán": "Chuyển khoản | Séc | COD | Paypal"
+    "Trạng thái thanh toán": "Chờ thanh toán | Đã thanh toán | Đã hoàn tiền"
+    "Mã thanh toán": "chuỗi (trống được)"
+    "Hình thức giao hàng": "Miễn phí | Đồng giá | Nhận tại cửa hàng"
+    "Ghi chú": "chuỗi (trống được)"
+    "Lý do hủy": "chuỗi (trống được)"
+    "Ngày đặt": "ngày giờ"
+    "Phiên bản dòng (chống xung đột)": "mảng byte (trống được)"
+  }
+
+  MUC_DON_HANG: "Mục đơn hàng (OrderItems)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Mã đơn hàng": "số nguyên" {constraint: foreign_key}
+    "Mã sản phẩm": "số nguyên" {constraint: foreign_key}
+    "Mã phân loại": "số nguyên (trống được)" {constraint: foreign_key}
+    "Tên phân loại": "chuỗi (trống được)"
+    "SKU phân loại": "chuỗi (trống được)"
+    "Tên sản phẩm": "chuỗi"
+    "Số lượng": "số nguyên"
+    "Đơn giá": "số thập phân"
+    "Thành tiền": "số thập phân"
+  }
+
+  GIAO_DICH_SEPAY: "Giao dịch SePay (SePayTransactions)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Mã giao dịch SePay": "số lớn"
+    "Mã đơn hàng": "số nguyên (trống được)" {constraint: foreign_key}
+    "Mã thanh toán": "chuỗi (trống được)"
+    "Số tiền chuyển": "số thập phân"
+    "Mã tham chiếu": "chuỗi (trống được)"
+    "Trạng thái": "Đã thanh toán | Trùng | Bỏ qua"
+    "Thông điệp": "chuỗi (trống được)"
+    "Dữ liệu gốc": "chuỗi"
+    "Ngày tạo": "ngày giờ"
+  }
+
+  LICH_SU_DON: "Lịch sử trạng thái đơn (OrderStatusHistories)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Mã đơn hàng": "số nguyên" {constraint: foreign_key}
+    "Trạng thái cũ": "như Trạng thái đơn"
+    "Trạng thái mới": "như Trạng thái đơn"
+    "Mã admin đổi": "số nguyên" {constraint: foreign_key}
+    "Ghi chú": "chuỗi (trống được)"
+    "Ngày tạo": "ngày giờ"
+  }
+
+  GHI_CHU_DON: "Ghi chú đơn (OrderNotes)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Mã đơn hàng": "số nguyên" {constraint: foreign_key}
+    "Mã admin": "số nguyên"
+    "Tên admin": "chuỗi"
+    "Nội dung": "chuỗi"
+    "Ngày tạo": "ngày giờ"
+  }
+
+  MA_GIAM_GIA: "Mã giảm giá (Coupons)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Mã coupon": "chuỗi"
+    "Kiểu giảm": "Phần trăm | Số tiền cố định"
+    "Giá trị": "số thập phân"
+    "Đơn tối thiểu": "số thập phân"
+    "Số lượng tối thiểu": "số nguyên"
+    "Lượt dùng tối đa": "số nguyên (trống được)"
+    "Đã dùng": "số nguyên"
+    "Ngày bắt đầu": "ngày giờ (trống được)"
+    "Ngày kết thúc": "ngày giờ (trống được)"
+    "Đang hoạt động": "đúng/sai"
+  }
+}
+
+# ===== Nhóm 4: Đánh giá & yêu thích =====
+G4: "Đánh giá & yêu thích" {
+
+  DANH_GIA: "Đánh giá (Reviews)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Mã sản phẩm": "số nguyên" {constraint: foreign_key}
+    "Mã người đánh giá": "số nguyên" {constraint: foreign_key}
+    "Số sao": "số nguyên"
+    "Nội dung": "chuỗi (trống được)"
+    "Trạng thái duyệt": "Chờ duyệt | Đã duyệt | Từ chối"
+    "Đang ẩn": "đúng/sai"
+    "Lý do ẩn": "chuỗi (trống được)"
+    "Ẩn bởi Admin": "số nguyên (trống được)" {constraint: foreign_key}
+    "Thời điểm ẩn": "ngày giờ (trống được)"
+    "Đã xóa": "đúng/sai"
+    "Xóa bởi Admin": "số nguyên (trống được)" {constraint: foreign_key}
+    "Ngày xóa": "ngày giờ (trống được)"
+    "Đã mua hàng": "đúng/sai"
+    "Lượt hữu ích": "số nguyên"
+    "Lượt báo cáo": "số nguyên"
+    "Ngày tạo": "ngày giờ"
+    "Ngày cập nhật": "ngày giờ (trống được)"
+  }
+
+  BAO_CAO_DANH_GIA: "Báo cáo đánh giá (ReviewReports)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Mã đánh giá": "số nguyên" {constraint: foreign_key}
+    "Mã người báo cáo": "số nguyên" {constraint: foreign_key}
+    "Lý do báo cáo": "Spam | Xúc phạm | Giả mạo | Khác"
+    "Mô tả thêm": "chuỗi (trống được)"
+    "Trạng thái xử lý": "Chờ xử lý | Đã xử lý | Bỏ qua"
+    "Xử lý bởi Admin": "số nguyên (trống được)" {constraint: foreign_key}
+    "Thời điểm xử lý": "ngày giờ (trống được)"
+    "Ngày tạo": "ngày giờ"
+  }
+
+  DANH_GIA_HUU_ICH: "Đánh giá hữu ích (ReviewHelpfuls)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Mã đánh giá": "số nguyên" {constraint: foreign_key}
+    "Mã người dùng": "số nguyên" {constraint: foreign_key}
+    "Ngày tạo": "ngày giờ"
+  }
+
+  YEU_THICH: "Yêu thích (Wishlists)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Mã người dùng": "số nguyên" {constraint: foreign_key}
+    "Mã sản phẩm": "số nguyên" {constraint: foreign_key}
+    "Ngày tạo": "ngày giờ"
+  }
+
+  CAM_NHAN_KHACH: "Cảm nhận khách (Testimonials)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Mã người dùng": "số nguyên (trống được)" {constraint: foreign_key}
+    "Tên khách": "chuỗi"
+    "Nghề nghiệp": "chuỗi (trống được)"
+    "Ảnh đại diện": "chuỗi (trống được)"
+    "Nội dung": "chuỗi"
+    "Số sao": "số nguyên"
+    "Đang hoạt động": "đúng/sai"
+    "Ngày tạo": "ngày giờ"
+  }
+}
+
+# ===== Nhóm 5: Chat & tìm kiếm =====
+G5: "Chat & tìm kiếm" {
+
+  PHIEN_CHAT: "Phiên chat (ChatSessions)" {
+    shape: sql_table
+    "Mã": "GUID" {constraint: primary_key}
+    "Mã người dùng": "số nguyên (trống được)" {constraint: foreign_key}
+    "Nguồn": "chuỗi (trống được)"
+    "Ngày tạo": "ngày giờ"
+    "Tin nhắn cuối lúc": "ngày giờ"
+  }
+
+  TIN_NHAN_CHAT: "Tin nhắn chat (ChatMessages)" {
+    shape: sql_table
+    "Mã": "số lớn" {constraint: primary_key}
+    "Mã phiên chat": "GUID" {constraint: foreign_key}
+    "Vai trò": "Người dùng | Trợ lý"
+    "Nội dung": "chuỗi"
+    "Dữ liệu phụ (JSON)": "chuỗi (trống được)"
+    "Ngày tạo": "ngày giờ"
+  }
+
+  HOI_DAP: "Hỏi đáp (Faqs)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Tiêu đề": "chuỗi"
+    "Nội dung": "chuỗi"
+    "Nhóm": "chuỗi"
+    "Đang hoạt động": "đúng/sai"
+    "Ngày tạo": "ngày giờ"
+    "Ngày cập nhật": "ngày giờ"
+  }
+
+  MANG_KIEN_THUC: "Mảng kiến thức (KnowledgeChunks)" {
+    shape: sql_table
+    "Mã": "số lớn" {constraint: primary_key}
+    "Loại nguồn": "Hỏi đáp | Sản phẩm | Cấu hình | Danh mục"
+    "Mã nguồn": "chuỗi"
+    "Tiêu đề": "chuỗi (trống được)"
+    "Nội dung": "chuỗi"
+    "Vector embedding (JSON)": "chuỗi"
+    "Mã băm nội dung": "chuỗi"
+    "Đang hoạt động": "đúng/sai"
+    "Ngày cập nhật": "ngày giờ"
+  }
+
+  TU_KHOA_HOT: "Từ khóa hot (SearchHotKeywords)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Từ khóa": "chuỗi"
+    "Từ khóa chuẩn hóa": "chuỗi"
+    "Độ ưu tiên": "số nguyên"
+    "Đang hoạt động": "đúng/sai"
+    "Ngày tạo": "ngày giờ"
+  }
+}
+
+# ===== Nhóm 6: Khác =====
+G6: "Khác" {
+
+  LIEN_HE: "Liên hệ (ContactMessages)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Tên người gửi": "chuỗi"
+    "Email": "chuỗi"
+    "Nội dung": "chuỗi"
+    "Đã đọc": "đúng/sai"
+    "Ngày tạo": "ngày giờ"
+  }
+
+  CAU_HINH: "Cấu hình (Settings)" {
+    shape: sql_table
+    "Mã": "số nguyên" {constraint: primary_key}
+    "Khóa cấu hình": "chuỗi"
+    "Giá trị": "chuỗi (trống được)"
+    "Nhóm": "chuỗi (trống được)"
+  }
+}
+
+# ===== Quan hệ (mức bảng, kèm loại quan hệ) =====
+# Người dùng & phân quyền
+G1.NGUOI_DUNG -> G1.DIA_CHI: "1-N: có địa chỉ"
+G1.NGUOI_DUNG -> G1.NGUOI_DUNG_VAI_TRO: "1-N: được gán vai trò"
+G1.VAI_TRO -> G1.NGUOI_DUNG_VAI_TRO: "1-N: gán cho người dùng"
+G1.VAI_TRO -> G1.VAI_TRO_QUYEN: "1-N: có quyền"
+G1.QUYEN -> G1.VAI_TRO_QUYEN: "1-N: thuộc vai trò"
+G1.NGUOI_DUNG -> G1.NHAT_KY_TAI_KHOAN: "1-N: có nhật ký"
+G1.NGUOI_DUNG -> G1.NHAT_KY_PHAN_QUYEN: "1-N: admin thay đổi"
+
+# Sản phẩm
+G2.DANH_MUC -> G2.DANH_MUC: "1-N: cha – con"
+G2.DANH_MUC -> G2.SAN_PHAM: "1-N: chứa sản phẩm"
+G2.SAN_PHAM -> G2.ANH_SAN_PHAM: "1-N: có ảnh"
+G2.SAN_PHAM -> G2.SAN_PHAM_THE: "N-N: gắn thẻ"
+G2.THE -> G2.SAN_PHAM_THE: "N-N: gắn vào sản phẩm"
+G2.SAN_PHAM -> G2.PHAN_LOAI: "1-N: có phân loại"
+G2.SAN_PHAM -> G2.LICH_GIAM_GIA: "1-N: có lịch giảm giá"
+G2.PHAN_LOAI -> G2.LICH_GIAM_GIA: "1-N: áp lịch cho"
+G2.SAN_PHAM -> G2.NHAT_KY_SAN_PHAM: "1-N: có nhật ký"
+G1.NGUOI_DUNG -> G2.LICH_GIAM_GIA: "1-N: admin tạo lịch"
+G1.NGUOI_DUNG -> G2.NHAT_KY_SAN_PHAM: "1-N: admin ghi log"
+
+# Giỏ hàng & đơn hàng
+G3.GIO_HANG -> G3.MUC_GIO_HANG: "1-N: chứa mục"
+G1.NGUOI_DUNG -> G3.GIO_HANG: "1-1: sở hữu giỏ"
+G2.SAN_PHAM -> G3.MUC_GIO_HANG: "1-N: nằm trong giỏ"
+G2.PHAN_LOAI -> G3.MUC_GIO_HANG: "1-N: được chọn"
+G1.NGUOI_DUNG -> G3.DON_HANG: "1-N: đặt đơn"
+G1.DIA_CHI -> G3.DON_HANG: "1-N: giao tới"
+G3.DON_HANG -> G3.MUC_DON_HANG: "1-N: gồm mục"
+G2.SAN_PHAM -> G3.MUC_DON_HANG: "1-N: được bán"
+G2.PHAN_LOAI -> G3.MUC_DON_HANG: "1-N: bán theo"
+G3.DON_HANG -> G3.LICH_SU_DON: "1-N: có lịch sử"
+G1.NGUOI_DUNG -> G3.LICH_SU_DON: "1-N: admin đổi trạng thái"
+G3.DON_HANG -> G3.GHI_CHU_DON: "1-N: có ghi chú"
+G3.DON_HANG -> G3.GIAO_DICH_SEPAY: "1-N: thanh toán qua"
+
+# Đánh giá & yêu thích
+G2.SAN_PHAM -> G4.DANH_GIA: "1-N: nhận đánh giá"
+G1.NGUOI_DUNG -> G4.DANH_GIA: "1-N: viết đánh giá"
+G4.DANH_GIA -> G4.BAO_CAO_DANH_GIA: "1-N: bị báo cáo"
+G1.NGUOI_DUNG -> G4.BAO_CAO_DANH_GIA: "1-N: báo cáo / xử lý"
+G4.DANH_GIA -> G4.DANH_GIA_HUU_ICH: "1-N: được vote"
+G1.NGUOI_DUNG -> G4.DANH_GIA_HUU_ICH: "1-N: vote hữu ích"
+G1.NGUOI_DUNG -> G4.YEU_THICH: "1-N: thích sản phẩm"
+G2.SAN_PHAM -> G4.YEU_THICH: "1-N: được yêu thích"
+G1.NGUOI_DUNG -> G4.CAM_NHAN_KHACH: "1-N: gửi cảm nhận"
+
+# Chat & tìm kiếm
+G1.NGUOI_DUNG -> G5.PHIEN_CHAT: "1-N: có phiên chat"
+G5.PHIEN_CHAT -> G5.TIN_NHAN_CHAT: "1-N: chứa tin nhắn"

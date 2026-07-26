@@ -34,32 +34,6 @@
         </li>
     </ul>
 
-    <!-- Toast Container -->
-    <div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1100;">
-        @if (TempData["Success"] != null)
-        {
-            <div class="toast show" role="alert" data-bs-autohide="true" data-bs-delay="5000">
-                <div class="toast-header bg-success text-white">
-                    <i class="fas fa-check-circle me-2"></i>
-                    <strong class="me-auto">Thành công</strong>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
-                </div>
-                <div class="toast-body">@TempData["Success"]</div>
-            </div>
-        }
-        @if (TempData["Error"] != null)
-        {
-            <div class="toast show" role="alert" data-bs-autohide="true" data-bs-delay="5000">
-                <div class="toast-header bg-danger text-white">
-                    <i class="fas fa-exclamation-circle me-2"></i>
-                    <strong class="me-auto">Lỗi</strong>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
-                </div>
-                <div class="toast-body">@TempData["Error"]</div>
-            </div>
-        }
-    </div>
-
     <!-- Filters -->
     <div class="card mb-4">
         <div class="card-body">
@@ -298,14 +272,6 @@
 
     document.getElementById('filterSortDescending').addEventListener('change', function() {
         loadPage(1);
-    });
-
-    // Initialize toasts
-    document.addEventListener('DOMContentLoaded', function() {
-        const toastElList = [].slice.call(document.querySelectorAll('.toast'));
-        toastElList.map(function(toastEl) {
-            return new bootstrap.Toast(toastEl);
-        });
     });
 </script>
 }

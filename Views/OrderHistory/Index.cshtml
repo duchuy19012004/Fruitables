@@ -16,36 +16,6 @@
 </div>
 <!-- Page Header End -->
 
-<!-- Toast Container -->
-<div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1100;" id="toastContainer">
-    @if (TempData["SuccessMessage"] != null)
-    {
-        <div class="toast show" role="alert" data-bs-autohide="true" data-bs-delay="5000">
-            <div class="toast-header bg-success text-white">
-                <i class="fa fa-check-circle me-2"></i>
-                <strong class="me-auto">Thành công</strong>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
-            </div>
-            <div class="toast-body">
-                @TempData["SuccessMessage"]
-            </div>
-        </div>
-    }
-    @if (TempData["ErrorMessage"] != null)
-    {
-        <div class="toast show" role="alert" data-bs-autohide="true" data-bs-delay="5000">
-            <div class="toast-header bg-danger text-white">
-                <i class="fa fa-exclamation-circle me-2"></i>
-                <strong class="me-auto">Lỗi</strong>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
-            </div>
-            <div class="toast-body">
-                @TempData["ErrorMessage"]
-            </div>
-        </div>
-    }
-</div>
-
 <!-- Custom Styles -->
 <style>
     #statusTabs {

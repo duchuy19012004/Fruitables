@@ -1,68 +1,348 @@
 @model Fruitables.ViewModels.ComboFormViewModel
 
 <script>
-    const productOptions = @Html.Raw(Json.Serialize(Model.Products.Select(p => new { p.Id, p.Name, Variants = p.Variants.Select(v => new { v.Id, v.Name }) })));
-    let itemIndex = @(Model.Items.Count);
+(() => {
+    const productOptions = @Html.Raw(Json.Serialize(Model.Products.Select(product => new
+    {
+        product.Id,
+        product.Name,
+        product.StockQuantity,
+        Variants = product.Variants.Select(variant => new
+        {
+            variant.Id,
+            variant.Name,
+            variant.SKU,
+            variant.StockQuantity
+        })
+    })));
 
-    function buildOptions(items, selectedId) {
-        return '<option value="">-- chọn --</option>' +
-            items.map(i => '<option value="' + i.id + '"' + (i.id == selectedId ? ' selected' : '') + '>' + i.name + '</option>').join('');
+    const form = document.getElementById('comboForm');
+    const container = document.getElementById('comboItemsContainer');
+    const emptyState = document.getElementById('comboItemsEmpty');
+    const validationBox = document.getElementById('comboItemsValidation');
+    const countLabel = document.getElementById('comboItemCount');
+    const addButton = document.getElementById('addComboItem');
+    const saveButton = document.getElementById('saveComboButton');
+    const lifecycleInput = document.getElementById('comboLifecycleStatus');
+    const pricingTypeInput = document.getElementById('comboPricingType');
+    const fixedPriceField = document.getElementById('fixedPriceField');
+    const fixedPriceInput = document.getElementById('FixedPrice');
+    const discountValueField = document.getElementById('discountValueField');
+    const discountValueInput = document.getElementById('DiscountValue');
+    const discountValueLabel = document.getElementById('discountValueLabel');
+    const discountValueUnit = document.getElementById('discountValueUnit');
+    const maxItems = 20;
+
+    if (!form || !container || !addButton || !saveButton) return;
+
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#39;');
     }
 
-    function buildVariantSelect(productId, selectedVariantId) {
-        const product = productOptions.find(p => p.id == productId);
-        if (!product || !product.variants.length) return '<option value="">Không có biến thể</option>';
-        return '<option value="">-- mặc định --</option>' +
-            product.variants.map(v => '<option value="' + v.id + '"' + (v.id == selectedVariantId ? ' selected' : '') + '>' + v.name + '</option>').join('');
+    function getProduct(productId) {
+        return productOptions.find(product => String(product.id) === String(productId));
     }
 
-    function refreshVariantSelect(productSelect) {
-        const row = productSelect.closest('.combo-item-row');
+    function productLabel(product) {
+        const suffix = product.variants.length > 0
+            ? ` · ${product.variants.length} biến thể`
+            : ` · tồn ${product.stockQuantity}`;
+        return `${product.name}${suffix}`;
+    }
+
+    function buildProductOptions() {
+        return '<option value="">-- chọn sản phẩm --</option>' +
+            productOptions.map(product =>
+                `<option value="${product.id}">${escapeHtml(productLabel(product))}</option>`
+            ).join('');
+    }
+
+    function buildVariantOptions(product, selectedVariantId) {
+        if (!product || product.variants.length === 0)
+            return '<option value="">Không có biến thể</option>';
+
+        return '<option value="">-- bắt buộc chọn --</option>' +
+            product.variants.map(variant => {
+                const selected = String(variant.id) === String(selectedVariantId) ? ' selected' : '';
+                const label = `${variant.name} · ${variant.sku} · tồn ${variant.stockQuantity}`;
+                return `<option value="${variant.id}"${selected}>${escapeHtml(label)}</option>`;
+            }).join('');
+    }
+
+    function updateVariantSelect(row, selectedVariantId = '') {
+        const productSelect = row.querySelector('.product-select');
         const variantSelect = row.querySelector('.variant-select');
-        const selectedVariant = variantSelect.value;
-        variantSelect.innerHTML = buildVariantSelect(productSelect.value, selectedVariant);
+        const requiredMark = row.querySelector('.variant-required-mark');
+        const product = getProduct(productSelect.value);
+        const hasVariants = Boolean(product?.variants.length);
+
+        variantSelect.innerHTML = buildVariantOptions(product, selectedVariantId);
+        variantSelect.required = hasVariants;
+        variantSelect.disabled = !hasVariants;
+        requiredMark?.classList.toggle('d-none', !hasVariants);
+        updateStockNote(row);
     }
 
-    document.getElementById('addComboItem').addEventListener('click', function () {
-        const container = document.getElementById('comboItemsContainer');
-        const html = `
-            <div class="row combo-item-row align-items-end mb-2">
-                <div class="col-md-5">
-                    <label class="form-label">Sản phẩm</label>
-                    <select name="Items[${itemIndex}].ProductId" class="form-select product-select" required>
-                        ${buildOptions(productOptions, '')}
-                    </select>
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label">Biến thể</label>
-                    <select name="Items[${itemIndex}].ProductVariantId" class="form-select variant-select">
-                        <option value="">-- mặc định --</option>
-                    </select>
-                </div>
-                <div class="col-md-2">
-                    <label class="form-label">SL</label>
-                    <input name="Items[${itemIndex}].Quantity" class="form-control" type="number" min="1" value="1" required />
-                </div>
-                <div class="col-md-2">
-                    <button type="button" class="btn btn-outline-danger remove-item w-100">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                </div>
-                <input type="hidden" name="Items[${itemIndex}].SortOrder" value="${itemIndex}" />
-            </div>`;
-        container.insertAdjacentHTML('beforeend', html);
-        itemIndex++;
+    function updateStockNote(row) {
+        const product = getProduct(row.querySelector('.product-select').value);
+        const variantId = row.querySelector('.variant-select').value;
+        const variant = product?.variants.find(item => String(item.id) === String(variantId));
+        const stock = variant?.stockQuantity ?? (product?.variants.length ? null : product?.stockQuantity);
+        const note = row.querySelector('.combo-stock-note');
+        note.textContent = stock == null ? '' : `Tồn kho: ${stock}`;
+    }
+
+    function reindexRows() {
+        const rows = [...container.querySelectorAll('.combo-item-row')];
+        rows.forEach((row, index) => {
+            const product = row.querySelector('.product-select');
+            const variant = row.querySelector('.variant-select');
+            const quantity = row.querySelector('.quantity-input');
+            const sortOrder = row.querySelector('.sort-order-input');
+
+            row.querySelector('.combo-item-number').textContent = `Sản phẩm ${index + 1}`;
+            product.name = `Items[${index}].ProductId`;
+            product.id = `combo-product-${index}`;
+            variant.name = `Items[${index}].ProductVariantId`;
+            variant.id = `combo-variant-${index}`;
+            quantity.name = `Items[${index}].Quantity`;
+            quantity.id = `combo-quantity-${index}`;
+            sortOrder.name = `Items[${index}].SortOrder`;
+            sortOrder.value = index;
+
+            const labels = row.querySelectorAll('label');
+            labels[0]?.setAttribute('for', product.id);
+            labels[1]?.setAttribute('for', variant.id);
+            labels[2]?.setAttribute('for', quantity.id);
+        });
+
+        countLabel.textContent = `${rows.length}/${maxItems} sản phẩm`;
+        emptyState.classList.toggle('d-none', rows.length > 0);
+        addButton.disabled = rows.length >= maxItems;
+    }
+
+    function clearValidationState() {
+        validationBox.classList.add('d-none');
+        validationBox.replaceChildren();
+        form.querySelectorAll('.is-invalid').forEach(element => element.classList.remove('is-invalid'));
+    }
+
+    function showValidationErrors(messages) {
+        validationBox.replaceChildren();
+        const list = document.createElement('ul');
+        list.className = 'mb-0';
+        [...new Set(messages)].forEach(message => {
+            const item = document.createElement('li');
+            item.textContent = message;
+            list.appendChild(item);
+        });
+        validationBox.appendChild(list);
+        validationBox.classList.remove('d-none');
+    }
+
+    function updatePricingFields() {
+        const pricingType = Number(pricingTypeInput?.value ?? 0);
+        const usesFixedPrice = pricingType === 1;
+        const usesDiscount = pricingType === 2 || pricingType === 3;
+        fixedPriceField?.classList.toggle('d-none', !usesFixedPrice);
+        discountValueField?.classList.toggle('d-none', !usesDiscount);
+        if (fixedPriceInput) fixedPriceInput.required = usesFixedPrice;
+        if (discountValueInput) {
+            discountValueInput.required = usesDiscount;
+            discountValueInput.max = pricingType === 2 ? '99.99' : '';
+            discountValueInput.step = pricingType === 2 ? '0.01' : '1000';
+        }
+        if (discountValueLabel)
+            discountValueLabel.textContent = pricingType === 2 ? 'Phần trăm giảm' : 'Số tiền giảm';
+        if (discountValueUnit)
+            discountValueUnit.textContent = pricingType === 2 ? '%' : 'đ';
+    }
+
+    function validateComboItems(focusFirstError = false) {
+        clearValidationState();
+        const rows = [...container.querySelectorAll('.combo-item-row')];
+        const errors = [];
+        const seen = new Map();
+        let firstInvalid = null;
+
+        const pricingType = Number(pricingTypeInput?.value ?? 0);
+        if (pricingType === 1 && Number(fixedPriceInput?.value) <= 0) {
+            errors.push('Giá combo cố định phải lớn hơn 0.');
+            fixedPriceInput?.classList.add('is-invalid');
+            firstInvalid ??= fixedPriceInput;
+        }
+        if ((pricingType === 2 || pricingType === 3) && Number(discountValueInput?.value) <= 0) {
+            errors.push('Mức giảm phải lớn hơn 0.');
+            discountValueInput?.classList.add('is-invalid');
+            firstInvalid ??= discountValueInput;
+        }
+        if (pricingType === 2 && Number(discountValueInput?.value) >= 100) {
+            errors.push('Phần trăm giảm phải nhỏ hơn 100%.');
+            discountValueInput?.classList.add('is-invalid');
+            firstInvalid ??= discountValueInput;
+        }
+
+        if (rows.length < 2)
+            errors.push('Combo phải có ít nhất 2 sản phẩm.');
+        if (rows.length > maxItems)
+            errors.push(`Combo không được vượt quá ${maxItems} sản phẩm.`);
+
+        rows.forEach((row, index) => {
+            const productSelect = row.querySelector('.product-select');
+            const variantSelect = row.querySelector('.variant-select');
+            const quantityInput = row.querySelector('.quantity-input');
+            const product = getProduct(productSelect.value);
+            const quantity = Number(quantityInput.value);
+
+            if (!product) {
+                errors.push(`Dòng ${index + 1}: vui lòng chọn sản phẩm.`);
+                productSelect.classList.add('is-invalid');
+                firstInvalid ??= productSelect;
+                return;
+            }
+
+            const hasVariants = product.variants.length > 0;
+            const variant = product.variants.find(item => String(item.id) === String(variantSelect.value));
+            if (hasVariants && !variant) {
+                errors.push(`Dòng ${index + 1}: '${product.name}' bắt buộc chọn biến thể.`);
+                variantSelect.classList.add('is-invalid');
+                firstInvalid ??= variantSelect;
+            }
+
+            if (!Number.isInteger(quantity) || quantity < 1) {
+                errors.push(`Dòng ${index + 1}: số lượng phải lớn hơn hoặc bằng 1.`);
+                quantityInput.classList.add('is-invalid');
+                firstInvalid ??= quantityInput;
+            }
+
+            const stock = variant?.stockQuantity ?? (hasVariants ? null : product.stockQuantity);
+            if (['1', '2'].includes(lifecycleInput?.value) && stock != null && quantity > stock) {
+                errors.push(`Dòng ${index + 1}: số lượng vượt tồn kho của '${product.name}'.`);
+                quantityInput.classList.add('is-invalid');
+                firstInvalid ??= quantityInput;
+            }
+
+            const key = `${product.id}:${variant?.id ?? ''}`;
+            if (seen.has(key)) {
+                errors.push(`Dòng ${index + 1}: sản phẩm hoặc biến thể bị trùng với dòng ${seen.get(key)}.`);
+                productSelect.classList.add('is-invalid');
+                firstInvalid ??= productSelect;
+            } else {
+                seen.set(key, index + 1);
+            }
+        });
+
+        if (errors.length > 0) {
+            showValidationErrors(errors);
+            if (focusFirstError) {
+                (firstInvalid ?? addButton).focus();
+                validationBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            return false;
+        }
+
+        return true;
+    }
+
+    function addRow() {
+        if (container.querySelectorAll('.combo-item-row').length >= maxItems) return;
+
+        const row = document.createElement('div');
+        row.className = 'row combo-item-row align-items-end mb-3 p-3 border rounded bg-light-subtle';
+        row.innerHTML = `
+            <div class="col-12 mb-2 d-flex justify-content-between align-items-center">
+                <strong class="combo-item-number"></strong>
+                <small class="combo-stock-note text-muted"></small>
+            </div>
+            <div class="col-md-5">
+                <label class="form-label">Sản phẩm <span class="text-danger">*</span></label>
+                <select class="form-select product-select" required>${buildProductOptions()}</select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Biến thể <span class="variant-required-mark text-danger d-none">*</span></label>
+                <select class="form-select variant-select" disabled>
+                    <option value="">Không có biến thể</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Số lượng <span class="text-danger">*</span></label>
+                <input class="form-control quantity-input" type="number" min="1" value="1" required />
+            </div>
+            <div class="col-md-2">
+                <button type="button" class="btn btn-outline-danger remove-item w-100" aria-label="Xóa sản phẩm khỏi combo">
+                    <i class="fas fa-trash me-1" aria-hidden="true"></i>Xóa
+                </button>
+            </div>
+            <input class="sort-order-input" type="hidden" />`;
+        container.appendChild(row);
+        reindexRows();
+        row.querySelector('.product-select').focus();
+        clearValidationState();
+    }
+
+    addButton.addEventListener('click', addRow);
+
+    container.addEventListener('change', event => {
+        const row = event.target.closest('.combo-item-row');
+        if (!row) return;
+        if (event.target.classList.contains('product-select'))
+            updateVariantSelect(row);
+        if (event.target.classList.contains('variant-select'))
+            updateStockNote(row);
+        clearValidationState();
     });
 
-    document.getElementById('comboItemsContainer').addEventListener('change', function (e) {
-        if (e.target.classList.contains('product-select')) {
-            refreshVariantSelect(e.target);
-        }
+    container.addEventListener('input', event => {
+        if (event.target.classList.contains('quantity-input'))
+            clearValidationState();
     });
 
-    document.getElementById('comboItemsContainer').addEventListener('click', function (e) {
-        if (e.target.closest('.remove-item')) {
-            e.target.closest('.combo-item-row').remove();
-        }
+    container.addEventListener('click', event => {
+        const removeButton = event.target.closest('.remove-item');
+        if (!removeButton) return;
+        removeButton.closest('.combo-item-row').remove();
+        reindexRows();
+        validateComboItems(false);
     });
+
+    lifecycleInput?.addEventListener('change', () => validateComboItems(false));
+    pricingTypeInput?.addEventListener('change', () => {
+        updatePricingFields();
+        clearValidationState();
+    });
+
+    form.addEventListener('submit', event => {
+        reindexRows();
+        if (!validateComboItems(true) || !form.checkValidity()) {
+            event.preventDefault();
+            form.reportValidity();
+            return;
+        }
+
+        if (window.jQuery && typeof window.jQuery(form).valid === 'function' && !window.jQuery(form).valid()) {
+            event.preventDefault();
+            return;
+        }
+
+        saveButton.disabled = true;
+        saveButton.querySelector('span').textContent = 'Đang lưu...';
+        saveButton.querySelector('i').className = 'fas fa-spinner fa-spin me-2';
+    });
+
+    updatePricingFields();
+    container.querySelectorAll('.combo-item-row').forEach(row => {
+        const variantSelect = row.querySelector('.variant-select');
+        const product = getProduct(row.querySelector('.product-select').value);
+        const hasVariants = Boolean(product?.variants.length);
+        variantSelect.required = hasVariants;
+        variantSelect.disabled = !hasVariants;
+        updateStockNote(row);
+    });
+    reindexRows();
+})();
 </script>

@@ -2094,7 +2094,7 @@ namespace Fruitables.Migrations
                     b.HasOne("Fruitables.Models.User", "CancelledByAdmin")
                         .WithMany()
                         .HasForeignKey("CancelledByAdminId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("Fruitables.Models.User", "CreatedByAdmin")
                         .WithMany()

@@ -58,47 +58,25 @@
   <div class="page">
     <h1>Quản lý giá &amp; lịch hẹn — Activity swimlane</h1>
     <p class="sub">
-      4 diagram · lane Admin | Hệ thống · spec
-      <a href="../../superpowers/specs/2026-07-16-price-schedule-activity-design.md">2026-07-16-price-schedule-activity-design.md</a>
+      Luồng sử dụng của Admin: tạo lịch giảm giá và hệ thống tự động áp dụng khi tới hạn.
+      Lanes: Admin · Hệ thống.
     </p>
     <nav>
-      <a href="#a">A. Đổi ngay</a>
-      <a href="#b">B. Đặt lịch</a>
-      <a href="#c">C. Hủy lịch</a>
-      <a href="#d">D. Áp dụng</a>
-      <a href="./price-schedule-flows.md">flows.md</a>
+      <a href="#flow-e">E — Tạo và tự động áp dụng lịch giảm giá</a>
     </nav>
 
-    <section id="a">
-      <h2>A. Đổi giá ngay</h2>
+    <section id="flow-e">
+      <h2>E. Tạo và tự động áp dụng lịch giảm giá</h2>
       <div class="frame">
-        <img src="./price-a-immediate-swimlane.svg" alt="Activity A đổi giá ngay" />
+        <img src="./price-e-create-apply-swimlane.svg" alt="E — Tạo và tự động áp dụng lịch giảm giá" />
       </div>
-      <p class="meta"><a href="./price-a-immediate-swimlane.puml">.puml</a> · <a href="./price-a-immediate-swimlane.png">.png</a></p>
-    </section>
-
-    <section id="b">
-      <h2>B. Đặt lịch hẹn giá</h2>
-      <div class="frame">
-        <img src="./price-b-schedule-swimlane.svg" alt="Activity B đặt lịch hẹn giá" />
-      </div>
-      <p class="meta"><a href="./price-b-schedule-swimlane.puml">.puml</a> · <a href="./price-b-schedule-swimlane.png">.png</a></p>
-    </section>
-
-    <section id="c">
-      <h2>C. Hủy lịch chờ</h2>
-      <div class="frame">
-        <img src="./price-c-cancel-swimlane.svg" alt="Activity C hủy lịch chờ" />
-      </div>
-      <p class="meta"><a href="./price-c-cancel-swimlane.puml">.puml</a> · <a href="./price-c-cancel-swimlane.png">.png</a></p>
-    </section>
-
-    <section id="d">
-      <h2>D. Hệ thống áp dụng lịch</h2>
-      <div class="frame">
-        <img src="./price-d-apply-swimlane.svg" alt="Activity D hệ thống áp dụng lịch" />
-      </div>
-      <p class="meta"><a href="./price-d-apply-swimlane.puml">.puml</a> · <a href="./price-d-apply-swimlane.png">.png</a></p>
+      <p class="meta">
+        Trigger: Admin xác nhận tạo lịch; job hệ thống quét lịch mỗi phút và tự áp dụng khi tới hạn.<br />
+        Source: <a href="./price-e-create-apply-swimlane.puml">price-e-create-apply-swimlane.puml</a> ·
+        SVG: <a href="./price-e-create-apply-swimlane.svg">price-e-create-apply-swimlane.svg</a> ·
+        Regen: <code>node .agents/scripts/plantuml-render.mjs docs/price-schedule/srs/price-e-create-apply-swimlane.puml</code>
+        rồi <code>node docs/chatbox/srs/frame-svg.mjs docs/price-schedule/srs/price-e-create-apply-swimlane.svg --lanes "Admin,Hệ thống"</code>
+      </p>
     </section>
   </div>
 </body>

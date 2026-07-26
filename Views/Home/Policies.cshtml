@@ -1,0 +1,60 @@
+@{
+    ViewData["Title"] = "Chính sách mua hàng";
+    ViewData["MetaDescription"] = "Điều khoản sử dụng, chính sách đổi trả và câu hỏi thường gặp khi mua hàng tại Fruitables.";
+}
+
+<section class="policy-page" aria-labelledby="policy-title">
+    <div class="container">
+        <header class="policy-header">
+            <span>Thông tin mua hàng</span>
+            <h1 id="policy-title">Chính sách mua hàng tại Fruitables</h1>
+            <p>Các thông tin cần biết trước, trong và sau khi đặt hàng.</p>
+        </header>
+
+        <nav class="policy-nav" aria-label="Nội dung chính sách">
+            <a href="#terms">Điều khoản sử dụng</a>
+            <a href="#returns">Đổi trả và hoàn tiền</a>
+            <a href="#faq">Câu hỏi thường gặp</a>
+        </nav>
+
+        <article id="terms" class="policy-card">
+            <h2>Điều khoản sử dụng</h2>
+            <p>Khi đặt hàng, khách hàng cần cung cấp thông tin liên hệ và địa chỉ nhận hàng chính xác. Giá bán, quy cách và tình trạng sản phẩm được xác nhận tại thời điểm hoàn tất đơn hàng.</p>
+            <p>Fruitables có thể liên hệ để xác nhận đơn, điều chỉnh thời gian giao hoặc đề xuất sản phẩm thay thế khi hàng tươi theo mùa tạm hết.</p>
+        </article>
+
+        <article id="returns" class="policy-card">
+            <h2>Đổi trả và hoàn tiền</h2>
+            <p>Vui lòng liên hệ Fruitables trong vòng 24 giờ sau khi nhận hàng nếu sản phẩm giao sai, hư hỏng hoặc không đạt chất lượng đã cam kết. Hình ảnh sản phẩm và mã đơn hàng giúp việc xử lý nhanh hơn.</p>
+            <p>Sau khi xác minh, cửa hàng sẽ đổi sản phẩm phù hợp hoặc hoàn tiền theo phương thức thanh toán ban đầu.</p>
+        </article>
+
+        <article id="faq" class="policy-card">
+            <h2>Câu hỏi thường gặp</h2>
+            <h3>Fruitables giao hàng trong bao lâu?</h3>
+            <p>Thời gian giao phụ thuộc khu vực và khung giờ đặt hàng. Cửa hàng sẽ xác nhận thời gian dự kiến trước khi giao.</p>
+            <h3>Tôi có thể thay đổi đơn hàng không?</h3>
+            <p>Có. Hãy liên hệ bộ phận hỗ trợ trước khi đơn được bàn giao cho đơn vị vận chuyển.</p>
+            <h3>Tôi cần hỗ trợ thêm ở đâu?</h3>
+            <p><a asp-controller="Contact" asp-action="Index">Liên hệ cửa hàng</a> hoặc sử dụng tính năng chat để được hỗ trợ.</p>
+        </article>
+    </div>
+</section>
+
+<style>
+    .policy-page { padding: 190px 0 72px; background: #f7faf1; color: #273438; }
+    .policy-page .container { max-width: 960px; }
+    .policy-header { max-width: 720px; margin-bottom: 28px; }
+    .policy-header > span { color: #a83f00; font-weight: 800; text-transform: uppercase; font-size: .82rem; }
+    .policy-header h1 { margin: 8px 0 12px; font-weight: 900; letter-spacing: -.035em; }
+    .policy-header p { color: #526568; font-size: 1.05rem; }
+    .policy-nav { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 22px; }
+    .policy-nav a { padding: 10px 14px; border: 1px solid #477900; border-radius: 8px; color: #315800; font-weight: 700; text-decoration: none; }
+    .policy-card { scroll-margin-top: 120px; margin-bottom: 16px; padding: 28px; border: 1px solid #dfe8d2; border-radius: 12px; background: #fff; }
+    .policy-card h2 { margin-bottom: 14px; font-weight: 850; }
+    .policy-card h3 { margin-top: 20px; font-size: 1.05rem; font-weight: 800; }
+    .policy-card p { max-width: 72ch; color: #526568; line-height: 1.75; }
+    .policy-card a { color: #315800; font-weight: 700; }
+    @@media (max-width: 991.98px) { .policy-page { padding-top: 104px; } }
+    @@media (max-width: 575.98px) { .policy-page { padding-top: 92px; } .policy-card { padding: 20px; } }
+</style>

@@ -62,7 +62,7 @@ namespace Fruitables.Migrations
                 column: "CancelledByAdminId",
                 principalTable: "Users",
                 principalColumn: "Id",
-                onDelete: ReferentialAction.SetNull);
+                onDelete: ReferentialAction.NoAction);
         }
 
         /// <inheritdoc />

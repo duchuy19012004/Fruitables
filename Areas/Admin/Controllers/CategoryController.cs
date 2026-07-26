@@ -152,6 +152,7 @@ public class CategoryController : Controller
 
     // POST: Admin/Category/Reorder (AJAX)
     [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Reorder([FromBody] ReorderCategoriesRequest request)
     {
         var result = await _categoryService.ReorderCategoriesAsync(request.ParentId, request.CategoryIds);
@@ -164,6 +165,7 @@ public class CategoryController : Controller
 
     // POST: Admin/Category/Move (AJAX)
     [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Move([FromBody] MoveCategoryRequest request)
     {
         var result = await _categoryService.MoveCategoryAsync(request.CategoryId, request.NewParentId);

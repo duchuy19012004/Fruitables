@@ -711,5 +711,52 @@ namespace Fruitables.Tests
 
             Assert.Null(order.PaymentCode);
         }
+
+        [Fact]
+        public async Task CreateOrderAsync_snapshots_combo_identity_and_allocated_discount()
+        {
+            var options = CreateInMemoryOptions();
+            await using var context = new ApplicationDbContext(options);
+            await SeedSuccessfulOrderScenarioAsync(context);
+
+            var cart = new CartViewModel
+            {
+                Items =
+                {
+                    new CartItemViewModel
+                    {
+                        ProductId = 1,
+                        ProductName = "Apple",
+                        Price = 10,
+                        Quantity = 3,
+                        SourceComboId = 42,
+                        ComboName = "Combo gia đình",
+                        ComboRevision = 7,
+                        ComboDiscount = 5
+                    }
+                },
+                Subtotal = 25,
+                ShippingFee = 15,
+                Total = 40
+            };
+            var cartService = new Mock<ICartService>();
+            cartService.Setup(service => service.RepriceForCheckoutAsync("combo-order")).ReturnsAsync(cart);
+            var service = new OrderService(
+                new UnitOfWork(context),
+                cartService.Object,
+                Mock.Of<IRealtimeNotifier>(),
+                CreatePricingForCart(cart),
+                Mock.Of<ILogger<OrderService>>());
+
+            var order = await service.CreateOrderAsync(CreateSuccessfulCheckout(), "combo-order", userId: 100);
+
+            var item = Assert.Single(order.Items);
+            Assert.Equal(42, item.SourceComboId);
+            Assert.Equal("Combo gia đình", item.ComboNameSnapshot);
+            Assert.Equal(7, item.ComboRevision);
+            Assert.Equal(5m, item.ComboDiscount);
+            Assert.Equal(25m, item.Total);
+            Assert.Equal(25m, order.Subtotal);
+        }
     }
 }

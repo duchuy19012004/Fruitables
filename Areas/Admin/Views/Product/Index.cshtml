@@ -116,6 +116,36 @@
     let debounceTimer;
     let currentPage = 1;
 
+    // Fix dropdown menus being clipped inside sticky table columns
+    document.querySelectorAll('.sticky-action-col .dropdown').forEach(function(dropdown) {
+        var menu = dropdown.querySelector('.dropdown-menu');
+        if (!menu) return;
+        dropdown.addEventListener('show.bs.dropdown', function(e) {
+            var btn = dropdown.querySelector('.dropdown-toggle');
+            var rect = btn.getBoundingClientRect();
+            menu.classList.add('dropdown-menu-end');
+            menu.style.position = 'fixed';
+            menu.style.left = 'auto';
+            menu.style.top = rect.bottom + 'px';
+            menu.style.zIndex = '1050';
+            document.body.appendChild(menu);
+            // Position after append so we can measure
+            var menuRect = menu.getBoundingClientRect();
+            var menuRight = rect.right;
+            var menuLeft = menuRight - menuRect.width;
+            if (menuLeft < 8) menuLeft = 8;
+            menu.style.left = menuLeft + 'px';
+        });
+        dropdown.addEventListener('hidden.bs.dropdown', function(e) {
+            menu.classList.remove('dropdown-menu-end');
+            menu.style.position = '';
+            menu.style.left = '';
+            menu.style.top = '';
+            menu.style.zIndex = '';
+            dropdown.appendChild(menu);
+        });
+    });
+
     function debounce(func, delay) {
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(func, delay);

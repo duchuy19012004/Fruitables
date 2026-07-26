@@ -33,6 +33,8 @@ public class ShopController : Controller
         ViewBag.CartCount = await _cartService.GetCartCountAsync(sessionId);
 
         var viewModel = await _productService.GetShopViewModelAsync(categoryId, search, minPrice, maxPrice, sortBy, page, 9);
+        if (string.Equals(Request.Headers["X-Requested-With"], "XMLHttpRequest", StringComparison.OrdinalIgnoreCase))
+            return PartialView("_ShopCatalog", viewModel);
         return View(viewModel);
     }
 

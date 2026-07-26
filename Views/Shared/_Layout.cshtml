@@ -7,15 +7,16 @@
     var logoPath = await SettingsService.GetSettingAsync(Fruitables.Constants.SettingKeys.Logo);
     var faviconPath = await SettingsService.GetSettingAsync(Fruitables.Constants.SettingKeys.Favicon);
     var gaId = await SettingsService.GetSettingAsync(Fruitables.Constants.SettingKeys.GoogleAnalyticsId);
+    var pageDescription = ViewData["MetaDescription"]?.ToString() ?? metaDescription;
 }
 <!DOCTYPE html>
-<html lang="en">
+<html lang="vi">
 <head>
     <meta charset="utf-8">
     <title>@(ViewData["Title"] ?? metaTitle) - @siteName</title>
     <meta content="width=device-width, initial-scale=1.0" name="viewport">
     <meta content="@metaKeywords" name="keywords">
-    <meta content="@metaDescription" name="description">
+    <meta content="@pageDescription" name="description">
     @if (!string.IsNullOrEmpty(faviconPath))
     {
         <link rel="icon" type="image/x-icon" href="@faviconPath">
@@ -38,7 +39,7 @@
     <link href="~/css/bootstrap.min.css" rel="stylesheet">
 
     <!-- Template Stylesheet -->
-    <link href="~/css/style.css?v=15" rel="stylesheet">
+    <link href="~/css/style.css?v=16" rel="stylesheet">
     <link rel="stylesheet" href="~/css/search-suggest.css" asp-append-version="true" />
     @await RenderSectionAsync("Styles", required: false)
     
@@ -55,6 +56,7 @@
     }
 </head>
 <body>
+    <a class="skip-link" href="#main-content">Chuyển đến nội dung chính</a>
     <!-- Spinner Start -->
     <div id="spinner" class="show w-100 vh-100 bg-white position-fixed translate-middle top-50 start-50 d-flex align-items-center justify-content-center">
         <div class="spinner-grow text-primary" role="status"></div>
@@ -69,7 +71,9 @@
     <partial name="_SearchModal" />
     <!-- Modal Search End -->
 
-    @RenderBody()
+    <div id="main-content" tabindex="-1">
+        @RenderBody()
+    </div>
 
     <!-- Footer Start -->
     <partial name="_Footer" />
@@ -111,7 +115,7 @@
                 </div>
                 <h4 style="color:#fff;margin:0;font-size:1.3rem;font-weight:700;letter-spacing:0.01em;">Yêu cầu đăng nhập</h4>
                 <p style="color:rgba(255,255,255,0.85);margin:6px 0 0;font-size:0.9rem;">Bạn cần đăng nhập để tiếp tục</p>
-                <button onclick="hideLoginModal()" style="position:absolute;top:14px;right:16px;background:rgba(255,255,255,0.2);border:none;border-radius:50%;width:32px;height:32px;cursor:pointer;color:#fff;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.35)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">
+                <button type="button" aria-label="Đóng yêu cầu đăng nhập" onclick="hideLoginModal()" style="position:absolute;top:14px;right:16px;background:rgba(255,255,255,0.2);border:none;border-radius:50%;width:32px;height:32px;cursor:pointer;color:#fff;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.35)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
@@ -155,7 +159,7 @@
 
 
     <!-- Back to Top -->
-    <a href="#" class="btn btn-primary border-3 border-primary rounded-circle back-to-top"><i class="fa fa-arrow-up"></i></a>
+    <a href="#main-content" class="btn btn-primary border-3 border-primary rounded-circle back-to-top" aria-label="Về đầu nội dung"><i class="fa fa-arrow-up" aria-hidden="true"></i></a>
 
     <!-- JavaScript Libraries -->
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.4/jquery.min.js"></script>
@@ -166,7 +170,7 @@
     <script src="~/lib/custom/owlcarousel/owl.carousel.min.js"></script>
 
     <!-- Template Javascript -->
-    <script src="~/js/main.js"></script>
+    <script src="~/js/main.js" asp-append-version="true"></script>
     
     <!-- Initialize Toasts -->
     <script>

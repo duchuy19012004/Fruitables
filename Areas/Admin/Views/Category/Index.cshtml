@@ -20,37 +20,10 @@
     </div>
 </div>
 
-<!-- Toast Container -->
-<div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1100;">
-    @if (TempData["Success"] != null)
-    {
-        <div class="toast show" role="alert" data-bs-autohide="true" data-bs-delay="5000">
-            <div class="toast-header bg-success text-white">
-                <i class="fas fa-check-circle me-2"></i>
-                <strong class="me-auto">Thành công</strong>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
-            </div>
-            <div class="toast-body">@TempData["Success"]</div>
-        </div>
-    }
-    @if (TempData["Error"] != null)
-    {
-        <div class="toast show" role="alert" data-bs-autohide="true" data-bs-delay="5000">
-            <div class="toast-header bg-danger text-white">
-                <i class="fas fa-exclamation-circle me-2"></i>
-                <strong class="me-auto">Lỗi</strong>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
-            </div>
-            <div class="toast-body">@TempData["Error"]</div>
-        </div>
-    }
-</div>
-
 <!-- Category Tree -->
 <div class="admin-card">
-    <div class="card-header d-flex justify-content-between align-items-center">
+    <div class="card-header">
         <span><i class="fas fa-sitemap me-2"></i>Cây danh mục</span>
-        <small class="text-muted">Kéo thả để sắp xếp thứ tự</small>
     </div>
     <div class="card-body p-0">
         @if (Model.Categories.Any())
@@ -137,16 +110,21 @@
 
 @section Scripts {
 <script>
-    function confirmSoftDelete(id, name) {
-        document.getElementById('softDeleteCategoryName').textContent = name;
-        document.getElementById('softDeleteForm').action = '@Url.Action("SoftDelete", "Category", new { area = "Admin" })/' + id;
-        new bootstrap.Modal(document.getElementById('softDeleteModal')).show();
-    }
+    document.getElementById('categoryTreeBody')?.addEventListener('click', function (event) {
+        const softDeleteButton = event.target.closest('.js-soft-delete');
+        if (softDeleteButton) {
+            document.getElementById('softDeleteCategoryName').textContent = softDeleteButton.dataset.categoryName;
+            document.getElementById('softDeleteForm').action = '@Url.Action("SoftDelete", "Category", new { area = "Admin" })/' + softDeleteButton.dataset.categoryId;
+            new bootstrap.Modal(document.getElementById('softDeleteModal')).show();
+            return;
+        }
 
-    function confirmHardDelete(id, name) {
-        document.getElementById('hardDeleteCategoryName').textContent = name;
-        document.getElementById('hardDeleteForm').action = '@Url.Action("Delete", "Category", new { area = "Admin" })/' + id;
-        new bootstrap.Modal(document.getElementById('hardDeleteModal')).show();
-    }
+        const hardDeleteButton = event.target.closest('.js-hard-delete');
+        if (hardDeleteButton) {
+            document.getElementById('hardDeleteCategoryName').textContent = hardDeleteButton.dataset.categoryName;
+            document.getElementById('hardDeleteForm').action = '@Url.Action("Delete", "Category", new { area = "Admin" })/' + hardDeleteButton.dataset.categoryId;
+            new bootstrap.Modal(document.getElementById('hardDeleteModal')).show();
+        }
+    });
 </script>
 }
