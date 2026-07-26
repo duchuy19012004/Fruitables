@@ -16,21 +16,59 @@ public class OrderService : IOrderService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICartService _cartService;
     private readonly IRealtimeNotifier _notifier;
+    private readonly IProductPricingService _pricing;
 
-    public OrderService(IUnitOfWork unitOfWork, ICartService cartService, IRealtimeNotifier notifier)
+    public OrderService(
+        IUnitOfWork unitOfWork,
+        ICartService cartService,
+        IRealtimeNotifier notifier,
+        IProductPricingService pricing)
     {
         _unitOfWork = unitOfWork;
         _cartService = cartService;
         _notifier = notifier;
+        _pricing = pricing;
     }
 
     public async Task<Order> CreateOrderAsync(CheckoutViewModel model, string sessionId, int? userId = null)
     {
+        var providerName = _unitOfWork.DatabaseProviderName ?? string.Empty;
+        var isInMemory = providerName.Contains("InMemory", StringComparison.OrdinalIgnoreCase);
+        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? transaction = null;
+
+        if (!isInMemory)
+        {
+            transaction = await _unitOfWork.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+        }
+
+        try
+        {
         var cart = await _cartService.RepriceForCheckoutAsync(sessionId)
             ?? await _cartService.GetCartAsync(sessionId);
+
         if (!string.IsNullOrWhiteSpace(cart.PricingToken) &&
             !string.Equals(model.PricingToken, cart.PricingToken, StringComparison.Ordinal))
-            throw new InvalidOperationException("Giá hoặc mã giảm giá vừa thay đổi. Vui lòng kiểm tra tổng tiền và xác nhận lại.");
+        {
+            throw new InvalidOperationException(
+                "Giá hoặc mã giảm giá vừa thay đổi. Vui lòng kiểm tra tổng tiền và xác nhận lại.");
+        }
+
+        var targets = cart.Items
+            .Select(item => new PriceTargetKey(item.ProductId, item.ProductVariantId))
+            .Distinct()
+            .ToList();
+        var quotes = await _pricing.GetQuotesAsync(targets);
+
+        foreach (var item in cart.Items)
+        {
+            var key = new PriceTargetKey(item.ProductId, item.ProductVariantId);
+            if (!quotes.TryGetValue(key, out var quote))
+                throw new InvalidOperationException("Một số sản phẩm không còn được bán.");
+
+            if (item.Price != quote.EffectivePrice)
+                throw new InvalidOperationException(
+                    "Giá vừa thay đổi. Vui lòng quay lại bước thanh toán và xác nhận lại.");
+        }
 
         // Load products batch and validate before any mutation.
         var productIds = cart.Items.Select(i => i.ProductId).Distinct().ToList();
@@ -101,9 +139,12 @@ public class OrderService : IOrderService
             Notes = model.Notes
         };
 
-        // Build order items (stock deduction is handled atomically inside the transaction below).
+        // Build order items from authoritative quotes (stock deduction below).
         foreach (var item in cart.Items)
         {
+            var key = new PriceTargetKey(item.ProductId, item.ProductVariantId);
+            var quote = quotes[key];
+
             order.Items.Add(new OrderItem
             {
                 ProductId = item.ProductId,
@@ -112,10 +153,17 @@ public class OrderService : IOrderService
                 VariantSKU = item.VariantSKU,
                 ProductName = item.ProductName,
                 Quantity = item.Quantity,
-                Price = item.Price,
-                Total = item.Total
+                BasePrice = quote.BasePrice,
+                Price = quote.EffectivePrice,
+                PromotionDiscount = (quote.BasePrice - quote.EffectivePrice) * item.Quantity,
+                PriceScheduleId = quote.ScheduleId,
+                Total = quote.EffectivePrice * item.Quantity
             });
         }
+
+        var authoritativeSubtotal = order.Items.Sum(item => item.Total);
+        order.Subtotal = authoritativeSubtotal;
+        order.Total = authoritativeSubtotal + shippingFee - cart.Discount;
 
         // Resolve the shipping address. New address is queued but not saved until the transaction commits.
         Address? shippingAddress = null;
@@ -163,17 +211,6 @@ public class OrderService : IOrderService
 
         await _unitOfWork.Orders.AddAsync(order);
 
-        // InMemory provider does not support transactions or ExecuteUpdateAsync.
-        var providerName = _unitOfWork.DatabaseProviderName ?? string.Empty;
-        var isInMemory = providerName.Contains("InMemory");
-        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? transaction = null;
-        if (!isInMemory)
-        {
-            transaction = await _unitOfWork.BeginTransactionAsync();
-        }
-
-        try
-        {
             if (isInMemory)
             {
                 // InMemory: mutate tracked entities directly.
@@ -210,22 +247,7 @@ public class OrderService : IOrderService
 
             await _unitOfWork.SaveChangesAsync();
             if (transaction != null)
-            {
                 await transaction.CommitAsync();
-            }
-        }
-        catch
-        {
-            if (transaction != null)
-            {
-                await transaction.RollbackAsync();
-            }
-            throw;
-        }
-        finally
-        {
-            transaction?.Dispose();
-        }
 
         // Clear cart only after the order and stock changes have committed.
         await _cartService.ClearCartAsync(sessionId);
@@ -258,6 +280,18 @@ public class OrderService : IOrderService
         }
 
         return order;
+        }
+        catch
+        {
+            if (transaction != null)
+                await transaction.RollbackAsync();
+            throw;
+        }
+        finally
+        {
+            if (transaction != null)
+                await transaction.DisposeAsync();
+        }
     }
 
     public async Task<Order?> GetOrderByIdAsync(int id)

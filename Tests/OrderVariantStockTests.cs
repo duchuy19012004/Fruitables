@@ -23,12 +23,19 @@ public class OrderVariantStockTests
         await context.SaveChangesAsync();
 
         var cart = new Mock<ICartService>();
-        cart.Setup(c => c.GetCartAsync("s", It.IsAny<string?>())).ReturnsAsync(new CartViewModel
+        var cartSnapshot = new CartViewModel
         {
             Items = [new CartItemViewModel { ProductId = 1, ProductVariantId = 7, VariantName = "Hộp 2kg", VariantSKU = "TAO-2", ProductName = "Táo", Price = 180_000, Quantity = 2 }],
             Subtotal = 360_000, Total = 360_000
-        });
-        var service = new OrderService(new UnitOfWork(context), cart.Object, Mock.Of<IRealtimeNotifier>());
+        };
+        cart.Setup(c => c.GetCartAsync("s", It.IsAny<string?>())).ReturnsAsync(cartSnapshot);
+        var pricing = new Mock<IProductPricingService>();
+        pricing.Setup(p => p.GetQuotesAsync(It.IsAny<IEnumerable<PriceTargetKey>>(), It.IsAny<DateTimeOffset?>()))
+            .ReturnsAsync(new Dictionary<PriceTargetKey, PriceQuote>
+            {
+                [new PriceTargetKey(1, 7)] = new PriceQuote(1, 7, 180_000, 180_000, null)
+            });
+        var service = new OrderService(new UnitOfWork(context), cart.Object, Mock.Of<IRealtimeNotifier>(), pricing.Object);
 
         var order = await service.CreateOrderAsync(new CheckoutViewModel { PaymentMethod = PaymentMethod.COD }, "s");
 
@@ -75,7 +82,7 @@ public class OrderVariantStockTests
             PricingToken = "NEW-TOKEN",
             Items = []
         });
-        var service = new OrderService(new UnitOfWork(context), cart.Object, Mock.Of<IRealtimeNotifier>());
+        var service = new OrderService(new UnitOfWork(context), cart.Object, Mock.Of<IRealtimeNotifier>(), Mock.Of<IProductPricingService>());
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             service.CreateOrderAsync(new CheckoutViewModel { PricingToken = "OLD-TOKEN" }, "s"));

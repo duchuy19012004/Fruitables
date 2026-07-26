@@ -24,7 +24,15 @@ public class OrderItem
     public int Quantity { get; set; }
 
     [Column(TypeName = "decimal(10,2)")]
+    public decimal BasePrice { get; set; }
+
+    [Column(TypeName = "decimal(10,2)")]
     public decimal Price { get; set; }
+
+    [Column(TypeName = "decimal(10,2)")]
+    public decimal PromotionDiscount { get; set; }
+
+    public int? PriceScheduleId { get; set; }
 
     [Column(TypeName = "decimal(10,2)")]
     public decimal Total { get; set; }

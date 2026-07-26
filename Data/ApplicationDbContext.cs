@@ -175,6 +175,8 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<OrderItem>(entity =>
         {
             entity.HasOne(e => e.ProductVariant).WithMany().HasForeignKey(e => e.ProductVariantId).OnDelete(DeleteBehavior.Restrict);
+
+            entity.Property(e => e.PriceScheduleId).IsRequired(false);
         });
 
         // Combo
