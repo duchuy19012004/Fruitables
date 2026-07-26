@@ -5,6 +5,7 @@ using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Interfaces;
 using Fruitables.ViewModels;
 using Fruitables.Helpers;
+using Microsoft.Extensions.Logging;
 
 namespace Fruitables.Services;
 
@@ -17,21 +18,31 @@ public class OrderService : IOrderService
     private readonly ICartService _cartService;
     private readonly IRealtimeNotifier _notifier;
     private readonly IProductPricingService _pricing;
+    private readonly ILogger<OrderService> _logger;
 
     public OrderService(
         IUnitOfWork unitOfWork,
         ICartService cartService,
         IRealtimeNotifier notifier,
-        IProductPricingService pricing)
+        IProductPricingService pricing,
+        ILogger<OrderService> logger)
     {
         _unitOfWork = unitOfWork;
         _cartService = cartService;
         _notifier = notifier;
         _pricing = pricing;
+        _logger = logger;
     }
+
+    private sealed record StockNotification(
+        int ProductId,
+        int StockQuantity,
+        int? ProductVariantId);
 
     public async Task<Order> CreateOrderAsync(CheckoutViewModel model, string sessionId, int? userId = null)
     {
+        Order? committedOrder = null;
+        var stockNotifications = new List<StockNotification>();
         var providerName = _unitOfWork.DatabaseProviderName ?? string.Empty;
         var isInMemory = providerName.Contains("InMemory", StringComparison.OrdinalIgnoreCase);
         Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? transaction = null;
@@ -246,40 +257,39 @@ public class OrderService : IOrderService
             }
 
             await _unitOfWork.SaveChangesAsync();
+
+            foreach (var group in productGroups)
+            {
+                if (group.ProductVariantId.HasValue)
+                {
+                    var variant = variants[group.ProductVariantId.Value];
+                    var finalStock = isInMemory
+                        ? variant.StockQuantity
+                        : variant.StockQuantity - group.Quantity;
+
+                    stockNotifications.Add(new StockNotification(
+                        group.ProductId,
+                        finalStock,
+                        group.ProductVariantId));
+                }
+                else
+                {
+                    var product = products[group.ProductId];
+                    var finalStock = isInMemory
+                        ? product.StockQuantity
+                        : product.StockQuantity - group.Quantity;
+
+                    stockNotifications.Add(new StockNotification(
+                        group.ProductId,
+                        finalStock,
+                        null));
+                }
+            }
+
             if (transaction != null)
                 await transaction.CommitAsync();
 
-        // Clear cart only after the order and stock changes have committed.
-        await _cartService.ClearCartAsync(sessionId);
-
-        // Notify Realtime Clients
-        await _notifier.NotifyOrderCreatedAsync(order.Id, order.UserId);
-        // The initial batch lookup is also the stock snapshot for notifications.
-        // Each grouped conditional update succeeded, so applying the same deltas
-        // locally avoids another product/variant query after commit.
-        var currentProductStocks = products.ToDictionary(pair => pair.Key, pair => pair.Value.StockQuantity);
-        var currentVariantStocks = variants.ToDictionary(pair => pair.Key, pair => pair.Value.StockQuantity);
-        if (!isInMemory)
-        {
-            foreach (var group in productGroups)
-            {
-                if (group.ProductVariantId.HasValue && currentVariantStocks.ContainsKey(group.ProductVariantId.Value))
-                    currentVariantStocks[group.ProductVariantId.Value] -= group.Quantity;
-                else if (currentProductStocks.ContainsKey(group.ProductId))
-                    currentProductStocks[group.ProductId] -= group.Quantity;
-            }
-        }
-        foreach (var group in productGroups)
-        {
-            if (group.ProductVariantId.HasValue && currentVariantStocks.TryGetValue(group.ProductVariantId.Value, out var variantStock))
-            {
-                await _notifier.NotifyStockChangedAsync(group.ProductId, variantStock, group.ProductVariantId);
-            }
-            else if (currentProductStocks.TryGetValue(group.ProductId, out var productStock))
-                await _notifier.NotifyStockChangedAsync(group.ProductId, productStock);
-        }
-
-        return order;
+            committedOrder = order;
         }
         catch
         {
@@ -291,6 +301,67 @@ public class OrderService : IOrderService
         {
             if (transaction != null)
                 await transaction.DisposeAsync();
+        }
+
+        if (committedOrder == null)
+            throw new InvalidOperationException("KhÃ´ng thá»ƒ xÃ¡c nháº­n Ä‘Æ¡n hÃ ng Ä‘Ã£ Ä‘Æ°á»£c lÆ°u.");
+
+        await RunPostCommitActionsAsync(
+            committedOrder,
+            sessionId,
+            stockNotifications);
+
+        return committedOrder;
+    }
+
+    private async Task RunPostCommitActionsAsync(
+        Order order,
+        string sessionId,
+        IReadOnlyList<StockNotification> stockNotifications)
+    {
+        try
+        {
+            await _cartService.ClearCartAsync(sessionId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Order {OrderId} committed but cart cleanup failed for session {SessionId}",
+                order.Id,
+                sessionId);
+        }
+
+        try
+        {
+            await _notifier.NotifyOrderCreatedAsync(order.Id, order.UserId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Order {OrderId} committed but order-created notification failed",
+                order.Id);
+        }
+
+        foreach (var stock in stockNotifications)
+        {
+            try
+            {
+                await _notifier.NotifyStockChangedAsync(
+                    stock.ProductId,
+                    stock.StockQuantity,
+                    stock.ProductVariantId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Order {OrderId} committed but stock notification failed for product {ProductId}, variant {VariantId}",
+                    order.Id,
+                    stock.ProductId,
+                    stock.ProductVariantId);
+            }
         }
     }
 

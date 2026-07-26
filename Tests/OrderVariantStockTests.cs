@@ -5,6 +5,7 @@ using Fruitables.Services;
 using Fruitables.Services.Interfaces;
 using Fruitables.ViewModels;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 
@@ -35,7 +36,7 @@ public class OrderVariantStockTests
             {
                 [new PriceTargetKey(1, 7)] = new PriceQuote(1, 7, 180_000, 180_000, null)
             });
-        var service = new OrderService(new UnitOfWork(context), cart.Object, Mock.Of<IRealtimeNotifier>(), pricing.Object);
+        var service = new OrderService(new UnitOfWork(context), cart.Object, Mock.Of<IRealtimeNotifier>(), pricing.Object, Mock.Of<ILogger<OrderService>>());
 
         var order = await service.CreateOrderAsync(new CheckoutViewModel { PaymentMethod = PaymentMethod.COD }, "s");
 
@@ -82,7 +83,7 @@ public class OrderVariantStockTests
             PricingToken = "NEW-TOKEN",
             Items = []
         });
-        var service = new OrderService(new UnitOfWork(context), cart.Object, Mock.Of<IRealtimeNotifier>(), Mock.Of<IProductPricingService>());
+        var service = new OrderService(new UnitOfWork(context), cart.Object, Mock.Of<IRealtimeNotifier>(), Mock.Of<IProductPricingService>(), Mock.Of<ILogger<OrderService>>());
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             service.CreateOrderAsync(new CheckoutViewModel { PricingToken = "OLD-TOKEN" }, "s"));
