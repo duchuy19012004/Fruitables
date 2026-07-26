@@ -13,6 +13,60 @@ public class PriceManagementServiceTests
     private static readonly DateTimeOffset Now = new(2026, 7, 16, 2, 0, 0, TimeSpan.Zero);
 
     [Fact]
+    public async Task UpdateBasePrice_rejects_stale_price_snapshot()
+    {
+        await using var context = CreateContext();
+        context.Products.Add(new Product
+        {
+            Id = 1,
+            Name = "Táo",
+            Slug = "tao",
+            Price = 120_000,
+            PriceRevision = 2
+        });
+        await context.SaveChangesAsync();
+
+        var result = await CreateService(context).UpdateBasePriceAsync(new UpdateBasePriceRequest
+        {
+            ProductId = 1,
+            NewPrice = 90_000,
+            ExpectedBasePrice = 100_000,
+            ExpectedRevision = 1
+        }, 7);
+
+        Assert.False(result.Success);
+        Assert.Contains("đã thay đổi", result.Error);
+        Assert.Equal(120_000, context.Products.Find(1)!.Price);
+        Assert.Equal(2, context.Products.Find(1)!.PriceRevision);
+    }
+
+    [Fact]
+    public async Task BulkUpdate_when_one_target_is_stale_updates_nothing()
+    {
+        await using var context = CreateContext();
+        context.Products.AddRange(
+            new Product { Id = 1, Name = "Táo", Slug = "tao", Price = 100_000, PriceRevision = 1 },
+            new Product { Id = 2, Name = "Cam", Slug = "cam", Price = 120_000, PriceRevision = 2 });
+        await context.SaveChangesAsync();
+
+        var result = await CreateService(context).BulkUpdateBasePricesAsync(new BulkPriceUpdateRequest
+        {
+            AdjustmentType = PriceAdjustmentType.Percentage,
+            Direction = PriceAdjustmentDirection.Decrease,
+            Value = 10,
+            Targets =
+            [
+                new BulkPriceTargetRequest { ProductId = 1, ExpectedBasePrice = 100_000, ExpectedRevision = 1 },
+                new BulkPriceTargetRequest { ProductId = 2, ExpectedBasePrice = 100_000, ExpectedRevision = 1 }
+            ]
+        }, 7);
+
+        Assert.False(result.Success);
+        Assert.Equal(100_000, context.Products.Find(1)!.Price);
+        Assert.Equal(120_000, context.Products.Find(2)!.Price);
+    }
+
+    [Fact]
     public async Task CreateSchedule_rejects_an_overlapping_schedule_for_the_same_target()
     {
         await using var context = CreateContext();
@@ -53,7 +107,11 @@ public class PriceManagementServiceTests
 
         var result = await service.BulkUpdateBasePricesAsync(new BulkPriceUpdateRequest
         {
-            Targets = [new(1, null), new(2, null)],
+            Targets =
+            [
+                new BulkPriceTargetRequest { ProductId = 1, ExpectedBasePrice = 100_000, ExpectedRevision = 1 },
+                new BulkPriceTargetRequest { ProductId = 2, ExpectedBasePrice = 120_000, ExpectedRevision = 1 }
+            ],
             AdjustmentType = PriceAdjustmentType.Amount,
             Direction = PriceAdjustmentDirection.Decrease,
             Value = 20_000
@@ -97,7 +155,13 @@ public class PriceManagementServiceTests
         });
         await context.SaveChangesAsync();
 
-        var result = await CreateService(context).UpdateBasePriceAsync(new PriceTargetKey(1, null), 80_000, 7);
+        var result = await CreateService(context).UpdateBasePriceAsync(new UpdateBasePriceRequest
+        {
+            ProductId = 1,
+            NewPrice = 80_000,
+            ExpectedBasePrice = 100_000,
+            ExpectedRevision = 1
+        }, 7);
 
         Assert.False(result.Success);
         Assert.Equal(100_000, context.Products.Find(1)!.Price);

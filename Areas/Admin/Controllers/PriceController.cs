@@ -60,23 +60,21 @@ public class PriceController : Controller
     }
 
     [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> UpdateBasePrice(int productId, int? productVariantId, decimal newPrice) =>
-        ResultResponse(await _prices.UpdateBasePriceAsync(new PriceTargetKey(productId, productVariantId), newPrice, CurrentAdminId()));
-
-    [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> BulkUpdate(List<string>? selectedTargets, PriceAdjustmentType adjustmentType,
-        PriceAdjustmentDirection direction, decimal value)
+    public async Task<IActionResult> UpdateBasePrice(UpdateBasePriceRequest request)
     {
-        var targets = (selectedTargets ?? []).Select(ParseTarget).Where(t => t.HasValue).Select(t => t!.Value).ToList();
-        var request = new BulkPriceUpdateRequest { Targets = targets, AdjustmentType = adjustmentType, Direction = direction, Value = value };
-        return ResultResponse(await _prices.BulkUpdateBasePricesAsync(request, CurrentAdminId()));
+        if (!TryGetCurrentAdminId(out var adminId))
+            return Unauthorized();
+
+        return ResultResponse(await _prices.UpdateBasePriceAsync(request, adminId));
     }
 
-    private static PriceTargetKey? ParseTarget(string value)
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> BulkUpdate(BulkPriceUpdateRequest request)
     {
-        var parts = value.Split(':');
-        if (!int.TryParse(parts[0], out var productId)) return null;
-        return new PriceTargetKey(productId, parts.Length > 1 && int.TryParse(parts[1], out var variantId) ? variantId : null);
+        if (!TryGetCurrentAdminId(out var adminId))
+            return Unauthorized();
+
+        return ResultResponse(await _prices.BulkUpdateBasePricesAsync(request, adminId));
     }
 
     private int CurrentAdminId() => int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : 0;

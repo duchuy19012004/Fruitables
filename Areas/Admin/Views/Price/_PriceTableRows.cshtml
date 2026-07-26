@@ -81,7 +81,11 @@
         var hasDiscount = row.EffectivePrice < row.BasePrice;
         <tr class="price-row@(isChild ? " variant-row" : "")" data-group="@(isChild ? row.ProductId.ToString() : null)" data-name="@row.ProductName @row.VariantName" data-base="@row.BasePrice" data-effective="@row.EffectivePrice">
             <td>
-                <input class="row-check form-check-input" type="checkbox" name="selectedTargets" value="@row.ProductId:@row.ProductVariantId" data-label="@row.ProductName @(row.VariantName ?? "")" data-price="@row.BasePrice" />
+                <input class="row-check form-check-input" type="checkbox" name="selectedTargets"
+                       value="@row.ProductId:@row.ProductVariantId"
+                       data-product="@row.ProductId" data-variant="@row.ProductVariantId"
+                       data-label="@row.ProductName @(row.VariantName ?? "")"
+                       data-price="@row.BasePrice" data-revision="@row.PriceRevision" />
             </td>
             <td class="prod-cell">
                 @if (isChild)
@@ -104,7 +108,7 @@
                     <span class="sku">@row.SKU</span>
                 }
             </td>
-            <td class="money base-price-cell" data-product="@row.ProductId" data-variant="@row.ProductVariantId" data-price="@row.BasePrice" title="Nhấn để sửa giá gốc">
+            <td class="money base-price-cell" data-product="@row.ProductId" data-variant="@row.ProductVariantId" data-price="@row.BasePrice" data-revision="@row.PriceRevision" title="Nhấn để sửa giá gốc">
                 <span class="base-price-value">@row.BasePrice.ToString("N0")đ</span>
                 <i class="fas fa-pen edit-hint"></i>
             </td>

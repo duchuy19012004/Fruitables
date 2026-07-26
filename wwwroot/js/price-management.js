@@ -271,7 +271,12 @@
             const rows = [...document.querySelectorAll('.row-check:checked')];
             if (!rows.length) return;
             const fd = new FormData();
-            rows.forEach(r => fd.append('selectedTargets', r.value));
+            rows.forEach((row, index) => {
+                fd.append(`Targets[${index}].ProductId`, row.dataset.product);
+                fd.append(`Targets[${index}].ProductVariantId`, row.dataset.variant || '');
+                fd.append(`Targets[${index}].ExpectedBasePrice`, row.dataset.price);
+                fd.append(`Targets[${index}].ExpectedRevision`, row.dataset.revision);
+            });
             fd.append('adjustmentType', document.getElementById('bulkAdjustmentType').value);
             fd.append('direction', document.getElementById('bulkDirection').value);
             fd.append('value', document.getElementById('bulkValue').value);
@@ -739,7 +744,9 @@
                     const body = new URLSearchParams({
                         productId: cell.dataset.product,
                         productVariantId: cell.dataset.variant || '',
-                        newPrice
+                        newPrice,
+                        expectedBasePrice: cell.dataset.price,
+                        expectedRevision: cell.dataset.revision
                     });
                     const res = await fetch(config.urls.updateBasePrice, {
                         method: 'POST',
@@ -753,9 +760,12 @@
                     const json = await res.json();
                     if (json.success) {
                         cell.dataset.price = newPrice;
+                        cell.dataset.revision = String(json.revision);
                         cell.innerHTML = `<span class="base-price-value">${newPrice.toLocaleString('vi-VN')}đ</span><i class="fas fa-pen edit-hint"></i>`;
                         const row = cell.closest('tr');
-                        row.querySelector('.row-check').dataset.price = newPrice;
+                        const rowCheck = row.querySelector('.row-check');
+                        rowCheck.dataset.price = String(newPrice);
+                        rowCheck.dataset.revision = String(json.revision);
                         showPriceToast('success', 'Đã cập nhật giá gốc.');
                     } else {
                         input.disabled = false;

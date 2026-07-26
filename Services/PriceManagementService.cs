@@ -43,12 +43,12 @@ public sealed class PriceManagementService : IPriceManagementService
             var activeVariants = product.Variants.Where(v => v.IsActive).OrderBy(v => v.Name).ToList();
             if (activeVariants.Count == 0)
             {
-                rows.Add(BuildRow(product, null, product.Price, product.StockQuantity, product.PriceSchedules, now));
+                rows.Add(BuildRow(product, null, product.Price, product.PriceRevision, product.StockQuantity, product.PriceSchedules, now));
                 continue;
             }
 
             foreach (var variant in activeVariants)
-                rows.Add(BuildRow(product, variant, variant.Price, variant.StockQuantity, variant.PriceSchedules, now));
+                rows.Add(BuildRow(product, variant, variant.Price, variant.PriceRevision, variant.StockQuantity, variant.PriceSchedules, now));
         }
         var statTotal = rows.Count;
         var statActive = rows.Count(row => row.CurrentSchedule != null);
@@ -100,14 +100,14 @@ public sealed class PriceManagementService : IPriceManagementService
             var activeVariants = p.Variants.Where(v => v.IsActive).OrderBy(v => v.Name).ToList();
             if (activeVariants.Count == 0)
             {
-                targets.Add(new ScheduleTargetItem { ProductId = p.Id, ProductName = p.Name, BasePrice = p.Price });
+                targets.Add(new ScheduleTargetItem { ProductId = p.Id, ProductName = p.Name, BasePrice = p.Price, PriceRevision = p.PriceRevision });
                 continue;
             }
             foreach (var v in activeVariants)
                 targets.Add(new ScheduleTargetItem
                 {
                     ProductId = p.Id, ProductVariantId = v.Id, ProductName = p.Name,
-                    VariantName = v.Name, SKU = v.SKU, BasePrice = v.Price
+                    VariantName = v.Name, SKU = v.SKU, BasePrice = v.Price, PriceRevision = v.PriceRevision
                 });
         }
 
@@ -304,21 +304,76 @@ public sealed class PriceManagementService : IPriceManagementService
         return result;
     }
 
-    public async Task<PriceManagementResult> UpdateBasePriceAsync(PriceTargetKey target, decimal newPrice, int adminId)
+    private sealed record BasePriceSnapshot(decimal Price, int Revision);
+
+    private async Task<BasePriceSnapshot?> GetBasePriceSnapshotAsync(PriceTargetKey target)
     {
+        if (target.ProductVariantId.HasValue)
+        {
+            return await _unitOfWork.ProductVariants.Query()
+                .Where(variant => variant.Id == target.ProductVariantId.Value && variant.ProductId == target.ProductId)
+                .Select(variant => new BasePriceSnapshot(variant.Price, variant.PriceRevision))
+                .FirstOrDefaultAsync();
+        }
+
+        return await _unitOfWork.Products.Query()
+            .Where(product => product.Id == target.ProductId)
+            .Select(product => new BasePriceSnapshot(product.Price, product.PriceRevision))
+            .FirstOrDefaultAsync();
+    }
+
+    public async Task<PriceManagementResult> UpdateBasePriceAsync(
+        UpdateBasePriceRequest request,
+        int adminId)
+    {
+        var target = request.Target;
         var result = await RunSerializedWriteAsync(async () =>
         {
-            var validation = await ValidateNewBasePriceAsync(target, newPrice);
-            if (validation != null) return PriceManagementResult.Fail(validation);
+            var snapshot = await GetBasePriceSnapshotAsync(target);
+            if (snapshot == null)
+                return PriceManagementResult.Fail("Không tìm thấy sản phẩm hoặc biến thể.");
+
+            if (snapshot.Price != request.ExpectedBasePrice || snapshot.Revision != request.ExpectedRevision)
+                return PriceManagementResult.Fail("Giá đã thay đổi bởi người khác. Vui lòng tải lại trang.");
+
+            var validation = await ValidateNewBasePriceAsync(target, request.NewPrice);
+            if (validation != null)
+                return PriceManagementResult.Fail(validation);
+
+            int newRevision;
             if (target.ProductVariantId.HasValue)
-                (await _unitOfWork.ProductVariants.GetByIdAsync(target.ProductVariantId.Value))!.Price = newPrice;
+            {
+                var variant = await _unitOfWork.ProductVariants.GetByIdAsync(target.ProductVariantId.Value);
+                if (variant == null || variant.ProductId != target.ProductId)
+                    return PriceManagementResult.Fail("Không tìm thấy sản phẩm hoặc biến thể.");
+
+                variant.Price = request.NewPrice;
+                variant.PriceRevision++;
+                newRevision = variant.PriceRevision;
+            }
             else
-                (await _unitOfWork.Products.GetByIdAsync(target.ProductId))!.Price = newPrice;
-            await AddLogAsync(target.ProductId, adminId, "BasePriceUpdate", $"Cập nhật giá gốc thành {newPrice:N0}đ");
+            {
+                var product = await _unitOfWork.Products.GetByIdAsync(target.ProductId);
+                if (product == null)
+                    return PriceManagementResult.Fail("Không tìm thấy sản phẩm hoặc biến thể.");
+
+                product.Price = request.NewPrice;
+                product.PriceRevision++;
+                newRevision = product.PriceRevision;
+            }
+
+            await AddLogAsync(
+                target.ProductId,
+                adminId,
+                "BasePriceUpdate",
+                $"Giá gốc {snapshot.Price:N0}đ -> {request.NewPrice:N0}đ; revision={snapshot.Revision}->{newRevision}");
             await _unitOfWork.SaveChangesAsync();
-            return PriceManagementResult.Ok();
+            return PriceManagementResult.Ok(newRevision);
         });
-        if (result.Success) await PublishPriceChangeAsync(target.ProductId, target.ProductVariantId);
+
+        if (result.Success)
+            await PublishPriceChangeAsync(target.ProductId, target.ProductVariantId);
+
         return result;
     }
 
@@ -327,35 +382,78 @@ public sealed class PriceManagementService : IPriceManagementService
         if (request.Targets.Count == 0 || request.Value <= 0)
             return PriceManagementResult.Fail("Vui lòng chọn đối tượng và nhập mức điều chỉnh lớn hơn 0.");
 
-        var changes = new List<(PriceTargetKey Target, decimal NewPrice)>();
+        var duplicateTarget = request.Targets
+            .GroupBy(item => item.Target)
+            .FirstOrDefault(group => group.Count() > 1);
+        if (duplicateTarget != null)
+            return PriceManagementResult.Fail("Danh sách cập nhật có đối tượng bị trùng.");
+
+        var changes = new List<(BulkPriceTargetRequest Request, decimal CurrentPrice, decimal NewPrice)>();
+
         var result = await RunSerializedWriteAsync(async () =>
         {
-            foreach (var target in request.Targets.Distinct())
+            foreach (var item in request.Targets)
             {
-                var current = await GetBasePriceAsync(target);
-                if (!current.HasValue) return PriceManagementResult.Fail("Có sản phẩm hoặc biến thể không tồn tại.");
+                var snapshot = await GetBasePriceSnapshotAsync(item.Target);
+                if (snapshot == null)
+                    return PriceManagementResult.Fail("Có sản phẩm hoặc biến thể không tồn tại.");
+
+                if (snapshot.Price != item.ExpectedBasePrice || snapshot.Revision != item.ExpectedRevision)
+                    return PriceManagementResult.Fail("Có giá đã thay đổi sau khi xem trước. Vui lòng tải lại và xem trước lại.");
+
                 var delta = request.AdjustmentType == PriceAdjustmentType.Percentage
-                    ? Math.Round(current.Value * request.Value / 100m, 0, MidpointRounding.AwayFromZero)
+                    ? Math.Round(snapshot.Price * request.Value / 100m, 0, MidpointRounding.AwayFromZero)
                     : request.Value;
-                var next = request.Direction == PriceAdjustmentDirection.Increase ? current.Value + delta : current.Value - delta;
-                var validation = await ValidateNewBasePriceAsync(target, next);
-                if (validation != null) return PriceManagementResult.Fail(validation);
-                changes.Add((target, next));
+                var next = request.Direction == PriceAdjustmentDirection.Increase
+                    ? snapshot.Price + delta
+                    : snapshot.Price - delta;
+
+                var validation = await ValidateNewBasePriceAsync(item.Target, next);
+                if (validation != null)
+                    return PriceManagementResult.Fail(validation);
+
+                changes.Add((item, snapshot.Price, next));
             }
 
             foreach (var change in changes)
             {
-                if (change.Target.ProductVariantId.HasValue)
-                    (await _unitOfWork.ProductVariants.GetByIdAsync(change.Target.ProductVariantId.Value))!.Price = change.NewPrice;
+                var target = change.Request.Target;
+                int newRevision;
+
+                if (target.ProductVariantId.HasValue)
+                {
+                    var variant = await _unitOfWork.ProductVariants.GetByIdAsync(target.ProductVariantId.Value);
+                    if (variant == null || variant.ProductId != target.ProductId)
+                        return PriceManagementResult.Fail("Có sản phẩm hoặc biến thể không tồn tại.");
+
+                    variant.Price = change.NewPrice;
+                    variant.PriceRevision++;
+                    newRevision = variant.PriceRevision;
+                }
                 else
-                    (await _unitOfWork.Products.GetByIdAsync(change.Target.ProductId))!.Price = change.NewPrice;
-                await AddLogAsync(change.Target.ProductId, adminId, "BulkPriceUpdate", $"Cập nhật hàng loạt thành {change.NewPrice:N0}đ");
+                {
+                    var product = await _unitOfWork.Products.GetByIdAsync(target.ProductId);
+                    if (product == null)
+                        return PriceManagementResult.Fail("Có sản phẩm hoặc biến thể không tồn tại.");
+
+                    product.Price = change.NewPrice;
+                    product.PriceRevision++;
+                    newRevision = product.PriceRevision;
+                }
+
+                await AddLogAsync(
+                    target.ProductId,
+                    adminId,
+                    "BulkPriceUpdate",
+                    $"Giá gốc {change.CurrentPrice:N0}đ -> {change.NewPrice:N0}đ; revision={change.Request.ExpectedRevision}->{newRevision}");
             }
+
             await _unitOfWork.SaveChangesAsync();
             return PriceManagementResult.Ok();
         });
+
         if (!result.Success) return result;
-        foreach (var target in changes.Select(c => c.Target).Distinct())
+        foreach (var target in changes.Select(c => c.Request.Target).Distinct())
             await PublishPriceChangeAsync(target.ProductId, target.ProductVariantId);
         return PriceManagementResult.Ok();
     }
@@ -468,8 +566,8 @@ public sealed class PriceManagementService : IPriceManagementService
         }
     }
 
-    private static PriceManagementRow BuildRow(Product product, ProductVariant? variant, decimal basePrice, int stock,
-        IEnumerable<PriceSchedule> schedules, DateTimeOffset now)
+    private static PriceManagementRow BuildRow(Product product, ProductVariant? variant, decimal basePrice,
+        int priceRevision, int stock, IEnumerable<PriceSchedule> schedules, DateTimeOffset now)
     {
         var list = schedules.Where(s => !s.IsCancelled).ToList();
         var quote = PriceCalculator.CalculateQuote(basePrice, list, now);
@@ -487,6 +585,7 @@ public sealed class PriceManagementService : IPriceManagementService
             BasePrice = basePrice,
             EffectivePrice = quote.EffectivePrice,
             StockQuantity = stock,
+            PriceRevision = priceRevision,
             CurrentSchedule = currentSchedule,
             UpcomingSchedule = list
                 .Where(schedule => schedule.StartsAt > now)

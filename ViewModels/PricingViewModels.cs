@@ -40,9 +40,30 @@ public class CancelPriceScheduleRequest
 public enum PriceAdjustmentType { Amount, Percentage }
 public enum PriceAdjustmentDirection { Increase, Decrease }
 
+public class UpdateBasePriceRequest
+{
+    public int ProductId { get; set; }
+    public int? ProductVariantId { get; set; }
+    public decimal NewPrice { get; set; }
+    public decimal ExpectedBasePrice { get; set; }
+    public int ExpectedRevision { get; set; }
+
+    public PriceTargetKey Target => new(ProductId, ProductVariantId);
+}
+
+public class BulkPriceTargetRequest
+{
+    public int ProductId { get; set; }
+    public int? ProductVariantId { get; set; }
+    public decimal ExpectedBasePrice { get; set; }
+    public int ExpectedRevision { get; set; }
+
+    public PriceTargetKey Target => new(ProductId, ProductVariantId);
+}
+
 public class BulkPriceUpdateRequest
 {
-    public List<PriceTargetKey> Targets { get; set; } = new();
+    public List<BulkPriceTargetRequest> Targets { get; set; } = new();
     public PriceAdjustmentType AdjustmentType { get; set; }
     public PriceAdjustmentDirection Direction { get; set; }
     public decimal Value { get; set; }
@@ -64,6 +85,7 @@ public class PriceManagementRow
     public decimal BasePrice { get; set; }
     public decimal EffectivePrice { get; set; }
     public int StockQuantity { get; set; }
+    public int PriceRevision { get; set; }
     public PriceSchedule? CurrentSchedule { get; set; }
     public PriceSchedule? UpcomingSchedule { get; set; }
     public List<PriceSchedule> Schedules { get; set; } = new();
@@ -94,6 +116,7 @@ public class ScheduleTargetItem
     public string? VariantName { get; set; }
     public string? SKU { get; set; }
     public decimal BasePrice { get; set; }
+    public int PriceRevision { get; set; }
 }
 
 public class PriceManagementViewModel
