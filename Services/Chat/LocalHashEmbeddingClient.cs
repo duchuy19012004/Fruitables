@@ -35,9 +35,10 @@ public sealed class LocalHashEmbeddingClient : IEmbeddingClient
         var input = text ?? string.Empty;
 
         // Lß╗¢p 1: hash cß║ú ─æoß║ín ΓåÆ vector nß╗ün ß╗òn ─æß╗ïnh
+        // Keep this as light noise; token/synonym features should dominate relevance.
         var fullHash = SHA256.HashData(Encoding.UTF8.GetBytes(input));
         for (var i = 0; i < _dimensions; i++)
-            vector[i] = (fullHash[i % fullHash.Length] / 127.5f) - 1f;
+            vector[i] = ((fullHash[i % fullHash.Length] / 127.5f) - 1f) * 0.03f;
 
         // Lß╗¢p 2: token + synonym + bigram "─æß║⌐y" c├íc ├┤ trong vector
         foreach (var token in RetrievalText.ExpandTokens(input))

@@ -40,8 +40,6 @@ public class ChatServiceTests
         var sut = new ChatService(
             db,
             rag.Object,
-            Mock.Of<IIntentRouter>(),
-            Mock.Of<IProductService>(),
             cache,
             Microsoft.Extensions.Options.Options.Create(chatOptions ?? new ChatOptions()),
             NullLogger<ChatService>.Instance);
@@ -141,8 +139,6 @@ public class ChatServiceTests
         var sut = new ChatService(
             db,
             rag.Object,
-            Mock.Of<IIntentRouter>(),
-            Mock.Of<IProductService>(),
             cache,
             Microsoft.Extensions.Options.Options.Create(new ChatOptions()),
             NullLogger<ChatService>.Instance);
@@ -182,8 +178,6 @@ public class ChatServiceTests
         var sut = new ChatService(
             db,
             rag.Object,
-            Mock.Of<IIntentRouter>(),
-            Mock.Of<IProductService>(),
             cache,
             Microsoft.Extensions.Options.Options.Create(new ChatOptions()),
             NullLogger<ChatService>.Instance);
