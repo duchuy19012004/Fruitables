@@ -23,6 +23,8 @@ public class Product
     [Column(TypeName = "decimal(10,2)")]
     public decimal Price { get; set; }
 
+    public int PriceRevision { get; set; } = 1;
+
     [NotMapped]
     public decimal? SalePrice { get; set; }
 

@@ -75,6 +75,7 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<Product>(entity =>
         {
             entity.HasIndex(e => e.Slug).IsUnique();
+            entity.Property(product => product.PriceRevision).IsConcurrencyToken();
             entity.HasOne(p => p.Category)
                   .WithMany(c => c.Products)
                   .HasForeignKey(p => p.CategoryId)
@@ -152,6 +153,7 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<ProductVariant>(entity =>
         {
             entity.HasIndex(e => e.SKU).IsUnique();
+            entity.Property(variant => variant.PriceRevision).IsConcurrencyToken();
             entity.HasOne(v => v.Product)
                   .WithMany(p => p.Variants)
                   .HasForeignKey(v => v.ProductId)
@@ -202,17 +204,26 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<PriceSchedule>(entity =>
         {
             entity.HasIndex(e => new { e.ProductId, e.ProductVariantId, e.StartsAt });
+            entity.Property(schedule => schedule.Revision).IsConcurrencyToken();
+
             entity.HasOne(e => e.Product)
                   .WithMany(p => p.PriceSchedules)
                   .HasForeignKey(e => e.ProductId)
                   .OnDelete(DeleteBehavior.Cascade);
+
             entity.HasOne(e => e.ProductVariant)
                   .WithMany(v => v.PriceSchedules)
                   .HasForeignKey(e => e.ProductVariantId)
                   .OnDelete(DeleteBehavior.Restrict);
+
             entity.HasOne(e => e.CreatedByAdmin)
                   .WithMany()
                   .HasForeignKey(e => e.CreatedByAdminId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(e => e.CancelledByAdmin)
+                  .WithMany()
+                  .HasForeignKey(e => e.CancelledByAdminId)
                   .OnDelete(DeleteBehavior.SetNull);
         });
 

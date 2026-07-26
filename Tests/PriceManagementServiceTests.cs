@@ -124,6 +124,33 @@ public class PriceManagementServiceTests
     }
 
     [Fact]
+    public void GetStatus_cancelled_before_start_is_cancelled()
+    {
+        var schedule = new PriceSchedule
+        {
+            StartsAt = Now.AddHours(2),
+            IsCancelled = true,
+            CancelledAt = Now
+        };
+
+        Assert.Equal(PriceScheduleStatus.Cancelled, schedule.GetStatus(Now));
+    }
+
+    [Fact]
+    public void GetStatus_cancelled_after_start_is_stopped_early()
+    {
+        var schedule = new PriceSchedule
+        {
+            StartsAt = Now.AddHours(-2),
+            EndsAt = Now.AddHours(2),
+            IsCancelled = true,
+            CancelledAt = Now
+        };
+
+        Assert.Equal(PriceScheduleStatus.StoppedEarly, schedule.GetStatus(Now));
+    }
+
+    [Fact]
     public async Task CreateSchedule_rejects_an_unknown_discount_type()
     {
         await using var context = CreateContext();
