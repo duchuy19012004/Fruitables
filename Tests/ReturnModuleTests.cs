@@ -219,6 +219,120 @@ public class ReturnModuleTests
         Assert.Equal($"return:{submitted.Id}:aggregate-refund", refund.IdempotencyKey);
     }
 
+    [Fact]
+    public async Task Destination_IsProtected_LockedDuringProcessing_AndClearedOnSuccess()
+    {
+        await using var db = CreateContext();
+        var graph = SeedOrder(db, itemTotal: 100m);
+        var finance = new User
+        {
+            Name = "Finance",
+            Email = $"f{Guid.NewGuid():N}@test.local",
+            Password = "hash",
+            Role = UserRole.Admin
+        };
+        var policy = Policy(ReturnPolicyScope.Default, ReturnReasonCode.Other, 24, Utc(2026, 7, 1));
+        db.AddRange(policy, finance);
+        var request = ApprovedRequest(graph, policy, 1, 100m);
+        request.Status = ReturnRequestStatus.ResolutionPending;
+        db.ReturnRequests.Add(request);
+        await db.SaveChangesAsync();
+        var refund = new Refund
+        {
+            ReturnRequestId = request.Id,
+            OrderId = graph.Order.Id,
+            Amount = 100m,
+            Method = RefundMethod.ManualBankTransfer,
+            Status = RefundStatus.AwaitingDestination,
+            IdempotencyKey = $"return:{request.Id}:aggregate-refund",
+            CreatedByUserId = graph.Admin.Id,
+            CreatedAtUtc = Utc(2026, 7, 27)
+        };
+        db.Refunds.Add(refund);
+        await db.SaveChangesAsync();
+        var service = Refunds(db, new MutableTimeProvider(Utc(2026, 7, 27)));
+
+        var saved = await service.SaveDestinationAsync(refund.Id, graph.Customer.Id, new RefundDestinationInputViewModel
+        {
+            RefundId = refund.Id,
+            BankCode = "VCB",
+            AccountNumber = "0123456789",
+            AccountHolder = "NGUYEN VAN A"
+        });
+
+        Assert.True(saved.Success);
+        Assert.NotEqual("0123456789", refund.DestinationAccountNumberProtected);
+        Assert.Equal("6789", refund.DestinationAccountLast4);
+        Assert.Equal(RefundStatus.AwaitingApproval, refund.Status);
+        Assert.Contains(await service.GetQueueAsync(new RefundQueueFilter { Bucket = RefundQueueBucket.Ready }),
+            x => x.RefundId == refund.Id && x.AccountLast4 == "6789");
+
+        var viewed = await service.GetFinanceTaskAsync(refund.Id, finance.Id);
+        Assert.True(viewed.Success);
+        Assert.Equal("0123456789", viewed.Data!.AccountNumber);
+        Assert.Equal("NGUYEN VAN A", viewed.Data.AccountHolder);
+
+        Assert.True((await service.StartProcessingAsync(refund.Id, finance.Id)).Success);
+        Assert.False((await service.SaveDestinationAsync(refund.Id, graph.Customer.Id, new RefundDestinationInputViewModel
+        {
+            RefundId = refund.Id,
+            BankCode = "VCB",
+            AccountNumber = "9999999999",
+            AccountHolder = "NGUYEN VAN A"
+        })).Success);
+        Assert.True((await service.FailAsync(refund.Id, finance.Id, new RefundFailureInputViewModel
+        {
+            RefundId = refund.Id,
+            Reason = "Ngân hàng tạm từ chối"
+        })).Success);
+        Assert.Equal(RefundStatus.Failed, refund.Status);
+        Assert.NotNull(refund.DestinationAccountNumberProtected);
+        Assert.True((await service.StartProcessingAsync(refund.Id, finance.Id)).Success);
+
+        Assert.True((await service.ConfirmManualAsync(refund.Id, "BANK-001", "proof.jpg", finance.Id)).Success);
+        Assert.Null(refund.DestinationAccountNumberProtected);
+        Assert.Null(refund.DestinationAccountHolderProtected);
+        Assert.Equal("6789", refund.DestinationAccountLast4);
+        Assert.Equal(RefundStatus.Succeeded, refund.Status);
+    }
+
+    [Fact]
+    public async Task Destination_RejectsAnotherCustomer()
+    {
+        await using var db = CreateContext();
+        var graph = SeedOrder(db);
+        var policy = Policy(ReturnPolicyScope.Default, ReturnReasonCode.Other, 24, Utc(2026, 7, 1));
+        db.ReturnPolicies.Add(policy);
+        var request = ApprovedRequest(graph, policy, 1, 100m);
+        request.Status = ReturnRequestStatus.ResolutionPending;
+        db.ReturnRequests.Add(request);
+        await db.SaveChangesAsync();
+        var refund = new Refund
+        {
+            ReturnRequestId = request.Id,
+            OrderId = graph.Order.Id,
+            Amount = 100m,
+            Method = RefundMethod.ManualBankTransfer,
+            Status = RefundStatus.AwaitingDestination,
+            IdempotencyKey = $"return:{request.Id}:aggregate-refund",
+            CreatedByUserId = graph.Admin.Id,
+            CreatedAtUtc = Utc(2026, 7, 27)
+        };
+        db.Refunds.Add(refund);
+        await db.SaveChangesAsync();
+
+        var result = await Refunds(db, new MutableTimeProvider(Utc(2026, 7, 27)))
+            .SaveDestinationAsync(refund.Id, 999, new RefundDestinationInputViewModel
+            {
+                RefundId = refund.Id,
+                BankCode = "VCB",
+                AccountNumber = "0123456789",
+                AccountHolder = "NGUYEN VAN A"
+            });
+
+        Assert.False(result.Success);
+    }
+
     [Theory]
     [InlineData(InventoryDispositionType.NotReturned)]
     [InlineData(InventoryDispositionType.Quarantined)]
@@ -279,20 +393,42 @@ public class ReturnModuleTests
         await using var db = CreateContext();
         var graph = SeedOrder(db, itemTotal: 100m);
         var policy = Policy(ReturnPolicyScope.Default, ReturnReasonCode.Other, 24, Utc(2026, 7, 1)); db.ReturnPolicies.Add(policy);
-        var request = ApprovedRequest(graph, policy, 1, 100); db.ReturnRequests.Add(request); await db.SaveChangesAsync();
-        var service = new RefundService(db, new MutableTimeProvider(Utc(2026, 7, 27)));
-        var overCap = await service.CreateAsync(request.Id, request.Items.Single().Id, 101, RefundMethod.ManualBankTransfer, "refund-over-cap", graph.Admin.Id);
-        Assert.False(overCap.Success);
-        var created = await service.CreateAsync(request.Id, request.Items.Single().Id, 100, RefundMethod.ManualBankTransfer, "refund-key", graph.Admin.Id);
-        Assert.True(created.Success);
-        var confirmed = await service.ConfirmManualAsync(created.Refund!.Id, "BANK-001", "proof.jpg", graph.Customer.Id);
-        Assert.True(confirmed.Success); Assert.Equal(PaymentStatus.Refunded, graph.Order.PaymentStatus); Assert.Equal(OrderStatus.Delivered, graph.Order.Status);
+        var request = ApprovedRequest(graph, policy, 1, 100);
+        request.Status = ReturnRequestStatus.ResolutionPending;
+        db.ReturnRequests.Add(request);
+        await db.SaveChangesAsync();
+        var refund = new Refund
+        {
+            ReturnRequestId = request.Id,
+            OrderId = graph.Order.Id,
+            Amount = 100m,
+            Method = RefundMethod.ManualBankTransfer,
+            Status = RefundStatus.Processing,
+            IdempotencyKey = $"return:{request.Id}:aggregate-refund",
+            DestinationAccountNumberProtected = "protected-number",
+            DestinationAccountHolderProtected = "protected-holder",
+            DestinationAccountLast4 = "6789",
+            CreatedByUserId = graph.Admin.Id,
+            ProcessedByUserId = graph.Admin.Id,
+            CreatedAtUtc = Utc(2026, 7, 27)
+        };
+        db.Refunds.Add(refund);
+        await db.SaveChangesAsync();
+
+        var confirmed = await Refunds(db, new MutableTimeProvider(Utc(2026, 7, 27)))
+            .ConfirmManualAsync(refund.Id, "BANK-001", "proof.jpg", graph.Admin.Id);
+
+        Assert.True(confirmed.Success);
+        Assert.Equal(PaymentStatus.Refunded, graph.Order.PaymentStatus);
+        Assert.Equal(OrderStatus.Delivered, graph.Order.Status);
     }
 
     private static ApplicationDbContext CreateContext() => new(TestDbContextFactory.CreateSqliteOptions());
     private static DateTime Utc(int y, int m, int d) => new(y, m, d, 0, 0, 0, DateTimeKind.Utc);
     private static ReturnEligibilityService Eligibility(ApplicationDbContext db, TimeProvider clock) => new(db, new ReturnPolicyService(db), clock);
     private static ReturnService Returns(ApplicationDbContext db, TimeProvider clock) => new(db, Eligibility(db, clock), new RefundAmountCalculator(db), clock);
+    private static RefundService Refunds(ApplicationDbContext db, TimeProvider clock) =>
+        new(db, clock, new Microsoft.AspNetCore.DataProtection.EphemeralDataProtectionProvider());
     private static ReturnSubmitViewModel Submit(Graph g, string key, int quantity) => new() { OrderId = g.Order.Id, IdempotencyKey = key, Items = { new ReturnSubmitItemViewModel { Selected = true, OrderItemId = g.Item.Id, Quantity = quantity, Reason = ReturnReasonCode.Other, Description = "Sản phẩm không đạt chất lượng" } } };
     private static ReturnPolicy Policy(ReturnPolicyScope scope, ReturnReasonCode reason, int hours, DateTime from, int? categoryId = null, int? productId = null, int version = 1) => new() { Name = $"{scope}-{version}-{Guid.NewGuid():N}", Scope = scope, CategoryId = categoryId, ProductId = productId, Reason = reason, ClaimWindowHours = hours, IsEligible = reason != ReturnReasonCode.ChangeOfMind, AllowPartialRefund = true, AllowFullRefund = true, AllowReplacement = true, AllowStoreCredit = true, IsActive = true, Version = version, EffectiveFromUtc = from, CreatedAtUtc = from };
     private static ReturnRequest ApprovedRequest(Graph g, ReturnPolicy p, int quantity, decimal amount) => new() { ReturnNumber = $"RT{Guid.NewGuid():N}"[..20], IdempotencyKey = Guid.NewGuid().ToString("N"), OrderId = g.Order.Id, UserId = g.Customer.Id, Status = ReturnRequestStatus.Approved, SubmittedAtUtc = Utc(2026, 7, 27), ClaimDeadlineAtUtc = Utc(2026, 7, 28), ReviewDueAtUtc = Utc(2026, 7, 28), Items = { new ReturnRequestItem { OrderItemId = g.Item.Id, ReturnPolicy = p, RequestedQuantity = quantity, ApprovedQuantity = quantity, Reason = ReturnReasonCode.Other, Description = "quality issue", NetPaidAmountSnapshot = amount, RequestedAmount = amount, ApprovedAmount = amount, PolicyVersionSnapshot = 1, ClaimWindowHoursSnapshot = 24, ClaimDeadlineAtUtcSnapshot = Utc(2026, 7, 28) } } };

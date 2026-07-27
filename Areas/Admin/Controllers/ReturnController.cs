@@ -78,14 +78,6 @@ public class ReturnController : Controller
     }
 
     [HttpPost, ValidateAntiForgeryToken, RequirePermission("returns.refund")]
-    public async Task<IActionResult> CreateRefund(int id, int returnRequestItemId, decimal amount, RefundMethod method, string idempotencyKey)
-    {
-        var result = await _refunds.CreateAsync(id, returnRequestItemId, amount, method, idempotencyKey, AdminId);
-        TempData[result.Success ? "Success" : "Error"] = result.Success ? "Đã tạo khoản hoàn tiền." : result.Error;
-        return RedirectToAction(nameof(Detail), new { id });
-    }
-
-    [HttpPost, ValidateAntiForgeryToken, RequirePermission("returns.refund")]
     public async Task<IActionResult> ConfirmRefund(int id, int returnRequestId, string transactionReference, IFormFile transferEvidence)
     {
         if (transferEvidence == null) TempData["Error"] = "Cần tải bằng chứng chuyển tiền.";
