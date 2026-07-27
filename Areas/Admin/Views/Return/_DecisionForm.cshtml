@@ -1,7 +1,7 @@
 @using Fruitables.Helpers
 @using Fruitables.Models.Returns
 @model ReturnRequest
-<form asp-area="Admin" asp-controller="Return" asp-action="Decide" method="post" class="rt-panel mb-3">
+<form asp-area="Admin" asp-controller="Return" asp-action="Decide" method="post" class="rt-panel mb-3" data-decision-form>
     @Html.AntiForgeryToken()
     <input type="hidden" name="ReturnRequestId" value="@Model.Id" />
     <input type="hidden" name="RowVersion" value="@(Model.RowVersion == null ? "" : Convert.ToBase64String(Model.RowVersion))" />
@@ -13,9 +13,8 @@
             <input type="hidden" name="Items[@i].ReturnRequestItemId" value="@item.Id" />
             <div class="rt-action">
                 <div class="row g-3 align-items-end">
-                    <div class="col-lg-5"><div class="fw-bold">@item.OrderItem.ProductName</div><div class="small text-muted mt-1">Khách yêu cầu @item.RequestedQuantity · Hạn mức @item.RequestedAmount.ToString("N0")₫</div></div>
-                    <div class="col-lg-3"><label class="form-label">Số lượng được duyệt</label><input class="form-control" type="number" min="0" max="@item.RequestedQuantity" name="Items[@i].ApprovedQuantity" value="@item.RequestedQuantity" required /></div>
-                    <div class="col-lg-4"><label class="form-label">Phương án xử lý</label><select class="form-select" name="Items[@i].Resolution">@foreach (var resolution in new[] { ReturnResolutionType.PartialRefund, ReturnResolutionType.FullRefund, ReturnResolutionType.Replacement, ReturnResolutionType.StoreCredit }) { <option value="@resolution">@ReturnDisplay.Text(resolution)</option> }</select></div>
+                    <div class="col-lg-7"><div class="fw-bold">@item.OrderItem.ProductName</div><div class="small text-muted mt-1">Khách yêu cầu @item.RequestedQuantity · Hạn mức tối đa do hệ thống tính: @item.RequestedAmount.ToString("N0")₫</div></div>
+                    <div class="col-lg-5"><label class="form-label">Số lượng được duyệt</label><input class="form-control" type="number" min="0" max="@item.RequestedQuantity" name="Items[@i].ApprovedQuantity" value="@item.RequestedQuantity" required data-decision-qty /></div>
                 </div>
             </div>
         }
@@ -24,6 +23,20 @@
             <div class="col-md-6"><div class="form-check"><input class="form-check-input" type="checkbox" name="MerchantFault" value="true" id="merchantFault" /><label class="form-check-label" for="merchantFault">Lỗi thuộc cửa hàng hoặc đơn vị vận chuyển</label></div></div>
             <div class="col-md-6"><div class="form-check"><input class="form-check-input" type="checkbox" name="ApproveShippingFee" value="true" id="shippingFee" /><label class="form-check-label" for="shippingFee">Đề xuất hoàn phí vận chuyển</label></div></div>
         </div>
-        <div class="d-flex justify-content-end mt-3"><button class="btn btn-rt-primary px-4" type="submit"><i class="fas fa-check me-2"></i>Lưu quyết định</button></div>
+        <div class="d-flex justify-content-end mt-3"><button class="btn btn-rt-primary px-4" type="submit" data-decision-submit><i class="fas fa-check me-2"></i>Duyệt và chuyển Finance</button></div>
     </div>
 </form>
+<script>
+(() => {
+    const form = document.currentScript?.previousElementSibling;
+    if (!(form instanceof HTMLFormElement)) return;
+    const button = form.querySelector('[data-decision-submit]');
+    const inputs = form.querySelectorAll('[data-decision-qty]');
+    const sync = () => {
+        const hasApproved = Array.from(inputs).some(input => Number(input.value || 0) > 0);
+        button.childNodes[button.childNodes.length - 1].textContent = hasApproved ? 'Duyệt và chuyển Finance' : 'Từ chối';
+    };
+    inputs.forEach(input => input.addEventListener('input', sync));
+    sync();
+})();
+</script>

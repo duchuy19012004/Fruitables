@@ -259,6 +259,32 @@ public class ReturnModuleTests
     }
 
     [Fact]
+    public async Task ReturnQueueBucket_SeparatesActionableCskhWork()
+    {
+        await using var db = CreateContext();
+        var graph = SeedOrder(db);
+        var policy = Policy(ReturnPolicyScope.Default, ReturnReasonCode.Other, 24, Utc(2026, 7, 1));
+        db.ReturnPolicies.Add(policy);
+        var submitted = ApprovedRequest(graph, policy, 1, 100m);
+        submitted.Status = ReturnRequestStatus.Submitted;
+        submitted.ReturnNumber = "RT-SUBMITTED";
+        var waiting = ApprovedRequest(graph, policy, 1, 100m);
+        waiting.Status = ReturnRequestStatus.AwaitingEvidence;
+        waiting.ReturnNumber = "RT-WAITING";
+        db.ReturnRequests.AddRange(submitted, waiting);
+        await db.SaveChangesAsync();
+
+        var service = Returns(db, new MutableTimeProvider(Utc(2026, 7, 27)));
+        var intake = await service.GetQueueAsync(new ReturnQueueFilter
+        {
+            Bucket = ReturnQueueBucket.Intake
+        });
+
+        Assert.Contains(intake, x => x.ReturnNumber == "RT-SUBMITTED");
+        Assert.DoesNotContain(intake, x => x.ReturnNumber == "RT-WAITING");
+    }
+
+    [Fact]
     public async Task Decision_PartialApproval_CreatesOneAggregateRefund()
     {
         await using var db = CreateContext();

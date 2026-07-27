@@ -47,8 +47,17 @@ public class ReturnDecisionItemViewModel
     [Range(0, int.MaxValue)] public int ApprovedQuantity { get; set; }
 }
 
+public enum ReturnQueueBucket
+{
+    Intake,
+    WaitingCustomer,
+    Reviewing,
+    Completed
+}
+
 public class ReturnQueueFilter
 {
+    public ReturnQueueBucket? Bucket { get; set; }
     public ReturnRequestStatus? Status { get; set; }
     public ReturnReasonCode? Reason { get; set; }
     public string? Search { get; set; }

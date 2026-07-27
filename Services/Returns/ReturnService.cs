@@ -127,6 +127,20 @@ public class ReturnService : IReturnService
     public Task<List<ReturnRequest>> GetQueueAsync(ReturnQueueFilter filter, CancellationToken cancellationToken = default)
     {
         var query = _db.ReturnRequests.AsNoTracking().Include(x => x.User).Include(x => x.Order).Include(x => x.Items).ThenInclude(x => x.OrderItem).AsQueryable();
+        query = filter.Bucket switch
+        {
+            ReturnQueueBucket.Intake => query.Where(x => x.Status == ReturnRequestStatus.Submitted),
+            ReturnQueueBucket.WaitingCustomer => query.Where(x => x.Status == ReturnRequestStatus.AwaitingEvidence),
+            ReturnQueueBucket.Reviewing => query.Where(x => x.Status == ReturnRequestStatus.UnderReview),
+            ReturnQueueBucket.Completed => query.Where(x =>
+                x.Status == ReturnRequestStatus.Rejected ||
+                x.Status == ReturnRequestStatus.ResolutionPending ||
+                x.Status == ReturnRequestStatus.ResolutionFailed ||
+                x.Status == ReturnRequestStatus.Resolved ||
+                x.Status == ReturnRequestStatus.Cancelled ||
+                x.Status == ReturnRequestStatus.Expired),
+            _ => query
+        };
         if (filter.Status.HasValue) query = query.Where(x => x.Status == filter.Status);
         if (filter.Reason.HasValue) query = query.Where(x => x.Items.Any(i => i.Reason == filter.Reason));
         if (filter.FromUtc.HasValue) query = query.Where(x => x.SubmittedAtUtc >= filter.FromUtc);

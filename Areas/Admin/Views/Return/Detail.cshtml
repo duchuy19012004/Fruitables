@@ -71,45 +71,7 @@
             {
                 <section class="rt-panel">
                     <div class="rt-panel-head"><h2>Lịch sử hoàn tiền</h2></div>
-                    <div class="table-responsive"><table class="table rt-table"><thead><tr><th>Sản phẩm</th><th>Số tiền</th><th>Phương thức</th><th>Trạng thái</th><th>Mã giao dịch</th></tr></thead><tbody>@foreach (var refund in Model.Refunds.OrderByDescending(x => x.CreatedAtUtc)) { <tr><td>@(refund.ReturnRequestItem?.OrderItem?.ProductName ?? "Theo yêu cầu")</td><td class="fw-bold">@refund.Amount.ToString("N0")₫</td><td>@ReturnDisplay.Text(refund.Method)</td><td>@ReturnDisplay.Text(refund.Status)</td><td>@(refund.TransactionReference ?? "Chưa có")</td></tr> }</tbody></table></div>
-                </section>
-            }
-
-            @if (Model.Status is ReturnRequestStatus.Approved or ReturnRequestStatus.PartiallyApproved or ReturnRequestStatus.ResolutionFailed)
-            {
-                <section class="rt-panel">
-                    <div class="rt-panel-head"><h2>Tạo khoản hoàn tiền</h2><span class="small text-muted">Tạo riêng theo từng sản phẩm đã duyệt</span></div>
-                    <div class="rt-panel-body">
-                    @foreach (var approvedItem in Model.Items.Where(x => x.ApprovedAmount > 0))
-                    {
-                        <form asp-action="CreateRefund" method="post" class="rt-action">
-                            @Html.AntiForgeryToken()
-                            <input type="hidden" name="id" value="@Model.Id" /><input type="hidden" name="returnRequestItemId" value="@approvedItem.Id" /><input type="hidden" name="idempotencyKey" value="@Guid.NewGuid().ToString("N")" />
-                            <h3 class="rt-action-title">@approvedItem.OrderItem.ProductName</h3>
-                            <div class="row g-3 align-items-end"><div class="col-md-4"><label class="form-label">Số tiền</label><div class="input-group"><input class="form-control" type="number" name="amount" min="1" max="@approvedItem.ApprovedAmount" value="@approvedItem.ApprovedAmount" required /><span class="input-group-text">₫</span></div></div><div class="col-md-5"><label class="form-label">Phương thức</label><select class="form-select" name="method"><option value="ManualBankTransfer">Chuyển khoản thủ công</option><option value="StoreCredit">Cộng số dư cửa hàng</option></select></div><div class="col-md-3"><button class="btn btn-rt-primary w-100" type="submit">Tạo khoản hoàn</button></div></div>
-                        </form>
-                    }
-                    @if (Model.ShippingFeeApproved && Model.Order.ShippingFee > 0)
-                    {
-                        <form asp-action="CreateRefund" method="post" class="rt-action">
-                            @Html.AntiForgeryToken()
-                            <input type="hidden" name="id" value="@Model.Id" /><input type="hidden" name="returnRequestItemId" value="0" /><input type="hidden" name="idempotencyKey" value="@Guid.NewGuid().ToString("N")" />
-                            <h3 class="rt-action-title">Phí vận chuyển</h3>
-                            <div class="row g-3 align-items-end"><div class="col-md-4"><label class="form-label">Số tiền</label><div class="input-group"><input class="form-control" type="number" name="amount" min="1" max="@Model.Order.ShippingFee" value="@Model.Order.ShippingFee" required /><span class="input-group-text">₫</span></div></div><div class="col-md-5"><label class="form-label">Phương thức</label><select class="form-select" name="method"><option value="ManualBankTransfer">Chuyển khoản thủ công</option><option value="StoreCredit">Cộng số dư cửa hàng</option></select></div><div class="col-md-3"><button class="btn btn-rt-primary w-100" type="submit">Tạo khoản hoàn</button></div></div>
-                        </form>
-                    }
-                    </div>
-                </section>
-            }
-
-            @foreach (var refund in Model.Refunds.Where(x => x.Status != RefundStatus.Succeeded && x.Method == RefundMethod.ManualBankTransfer))
-            {
-                <section class="rt-panel">
-                    <div class="rt-panel-head"><h2>Xác nhận đã chuyển tiền</h2><span class="rt-badge rt-badge-warning">@refund.Amount.ToString("N0")₫</span></div>
-                    <form asp-action="ConfirmRefund" method="post" enctype="multipart/form-data" class="rt-panel-body">
-                        @Html.AntiForgeryToken()<input type="hidden" name="id" value="@refund.Id" /><input type="hidden" name="returnRequestId" value="@Model.Id" />
-                        <div class="row g-3 align-items-end"><div class="col-md-5"><label class="form-label">Mã giao dịch</label><input class="form-control" name="transactionReference" maxlength="128" required /></div><div class="col-md-5"><label class="form-label">Bằng chứng chuyển tiền</label><input class="form-control" type="file" name="transferEvidence" accept=".jpg,.jpeg,.png,.webp" required /></div><div class="col-md-2"><button class="btn btn-rt-primary w-100" type="submit">Xác nhận</button></div></div>
-                    </form>
+                    <div class="table-responsive"><table class="table rt-table"><thead><tr><th>Sản phẩm</th><th>Số tiền</th><th>Phương thức</th><th>Trạng thái</th><th>Thông tin nhận tiền</th><th>Mã giao dịch</th></tr></thead><tbody>@foreach (var refund in Model.Refunds.OrderByDescending(x => x.CreatedAtUtc)) { <tr><td>@(refund.ReturnRequestItem?.OrderItem?.ProductName ?? "Theo yêu cầu")</td><td class="fw-bold">@refund.Amount.ToString("N0")₫</td><td>@ReturnDisplay.Text(refund.Method)</td><td>@ReturnDisplay.Text(refund.Status)</td><td>@(string.IsNullOrWhiteSpace(refund.DestinationBankCode) || string.IsNullOrWhiteSpace(refund.DestinationAccountLast4) ? "Chưa có" : $"{refund.DestinationBankCode} ••••{refund.DestinationAccountLast4}")</td><td>@(refund.TransactionReference ?? "Chưa có")</td></tr> }</tbody></table></div>
                 </section>
             }
         </div>
@@ -119,10 +81,9 @@
             {
                 <section class="rt-panel"><div class="rt-panel-head"><h2>Tiếp nhận yêu cầu</h2></div><div class="rt-panel-body"><form asp-action="StartReview" method="post" class="mb-3">@Html.AntiForgeryToken()<input type="hidden" name="id" value="@Model.Id" /><input type="hidden" name="rowVersion" value="@version" /><button class="btn btn-rt-primary w-100" type="submit"><i class="fas fa-search me-2"></i>Bắt đầu thẩm định</button></form><form asp-action="RequestEvidence" method="post">@Html.AntiForgeryToken()<input type="hidden" name="id" value="@Model.Id" /><input type="hidden" name="rowVersion" value="@version" /><label class="form-label">Nội dung cần bổ sung</label><textarea class="form-control mb-2" name="note" rows="3" required></textarea><button class="btn btn-rt-soft w-100" type="submit">Yêu cầu thêm bằng chứng</button></form></div></section>
             }
-
-            @foreach (var approvedItem in Model.Items.Where(x => x.ApprovedQuantity > 0))
+            else if (Model.Status is ReturnRequestStatus.ResolutionPending or ReturnRequestStatus.ResolutionFailed or ReturnRequestStatus.Resolved)
             {
-                <section class="rt-panel"><div class="rt-panel-head"><h2>Xử lý hàng sau khiếu nại</h2></div><form asp-action="RecordDisposition" method="post" class="rt-panel-body">@Html.AntiForgeryToken()<input type="hidden" name="returnRequestId" value="@Model.Id" /><input type="hidden" name="returnItemId" value="@approvedItem.Id" /><div class="small fw-bold mb-3">@approvedItem.OrderItem.ProductName</div><div class="mb-3"><label class="form-label">Số lượng</label><input class="form-control" type="number" name="quantity" min="1" max="@approvedItem.ApprovedQuantity" value="@approvedItem.ApprovedQuantity" required /></div><div class="mb-3"><label class="form-label">Hướng xử lý</label><select class="form-select" name="disposition">@foreach (var value in Enum.GetValues<InventoryDispositionType>()) { <option value="@value">@ReturnDisplay.Text(value)</option> }</select></div><div class="mb-3"><label class="form-label">Ghi chú kiểm định</label><textarea class="form-control" name="notes" rows="3" required></textarea></div><button class="btn btn-rt-soft w-100" type="submit">Ghi nhận xử lý hàng</button></form></section>
+                <section class="rt-panel"><div class="rt-panel-head"><h2>Trạng thái xử lý</h2></div><div class="rt-panel-body"><div class="alert alert-info mb-0" role="status">Đã chuyển sang hàng đợi Finance</div></div></section>
             }
 
             <section class="rt-panel"><div class="rt-panel-head"><h2>Lịch sử xử lý</h2></div><div class="rt-panel-body"><partial name="_StatusTimeline" model="Model.Events" /></div></section>

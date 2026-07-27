@@ -15,20 +15,19 @@ namespace Fruitables.Areas.Admin.Controllers;
 public class ReturnController : Controller
 {
     private readonly IReturnService _returns;
-    private readonly IRefundService _refunds;
-    private readonly IReturnEvidenceService _evidence;
-    private readonly IReturnDispositionService _dispositions;
     private readonly IRbacService _rbac;
     private readonly ApplicationDbContext _db;
-    public ReturnController(IReturnService returns, IRefundService refunds, IReturnEvidenceService evidence, IReturnDispositionService dispositions, IRbacService rbac, ApplicationDbContext db)
-    { _returns = returns; _refunds = refunds; _evidence = evidence; _dispositions = dispositions; _rbac = rbac; _db = db; }
+    public ReturnController(IReturnService returns, IRbacService rbac, ApplicationDbContext db)
+    { _returns = returns; _rbac = rbac; _db = db; }
 
     [RequirePermission("returns.view")]
     public async Task<IActionResult> Index(ReturnQueueFilter filter)
     {
+        filter.Bucket ??= ReturnQueueBucket.Intake;
         ViewBag.Filter = filter;
         var query = new ReturnQueueFilter
         {
+            Bucket = filter.Bucket,
             Status = filter.Status,
             Reason = filter.Reason,
             Search = filter.Search,
@@ -75,39 +74,6 @@ public class ReturnController : Controller
         if (!await _rbac.HasPermissionAsync(AdminId, permission)) return Forbid();
         SetResult(await _returns.DecideAsync(AdminId, model));
         return RedirectToAction(nameof(Detail), new { id = model.ReturnRequestId });
-    }
-
-    [HttpPost, ValidateAntiForgeryToken, RequirePermission("returns.refund")]
-    public async Task<IActionResult> ConfirmRefund(int id, int returnRequestId, string transactionReference, IFormFile transferEvidence)
-    {
-        if (transferEvidence == null) TempData["Error"] = "Cần tải bằng chứng chuyển tiền.";
-        else
-        {
-            var upload = await _evidence.UploadAsync(returnRequestId, null, AdminId, transferEvidence, true);
-            if (!upload.Success) TempData["Error"] = upload.Error;
-            else
-            {
-                var result = await _refunds.ConfirmManualAsync(id, transactionReference, upload.Evidence!.StorageKey, AdminId);
-                TempData[result.Success ? "Success" : "Error"] = result.Success ? "Đã xác nhận hoàn tiền." : result.Error;
-            }
-        }
-        return RedirectToAction(nameof(Detail), new { id = returnRequestId });
-    }
-
-    [HttpPost, ValidateAntiForgeryToken, RequirePermission("returns.approve")]
-    public async Task<IActionResult> UpdateResolution(int id, ReturnRequestStatus target, string note, string rowVersion)
-    {
-        SetResult(await _returns.UpdateResolutionAsync(id, AdminId, target, note, Decode(rowVersion)));
-        return RedirectToAction(nameof(Detail), new { id });
-    }
-
-    [HttpPost, ValidateAntiForgeryToken, RequirePermission("returns.review")]
-    public async Task<IActionResult> RecordDisposition(int returnRequestId, int returnItemId, int quantity, InventoryDispositionType disposition, string notes)
-    {
-        var canOverride = await _rbac.HasPermissionAsync(AdminId, "returns.override_policy");
-        var result = await _dispositions.RecordAsync(returnItemId, quantity, disposition, AdminId, notes, canOverride);
-        TempData[result.Success ? "Success" : "Error"] = result.Success ? "Đã ghi nhận disposition." : result.Error;
-        return RedirectToAction(nameof(Detail), new { id = returnRequestId });
     }
 
     private int AdminId => int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);

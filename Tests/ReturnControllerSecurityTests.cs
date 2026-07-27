@@ -97,6 +97,10 @@ public class ReturnControllerSecurityTests
             .Where(x => x.Name is not nameof(AdminReturnController.Index) and not nameof(AdminReturnController.Detail))
             .Where(x => x.GetCustomAttribute<HttpPostAttribute>() != null);
         Assert.All(sensitive, method => Assert.NotEmpty(method.GetCustomAttributes<RequirePermissionAttribute>()));
+        Assert.Null(typeof(AdminReturnController).GetMethod("CreateRefund"));
+        Assert.Null(typeof(AdminReturnController).GetMethod("ConfirmRefund"));
+        Assert.Null(typeof(AdminReturnController).GetMethod("UpdateResolution"));
+        Assert.Null(typeof(AdminReturnController).GetMethod("RecordDisposition"));
     }
 
     [Fact]
