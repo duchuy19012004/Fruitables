@@ -46,12 +46,16 @@ public class ReturnSqlServerIntegrationTests
         var snapshot = await read.ReturnRequests.AsNoTracking().Include(x => x.Items).SingleAsync(x => x.Id == seed.ReturnRequestId);
         var encoded = Convert.ToBase64String(snapshot.RowVersion!);
         var itemId = snapshot.Items.Single().Id;
-        ReturnDecisionViewModel Decision(string reason) => new() { ReturnRequestId = snapshot.Id, RowVersion = encoded, Reason = reason, Items = { new ReturnDecisionItemViewModel { ReturnRequestItemId = itemId, ApprovedQuantity = 1, Resolution = ReturnResolutionType.PartialRefund } } };
+        ReturnDecisionViewModel Decision(string reason) => new() { ReturnRequestId = snapshot.Id, RowVersion = encoded, Reason = reason, Items = { new ReturnDecisionItemViewModel { ReturnRequestItemId = itemId, ApprovedQuantity = 1 } } };
         await using var db1 = new ApplicationDbContext(database.Options);
         await using var db2 = new ApplicationDbContext(database.Options);
         var results = await Task.WhenAll(Returns(db1).DecideAsync(1, Decision("Duyệt bởi nhân viên A")), Returns(db2).DecideAsync(2, Decision("Duyệt bởi nhân viên B")));
         Assert.Single(results.Where(x => x.Success));
         Assert.Single(results.Where(x => x.IsConcurrencyConflict));
+        await using var verify = new ApplicationDbContext(database.Options);
+        Assert.Single(await verify.Refunds
+            .Where(x => x.ReturnRequestId == snapshot.Id && x.ReturnRequestItemId == null)
+            .ToListAsync());
     }
 
     [SqlServerFact]
@@ -106,7 +110,7 @@ public class ReturnSqlServerIntegrationTests
     }
 
     private static ReturnService Returns(ApplicationDbContext db) => new(db, new ReturnEligibilityService(db, new ReturnPolicyService(db), TimeProvider.System), new RefundAmountCalculator(db), TimeProvider.System);
-    private static ReturnSubmitViewModel Submit(Seed seed, string key) => new() { OrderId = seed.OrderId, IdempotencyKey = key, Items = { new ReturnSubmitItemViewModel { Selected = true, OrderItemId = seed.OrderItemId, Quantity = 1, Reason = ReturnReasonCode.Other, RequestedResolution = ReturnResolutionType.PartialRefund, Description = "Sản phẩm không đạt chất lượng" } } };
+    private static ReturnSubmitViewModel Submit(Seed seed, string key) => new() { OrderId = seed.OrderId, IdempotencyKey = key, Items = { new ReturnSubmitItemViewModel { Selected = true, OrderItemId = seed.OrderItemId, Quantity = 1, Reason = ReturnReasonCode.Other, Description = "Sản phẩm không đạt chất lượng" } } };
     private static Refund Refund(Seed seed, string key, string reference) => new() { ReturnRequestId = seed.ReturnRequestId, ReturnRequestItemId = seed.ReturnRequestItemId, OrderId = seed.OrderId, Amount = 10, Method = RefundMethod.ManualBankTransfer, Status = RefundStatus.Succeeded, IdempotencyKey = key, TransactionReference = reference, CreatedByUserId = 1, ProcessedByUserId = 2, CreatedAtUtc = DateTime.UtcNow, ProcessedAtUtc = DateTime.UtcNow };
 
     private static async Task<Seed> SeedAsync(DbContextOptions<ApplicationDbContext> options, int quantity, bool createReturn = false)
@@ -124,7 +128,7 @@ public class ReturnSqlServerIntegrationTests
         ReturnRequest? request = null;
         if (createReturn)
         {
-            request = new ReturnRequest { ReturnNumber = $"RT{Guid.NewGuid():N}"[..24], IdempotencyKey = Guid.NewGuid().ToString("N"), OrderId = order.Id, UserId = customer.Id, Status = ReturnRequestStatus.UnderReview, SubmittedAtUtc = DateTime.UtcNow, ClaimDeadlineAtUtc = DateTime.UtcNow.AddHours(23), ReviewDueAtUtc = DateTime.UtcNow.AddHours(24), Items = { new ReturnRequestItem { OrderItemId = orderItem.Id, ReturnPolicyId = policy.Id, RequestedQuantity = quantity, Reason = ReturnReasonCode.Other, RequestedResolution = ReturnResolutionType.PartialRefund, Description = "SQL quality issue", NetPaidAmountSnapshot = 10 * quantity, RequestedAmount = 10 * quantity, PolicyVersionSnapshot = policy.Version, ClaimWindowHoursSnapshot = 24, ClaimDeadlineAtUtcSnapshot = DateTime.UtcNow.AddHours(23) } } };
+            request = new ReturnRequest { ReturnNumber = $"RT{Guid.NewGuid():N}"[..24], IdempotencyKey = Guid.NewGuid().ToString("N"), OrderId = order.Id, UserId = customer.Id, Status = ReturnRequestStatus.UnderReview, SubmittedAtUtc = DateTime.UtcNow, ClaimDeadlineAtUtc = DateTime.UtcNow.AddHours(23), ReviewDueAtUtc = DateTime.UtcNow.AddHours(24), Items = { new ReturnRequestItem { OrderItemId = orderItem.Id, ReturnPolicyId = policy.Id, RequestedQuantity = quantity, Reason = ReturnReasonCode.Other, Description = "SQL quality issue", NetPaidAmountSnapshot = 10 * quantity, RequestedAmount = 10 * quantity, PolicyVersionSnapshot = policy.Version, ClaimWindowHoursSnapshot = 24, ClaimDeadlineAtUtcSnapshot = DateTime.UtcNow.AddHours(23) } } };
             db.ReturnRequests.Add(request);
             await db.SaveChangesAsync();
         }

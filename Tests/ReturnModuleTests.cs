@@ -140,6 +140,7 @@ public class ReturnModuleTests
         var first = await service.SubmitAsync(graph.Customer.Id, Submit(graph, "same-key", 2));
         var retry = await service.SubmitAsync(graph.Customer.Id, Submit(graph, "same-key", 2));
         Assert.True(first.Success); Assert.Equal(first.Request!.Id, retry.Request!.Id);
+        Assert.All(first.Request.Items, item => Assert.Equal(ReturnResolutionType.None, item.RequestedResolution));
         var exceeded = await service.SubmitAsync(graph.Customer.Id, Submit(graph, "other-key", 2));
         Assert.False(exceeded.Success);
         var remaining = await service.SubmitAsync(graph.Customer.Id, Submit(graph, "last-key", 1));
@@ -183,7 +184,7 @@ public class ReturnModuleTests
     }
 
     [Fact]
-    public async Task Decision_PartialApproval_RecalculatesAmountAndWritesEvent()
+    public async Task Decision_PartialApproval_CreatesOneAggregateRefund()
     {
         await using var db = CreateContext();
         var graph = SeedOrder(db, quantity: 3, itemTotal: 90m);
@@ -192,11 +193,30 @@ public class ReturnModuleTests
         var clock = new MutableTimeProvider(graph.Order.DeliveredAtUtc!.Value.AddHours(1));
         var service = Returns(db, clock);
         var submitted = (await service.SubmitAsync(graph.Customer.Id, Submit(graph, "partial", 3))).Request!;
-        Assert.True((await service.StartReviewAsync(submitted.Id, graph.Admin.Id, Array.Empty<byte>())).Success);
-        var decision = await service.DecideAsync(graph.Admin.Id, new ReturnDecisionViewModel { ReturnRequestId = submitted.Id, Reason = "Một sản phẩm còn sử dụng được", Items = { new ReturnDecisionItemViewModel { ReturnRequestItemId = submitted.Items.Single().Id, ApprovedQuantity = 2, Resolution = ReturnResolutionType.PartialRefund } } });
-        Assert.True(decision.Success); Assert.Equal(ReturnRequestStatus.PartiallyApproved, decision.Request!.Status);
-        Assert.Equal(60m, decision.Request.Items.Single().ApprovedAmount);
-        Assert.Contains(await db.ReturnEvents.ToListAsync(), x => x.Type == ReturnEventType.PartiallyApproved);
+        await service.StartReviewAsync(submitted.Id, graph.Admin.Id, Array.Empty<byte>());
+
+        var decision = await service.DecideAsync(graph.Admin.Id, new ReturnDecisionViewModel
+        {
+            ReturnRequestId = submitted.Id,
+            Reason = "Một sản phẩm còn sử dụng được",
+            Items =
+            {
+                new ReturnDecisionItemViewModel
+                {
+                    ReturnRequestItemId = submitted.Items.Single().Id,
+                    ApprovedQuantity = 2
+                }
+            }
+        });
+
+        Assert.True(decision.Success);
+        Assert.Equal(ReturnRequestStatus.ResolutionPending, decision.Request!.Status);
+        Assert.Equal(ReturnResolutionType.PartialRefund, decision.Request.Resolution);
+        var refund = Assert.Single(await db.Refunds.Where(x => x.ReturnRequestId == submitted.Id).ToListAsync());
+        Assert.Null(refund.ReturnRequestItemId);
+        Assert.Equal(60m, refund.Amount);
+        Assert.Equal(RefundStatus.AwaitingDestination, refund.Status);
+        Assert.Equal($"return:{submitted.Id}:aggregate-refund", refund.IdempotencyKey);
     }
 
     [Theory]
@@ -230,7 +250,7 @@ public class ReturnModuleTests
         var service = Returns(db, clock);
         var submitted = (await service.SubmitAsync(graph.Customer.Id, Submit(graph, $"shipping-{orderedQuantity}", 1))).Request!;
         await service.StartReviewAsync(submitted.Id, graph.Admin.Id, Array.Empty<byte>());
-        var result = await service.DecideAsync(graph.Admin.Id, new ReturnDecisionViewModel { ReturnRequestId = submitted.Id, MerchantFault = true, ApproveShippingFee = true, Items = { new ReturnDecisionItemViewModel { ReturnRequestItemId = submitted.Items.Single().Id, ApprovedQuantity = 1, Resolution = ReturnResolutionType.PartialRefund } } });
+        var result = await service.DecideAsync(graph.Admin.Id, new ReturnDecisionViewModel { ReturnRequestId = submitted.Id, MerchantFault = true, ApproveShippingFee = true, Items = { new ReturnDecisionItemViewModel { ReturnRequestItemId = submitted.Items.Single().Id, ApprovedQuantity = 1 } } });
         Assert.True(result.Success);
         Assert.Equal(expected, result.Request!.ShippingFeeApproved);
     }
@@ -273,9 +293,9 @@ public class ReturnModuleTests
     private static DateTime Utc(int y, int m, int d) => new(y, m, d, 0, 0, 0, DateTimeKind.Utc);
     private static ReturnEligibilityService Eligibility(ApplicationDbContext db, TimeProvider clock) => new(db, new ReturnPolicyService(db), clock);
     private static ReturnService Returns(ApplicationDbContext db, TimeProvider clock) => new(db, Eligibility(db, clock), new RefundAmountCalculator(db), clock);
-    private static ReturnSubmitViewModel Submit(Graph g, string key, int quantity) => new() { OrderId = g.Order.Id, IdempotencyKey = key, Items = { new ReturnSubmitItemViewModel { Selected = true, OrderItemId = g.Item.Id, Quantity = quantity, Reason = ReturnReasonCode.Other, RequestedResolution = ReturnResolutionType.PartialRefund, Description = "Sản phẩm không đạt chất lượng" } } };
+    private static ReturnSubmitViewModel Submit(Graph g, string key, int quantity) => new() { OrderId = g.Order.Id, IdempotencyKey = key, Items = { new ReturnSubmitItemViewModel { Selected = true, OrderItemId = g.Item.Id, Quantity = quantity, Reason = ReturnReasonCode.Other, Description = "Sản phẩm không đạt chất lượng" } } };
     private static ReturnPolicy Policy(ReturnPolicyScope scope, ReturnReasonCode reason, int hours, DateTime from, int? categoryId = null, int? productId = null, int version = 1) => new() { Name = $"{scope}-{version}-{Guid.NewGuid():N}", Scope = scope, CategoryId = categoryId, ProductId = productId, Reason = reason, ClaimWindowHours = hours, IsEligible = reason != ReturnReasonCode.ChangeOfMind, AllowPartialRefund = true, AllowFullRefund = true, AllowReplacement = true, AllowStoreCredit = true, IsActive = true, Version = version, EffectiveFromUtc = from, CreatedAtUtc = from };
-    private static ReturnRequest ApprovedRequest(Graph g, ReturnPolicy p, int quantity, decimal amount) => new() { ReturnNumber = $"RT{Guid.NewGuid():N}"[..20], IdempotencyKey = Guid.NewGuid().ToString("N"), OrderId = g.Order.Id, UserId = g.Customer.Id, Status = ReturnRequestStatus.Approved, SubmittedAtUtc = Utc(2026, 7, 27), ClaimDeadlineAtUtc = Utc(2026, 7, 28), ReviewDueAtUtc = Utc(2026, 7, 28), Items = { new ReturnRequestItem { OrderItemId = g.Item.Id, ReturnPolicy = p, RequestedQuantity = quantity, ApprovedQuantity = quantity, Reason = ReturnReasonCode.Other, RequestedResolution = ReturnResolutionType.PartialRefund, Description = "quality issue", NetPaidAmountSnapshot = amount, RequestedAmount = amount, ApprovedAmount = amount, PolicyVersionSnapshot = 1, ClaimWindowHoursSnapshot = 24, ClaimDeadlineAtUtcSnapshot = Utc(2026, 7, 28) } } };
+    private static ReturnRequest ApprovedRequest(Graph g, ReturnPolicy p, int quantity, decimal amount) => new() { ReturnNumber = $"RT{Guid.NewGuid():N}"[..20], IdempotencyKey = Guid.NewGuid().ToString("N"), OrderId = g.Order.Id, UserId = g.Customer.Id, Status = ReturnRequestStatus.Approved, SubmittedAtUtc = Utc(2026, 7, 27), ClaimDeadlineAtUtc = Utc(2026, 7, 28), ReviewDueAtUtc = Utc(2026, 7, 28), Items = { new ReturnRequestItem { OrderItemId = g.Item.Id, ReturnPolicy = p, RequestedQuantity = quantity, ApprovedQuantity = quantity, Reason = ReturnReasonCode.Other, Description = "quality issue", NetPaidAmountSnapshot = amount, RequestedAmount = amount, ApprovedAmount = amount, PolicyVersionSnapshot = 1, ClaimWindowHoursSnapshot = 24, ClaimDeadlineAtUtcSnapshot = Utc(2026, 7, 28) } } };
 
     private static Graph SeedOrder(ApplicationDbContext db, DateTime? delivered = null, int quantity = 1, decimal itemTotal = 100m)
     {

@@ -19,7 +19,6 @@ public class ReturnSubmitItemViewModel
     public int OrderItemId { get; set; }
     [Range(0, int.MaxValue)] public int Quantity { get; set; }
     public ReturnReasonCode Reason { get; set; }
-    public ReturnResolutionType RequestedResolution { get; set; }
     [StringLength(1000)] public string Description { get; set; } = string.Empty;
 }
 
@@ -37,7 +36,6 @@ public class ReturnDecisionItemViewModel
 {
     public int ReturnRequestItemId { get; set; }
     [Range(0, int.MaxValue)] public int ApprovedQuantity { get; set; }
-    public ReturnResolutionType Resolution { get; set; }
 }
 
 public class ReturnQueueFilter

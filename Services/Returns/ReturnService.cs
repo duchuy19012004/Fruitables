@@ -70,7 +70,7 @@ public class ReturnService : IReturnService
                 if (!check.Eligible || check.Policy == null) return ReturnResult.Fail(check.Error ?? "Sản phẩm không đủ điều kiện.");
                 if (input.Quantity > check.RemainingQuantity) return ReturnResult.Fail("Số lượng yêu cầu vượt quá số lượng còn có thể khiếu nại.");
                 if (check.EvidenceRequired && (model.EvidenceFiles?.Count ?? 0) == 0) return ReturnResult.Fail("Lý do đã chọn yêu cầu ít nhất một ảnh hoặc video.");
-                if (!ResolutionAllowed(check.Policy, input.RequestedResolution)) return ReturnResult.Fail("Phương án xử lý không được chính sách hỗ trợ.");
+                if (!check.Policy.AllowPartialRefund && !check.Policy.AllowFullRefund) return ReturnResult.Fail("Lý do này không hỗ trợ hoàn tiền.");
                 var amount = await _calculator.CalculateAsync(input.OrderItemId, input.Quantity, cancellationToken);
                 request.Items.Add(new ReturnRequestItem
                 {
@@ -78,7 +78,7 @@ public class ReturnService : IReturnService
                     ReturnPolicyId = check.Policy.Id,
                     RequestedQuantity = input.Quantity,
                     Reason = input.Reason,
-                    RequestedResolution = input.RequestedResolution,
+                    RequestedResolution = ReturnResolutionType.None,
                     Description = input.Description.Trim(),
                     NetPaidAmountSnapshot = amount.NetPaidAmount,
                     RequestedAmount = amount.RefundableAmount,
@@ -155,14 +155,74 @@ public class ReturnService : IReturnService
             item.ApprovedAmount = decision.ApprovedQuantity == 0 ? 0 : (await _calculator.CalculateAsync(item.OrderItemId, decision.ApprovedQuantity, cancellationToken)).RefundableAmount;
         }
         if ((changed || request.Items.All(x => x.ApprovedQuantity == 0)) && string.IsNullOrWhiteSpace(model.Reason)) return ReturnResult.Fail("Bắt buộc nhập lý do khi duyệt một phần hoặc từ chối.");
-        var target = request.Items.All(x => x.ApprovedQuantity == 0) ? ReturnRequestStatus.Rejected : request.Items.All(x => x.ApprovedQuantity == x.RequestedQuantity) ? ReturnRequestStatus.Approved : ReturnRequestStatus.PartiallyApproved;
+        var decisionStatus = request.Items.All(x => x.ApprovedQuantity == 0) ? ReturnRequestStatus.Rejected : request.Items.All(x => x.ApprovedQuantity == x.RequestedQuantity) ? ReturnRequestStatus.Approved : ReturnRequestStatus.PartiallyApproved;
         request.DecisionReason = model.Reason?.Trim();
         request.MerchantFault = model.MerchantFault;
         request.ShippingFeeApproved = model.MerchantFault && model.ApproveShippingFee && request.Items.Sum(x => x.ApprovedQuantity) == request.Order.Items.Sum(x => x.Quantity);
         request.ReviewerId = adminId;
         request.ReviewedAtUtc = _clock.GetUtcNow().UtcDateTime;
-        request.Resolution = target == ReturnRequestStatus.Rejected ? ReturnResolutionType.Reject : model.Items.First(x => x.ApprovedQuantity > 0).Resolution;
-        return await SaveTransitionAsync(request, adminId, target, target == ReturnRequestStatus.Rejected ? ReturnEventType.Rejected : target == ReturnRequestStatus.Approved ? ReturnEventType.Approved : ReturnEventType.PartiallyApproved, model.Reason, cancellationToken);
+        if (decisionStatus == ReturnRequestStatus.Rejected)
+        {
+            request.Resolution = ReturnResolutionType.Reject;
+            return await SaveTransitionAsync(request, adminId, decisionStatus, ReturnEventType.Rejected, model.Reason, cancellationToken);
+        }
+
+        var aggregateAmount = request.Items.Sum(x => x.ApprovedAmount)
+            + (request.ShippingFeeApproved ? request.Order.ShippingFee : 0m);
+        var succeededForOrder = (await _db.Refunds
+            .Where(x => x.OrderId == request.OrderId && x.Status == RefundStatus.Succeeded)
+            .Select(x => x.Amount)
+            .ToListAsync(cancellationToken)).Sum();
+        var remainingOrderAmount = Math.Max(0m, request.Order.Total - succeededForOrder);
+        if (aggregateAmount > remainingOrderAmount)
+            return ReturnResult.Fail("Số tiền hoàn vượt số tiền còn có thể hoàn của đơn hàng.");
+
+        request.Resolution = aggregateAmount == remainingOrderAmount
+            ? ReturnResolutionType.FullRefund
+            : ReturnResolutionType.PartialRefund;
+        var refundKey = $"return:{request.Id}:aggregate-refund";
+        var refund = await _db.Refunds.SingleOrDefaultAsync(x => x.IdempotencyKey == refundKey, cancellationToken);
+        if (refund == null)
+        {
+            refund = new Refund
+            {
+                ReturnRequestId = request.Id,
+                ReturnRequestItemId = null,
+                OrderId = request.OrderId,
+                Amount = aggregateAmount,
+                Method = RefundMethod.ManualBankTransfer,
+                Status = RefundStatus.AwaitingDestination,
+                IdempotencyKey = refundKey,
+                CreatedByUserId = adminId,
+                CreatedAtUtc = _clock.GetUtcNow().UtcDateTime
+            };
+            _db.Refunds.Add(refund);
+        }
+
+        var now = _clock.GetUtcNow().UtcDateTime;
+        request.Status = ReturnRequestStatus.ResolutionPending;
+        var decisionType = decisionStatus == ReturnRequestStatus.Approved ? ReturnEventType.Approved : ReturnEventType.PartiallyApproved;
+        _db.ReturnEvents.Add(NewEvent(decisionType, ReturnRequestStatus.UnderReview, decisionStatus, adminId, model.Reason, now, request.Id));
+        _db.ReturnEvents.Add(NewEvent(ReturnEventType.RefundCreated, decisionStatus, ReturnRequestStatus.ResolutionPending, adminId, $"Tạo khoản hoàn {aggregateAmount:N0}₫.", now, request.Id));
+        await _outbox.EnqueueAsync(
+            OutboxMessageTypes.ReturnStatusChanged,
+            new { returnRequestId = request.Id, fromStatus = ReturnRequestStatus.UnderReview.ToString(), toStatus = decisionStatus.ToString(), actorUserId = adminId },
+            $"return:{request.Id}:status:{decisionStatus}:{Guid.NewGuid():N}",
+            cancellationToken);
+        await _outbox.EnqueueAsync(
+            OutboxMessageTypes.RefundCreated,
+            new { returnRequestId = request.Id, orderId = request.OrderId, amount = aggregateAmount, method = refund.Method.ToString(), refundIdempotencyKey = refundKey },
+            $"refund:{refundKey}:created",
+            cancellationToken);
+        try
+        {
+            await _db.SaveChangesAsync(cancellationToken);
+            return ReturnResult.Ok(request);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return ReturnResult.Fail("Yêu cầu đã được nhân viên khác cập nhật. Vui lòng tải lại.", true);
+        }
     }
 
     public async Task<ReturnResult> CancelAsync(int id, int userId, CancellationToken cancellationToken = default)
@@ -224,6 +284,5 @@ public class ReturnService : IReturnService
         try { await transaction.RollbackAsync(cancellationToken); }
         catch (InvalidOperationException) { }
     }
-    private static bool ResolutionAllowed(ReturnPolicy p, ReturnResolutionType r) => r switch { ReturnResolutionType.PartialRefund => p.AllowPartialRefund, ReturnResolutionType.FullRefund => p.AllowFullRefund, ReturnResolutionType.Replacement => p.AllowReplacement, ReturnResolutionType.StoreCredit => p.AllowStoreCredit, _ => false };
     private void ApplyVersion(ReturnRequest request, string encoded) { if (!string.IsNullOrWhiteSpace(encoded)) _db.Entry(request).Property(x => x.RowVersion).OriginalValue = Convert.FromBase64String(encoded); }
 }
