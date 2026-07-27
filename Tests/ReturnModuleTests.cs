@@ -15,6 +15,50 @@ namespace Fruitables.Tests;
 public class ReturnModuleTests
 {
     [Fact]
+    public async Task RefundDestinationFields_RoundTripThroughDatabase()
+    {
+        await using var db = CreateContext();
+        var graph = SeedOrder(db);
+        var policy = Policy(ReturnPolicyScope.Default, ReturnReasonCode.Other, 24, Utc(2026, 7, 1));
+        var request = ApprovedRequest(graph, policy, 1, 100m);
+        db.ReturnRequests.Add(request);
+        await db.SaveChangesAsync();
+        var submittedAt = Utc(2026, 7, 27);
+        db.Refunds.Add(new Refund
+        {
+            ReturnRequestId = request.Id,
+            OrderId = graph.Order.Id,
+            Amount = 100m,
+            Method = RefundMethod.ManualBankTransfer,
+            Status = RefundStatus.AwaitingDestination,
+            IdempotencyKey = "destination-round-trip",
+            CreatedByUserId = graph.Admin.Id,
+            CreatedAtUtc = submittedAt,
+            DestinationBankCode = "VCB",
+            DestinationAccountNumberProtected = "cipher-account",
+            DestinationAccountLast4 = "6789",
+            DestinationAccountHolderProtected = "cipher-holder",
+            DestinationSubmittedAtUtc = submittedAt
+        });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var refund = await db.Refunds.SingleAsync(x => x.IdempotencyKey == "destination-round-trip");
+
+        Assert.Equal("VCB", refund.DestinationBankCode);
+        Assert.Equal("cipher-account", refund.DestinationAccountNumberProtected);
+        Assert.Equal("6789", refund.DestinationAccountLast4);
+        Assert.Equal("cipher-holder", refund.DestinationAccountHolderProtected);
+        Assert.Equal(submittedAt, refund.DestinationSubmittedAtUtc);
+    }
+
+    [Fact]
+    public void ReturnEventType_PreservesDispositionRecordedNumericValue()
+    {
+        Assert.Equal(ReturnEventType.DispositionRecorded, (ReturnEventType)15);
+    }
+
+    [Fact]
     public async Task PolicyVersionCommand_CreatesNewVersionWithoutChangingOldPolicy()
     {
         await using var db = CreateContext();

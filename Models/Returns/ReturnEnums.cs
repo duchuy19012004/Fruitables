@@ -36,4 +36,26 @@ public enum RefundMethod { ManualBankTransfer, OriginalPaymentMethod, StoreCredi
 public enum InventoryDispositionType { NotReturned, Quarantined, Discarded, Donated, ReturnedToSupplier, Restocked }
 public enum EvidenceScanStatus { Pending, Clean, Rejected, ScanFailed }
 public enum ReturnPolicyScope { Default, Category, Product }
-public enum ReturnEventType { Submitted, EvidenceAdded, EvidenceRequested, ReviewStarted, Approved, PartiallyApproved, Rejected, Cancelled, Expired, ResolutionStarted, ResolutionFailed, Resolved, RefundCreated, RefundSucceeded, RefundFailed, DispositionRecorded }
+public enum ReturnEventType
+{
+    Submitted,
+    EvidenceAdded,
+    EvidenceRequested,
+    ReviewStarted,
+    Approved,
+    PartiallyApproved,
+    Rejected,
+    Cancelled,
+    Expired,
+    ResolutionStarted,
+    ResolutionFailed,
+    Resolved,
+    RefundCreated,
+    RefundSucceeded,
+    RefundFailed,
+    DispositionRecorded,
+    RefundDestinationSubmitted,
+    RefundDestinationViewed,
+    RefundProcessingStarted,
+    RefundDestinationCorrectionRequested
+}

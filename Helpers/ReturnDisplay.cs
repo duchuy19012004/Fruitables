@@ -106,6 +106,10 @@ public static class ReturnDisplay
         ReturnEventType.RefundSucceeded => "Hoàn tiền thành công",
         ReturnEventType.RefundFailed => "Hoàn tiền thất bại",
         ReturnEventType.DispositionRecorded => "Ghi nhận xử lý hàng",
+        ReturnEventType.RefundDestinationSubmitted => "Khách hàng đã cung cấp thông tin nhận tiền",
+        ReturnEventType.RefundDestinationViewed => "Bộ phận tài chính đã xem thông tin nhận tiền",
+        ReturnEventType.RefundProcessingStarted => "Bộ phận tài chính bắt đầu xử lý",
+        ReturnEventType.RefundDestinationCorrectionRequested => "Yêu cầu cập nhật thông tin nhận tiền",
         _ => value.ToString()
     };
 

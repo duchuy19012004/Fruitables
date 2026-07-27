@@ -17,6 +17,11 @@ public class Refund
     [MaxLength(128)] public string? TransactionReference { get; set; }
     [MaxLength(128)] public string? TransferEvidenceStorageKey { get; set; }
     [MaxLength(1000)] public string? FailureReason { get; set; }
+    [MaxLength(50)] public string? DestinationBankCode { get; set; }
+    [MaxLength(1000)] public string? DestinationAccountNumberProtected { get; set; }
+    [MaxLength(4)] public string? DestinationAccountLast4 { get; set; }
+    [MaxLength(1000)] public string? DestinationAccountHolderProtected { get; set; }
+    public DateTime? DestinationSubmittedAtUtc { get; set; }
     public int CreatedByUserId { get; set; }
     public int? ProcessedByUserId { get; set; }
     public DateTime CreatedAtUtc { get; set; }

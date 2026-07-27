@@ -717,6 +717,10 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<Refund>(entity =>
         {
             entity.Property(x => x.Amount).HasPrecision(12, 2);
+            entity.Property(x => x.DestinationBankCode).HasMaxLength(50);
+            entity.Property(x => x.DestinationAccountNumberProtected).HasMaxLength(1000);
+            entity.Property(x => x.DestinationAccountLast4).HasMaxLength(4);
+            entity.Property(x => x.DestinationAccountHolderProtected).HasMaxLength(1000);
             entity.HasIndex(x => x.IdempotencyKey).IsUnique();
             entity.HasIndex(x => x.TransactionReference).IsUnique().HasFilter("[TransactionReference] IS NOT NULL");
             entity.HasIndex(x => new { x.Status, x.CreatedAtUtc });
