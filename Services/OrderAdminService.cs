@@ -9,6 +9,11 @@ namespace Fruitables.Services;
 
 public class OrderAdminService : IOrderAdminService
 {
+    private const string PostDeliveryWorkflowMessage =
+        "Đơn đã xuất kho hoặc đã giao phải được xử lý qua module Khiếu nại & đổi trả.";
+    private const string RefundWorkflowMessage =
+        "Hoàn tiền phải được xử lý qua module Khiếu nại & đổi trả; không thể đánh dấu hoàn tiền trực tiếp.";
+
     private readonly ApplicationDbContext _context;
     private readonly IOrderLogService _logService;
     private readonly IRealtimeNotifier _notifier;
@@ -131,30 +136,20 @@ public class OrderAdminService : IOrderAdminService
             if (order == null)
                 return OrderResult.Fail(OrderErrorType.NotFound, "Đơn hàng không tồn tại");
 
-            // Validate status transition
+            // Orders that have left the warehouse must use the dedicated claims workflow.
+            if (IsPostDeliveryWorkflowAttempt(order.Status, request.NewStatus))
+                return OrderResult.Fail(OrderErrorType.InvalidStatusTransition, PostDeliveryWorkflowMessage);
+
             if (!IsValidStatusTransition(order.Status, request.NewStatus))
                 return OrderResult.Fail(OrderErrorType.InvalidStatusTransition,
                     $"Không thể chuyển từ {order.Status} sang {request.NewStatus}");
 
-            // Stock is deducted when the order is placed in OrderService.CreateOrderAsync.
-            // Cancel → restore; restore from cancelled → deduct.
+            // Stock is deducted when the order is placed. Only cancellation before
+            // dispatch restores sellable stock; Cancelled is terminal and cannot reopen.
             Dictionary<(int ProductId, int? VariantId), int>? changedStocks = null;
-            if (request.NewStatus == OrderStatus.Cancelled && order.Status != OrderStatus.Cancelled)
+            if (request.NewStatus == OrderStatus.Cancelled)
             {
                 changedStocks = await RestoreStockForOrder(order);
-            }
-            else if (order.Status == OrderStatus.Cancelled && request.NewStatus != OrderStatus.Cancelled)
-            {
-                var deduction = await CheckAndDeductStockForOrder(order);
-                if (deduction.InsufficientItems.Any())
-                {
-                    if (transaction != null)
-                    {
-                        await transaction.RollbackAsync();
-                    }
-                    return OrderResult.FailWithInsufficientStock(deduction.InsufficientItems);
-                }
-                changedStocks = deduction.StockLevels;
             }
 
             // Stage status update + history so a single SaveChanges commits the full atomic flow.
@@ -180,8 +175,8 @@ public class OrderAdminService : IOrderAdminService
             // Realtime notification
             await _notifier.NotifyOrderUpdatedAsync(order.Id, order.UserId, order.Status.ToString());
             
-            // If status cancelled or restored, stock changed. Broadcast.
-            if (request.NewStatus == OrderStatus.Cancelled || oldStatus == OrderStatus.Cancelled)
+            // Pre-dispatch cancellation restored stock. Broadcast the committed levels.
+            if (request.NewStatus == OrderStatus.Cancelled)
             {
                 await NotifyStockForItemsAsync(order.Items, changedStocks);
             }
@@ -290,96 +285,6 @@ public class OrderAdminService : IOrderAdminService
         return stockLevels;
     }
 
-    private async Task<StockDeductionResult> CheckAndDeductStockForOrder(Order order)
-    {
-        var insufficientItems = new List<InsufficientStockItem>();
-
-        var productIds = order.Items.Select(item => item.ProductId).Distinct().ToList();
-        var products = await _context.Products
-            .Where(p => productIds.Contains(p.Id))
-            .ToDictionaryAsync(p => p.Id);
-        var variantIds = order.Items.Where(i => i.ProductVariantId.HasValue).Select(i => i.ProductVariantId!.Value).Distinct().ToList();
-        var variants = await _context.ProductVariants.Where(v => variantIds.Contains(v.Id) && v.IsActive).ToDictionaryAsync(v => v.Id);
-
-        var groups = order.Items.GroupBy(item => new { item.ProductId, item.ProductVariantId })
-            .Select(group => new
-            {
-                group.Key.ProductId,
-                group.Key.ProductVariantId,
-                Quantity = group.Sum(item => item.Quantity),
-                ProductName = group.First().ProductName
-            }).ToList();
-
-        // First check grouped quantities so duplicate lines cannot bypass validation.
-        foreach (var group in groups)
-        {
-            products.TryGetValue(group.ProductId, out var product);
-            variants.TryGetValue(group.ProductVariantId ?? 0, out var variant);
-            var available = group.ProductVariantId.HasValue ? variant?.StockQuantity : product?.StockQuantity;
-            if (!available.HasValue || available.Value < group.Quantity)
-            {
-                insufficientItems.Add(new InsufficientStockItem
-                {
-                    ProductId = group.ProductId,
-                    ProductName = group.ProductName,
-                    RequestedQuantity = group.Quantity,
-                    AvailableQuantity = available ?? 0
-                });
-            }
-        }
-
-        // If all items have sufficient stock, deduct them
-        var stockLevels = new Dictionary<(int ProductId, int? VariantId), int>();
-        if (!insufficientItems.Any())
-        {
-            var isInMemory = (_context.Database.ProviderName ?? string.Empty).Contains("InMemory");
-            foreach (var group in groups)
-            {
-                int rows;
-                ProductVariant? variant = null;
-                Product? product = null;
-                if (group.ProductVariantId.HasValue && variants.TryGetValue(group.ProductVariantId.Value, out variant))
-                {
-                    if (isInMemory) { variant.StockQuantity -= group.Quantity; rows = 1; }
-                    else rows = await _context.ProductVariants.Where(v => v.Id == variant.Id && v.IsActive &&
-                            v.Product.IsActive && !v.Product.IsDeleted && v.StockQuantity >= group.Quantity)
-                        .ExecuteUpdateAsync(update => update.SetProperty(v => v.StockQuantity, v => v.StockQuantity - group.Quantity));
-                }
-                else if (products.TryGetValue(group.ProductId, out product))
-                {
-                    if (isInMemory) { product.StockQuantity -= group.Quantity; rows = 1; }
-                    else rows = await _context.Products.Where(p => p.Id == product.Id && p.IsActive && !p.IsDeleted &&
-                            !p.Variants.Any(v => v.IsActive) && p.StockQuantity >= group.Quantity)
-                        .ExecuteUpdateAsync(update => update.SetProperty(p => p.StockQuantity, p => p.StockQuantity - group.Quantity));
-                }
-                else rows = 0;
-
-                if (rows == 0)
-                {
-                    insufficientItems.Add(new InsufficientStockItem
-                    {
-                        ProductId = group.ProductId, ProductName = group.ProductName,
-                        RequestedQuantity = group.Quantity, AvailableQuantity = 0
-                    });
-                    break;
-                }
-
-                if (group.ProductVariantId.HasValue && variant != null)
-                {
-                    if (!isInMemory) SynchronizeStock(variant, variant.StockQuantity - group.Quantity);
-                    stockLevels[(group.ProductId, group.ProductVariantId)] = variant.StockQuantity;
-                }
-                else if (product != null)
-                {
-                    if (!isInMemory) SynchronizeStock(product, product.StockQuantity - group.Quantity);
-                    stockLevels[(group.ProductId, null)] = product.StockQuantity;
-                }
-            }
-        }
-
-        return new StockDeductionResult(insufficientItems, stockLevels);
-    }
-
     private void SynchronizeStock(Product product, int stock)
     {
         product.StockQuantity = stock;
@@ -396,10 +301,6 @@ public class OrderAdminService : IOrderAdminService
         property.IsModified = false;
     }
 
-    private sealed record StockDeductionResult(
-        List<InsufficientStockItem> InsufficientItems,
-        Dictionary<(int ProductId, int? VariantId), int> StockLevels);
-
     public async Task<OrderResult> UpdatePaymentStatusAsync(UpdatePaymentStatusRequest request)
     {
         try
@@ -409,7 +310,13 @@ public class OrderAdminService : IOrderAdminService
             if (order == null)
                 return OrderResult.Fail(OrderErrorType.NotFound, "Đơn hàng không tồn tại");
 
-            // Validate payment status transition
+            // A refund is a financial transaction, not an admin status toggle.
+            if (request.NewPaymentStatus == PaymentStatus.Refunded &&
+                order.PaymentStatus != PaymentStatus.Refunded)
+            {
+                return OrderResult.Fail(OrderErrorType.InvalidPaymentStatusTransition, RefundWorkflowMessage);
+            }
+
             if (!IsValidPaymentStatusTransition(order.PaymentStatus, request.NewPaymentStatus, order.Status))
                 return OrderResult.Fail(OrderErrorType.InvalidPaymentStatusTransition,
                     $"Không thể chuyển trạng thái thanh toán từ {order.PaymentStatus} sang {request.NewPaymentStatus}");
@@ -436,34 +343,17 @@ public class OrderAdminService : IOrderAdminService
 
     public bool IsValidStatusTransition(OrderStatus currentStatus, OrderStatus newStatus)
     {
-        // Cannot transition to same status
-        if (currentStatus == newStatus)
-            return false;
+        return currentStatus != newStatus &&
+               StateTransitionRules.IsValidTransition(currentStatus, newStatus);
+    }
 
-        // Define valid transitions as a state machine
-        return (currentStatus, newStatus) switch
-        {
-            // From Pending
-            (OrderStatus.Pending, OrderStatus.Processing) => true,
-            (OrderStatus.Pending, OrderStatus.Cancelled) => true,
-
-            // From Processing
-            (OrderStatus.Processing, OrderStatus.Shipped) => true,
-            (OrderStatus.Processing, OrderStatus.Cancelled) => true,
-
-            // From Shipped
-            (OrderStatus.Shipped, OrderStatus.Delivered) => true,
-            (OrderStatus.Shipped, OrderStatus.Cancelled) => true,
-
-            // From Delivered - can cancel (for returns/refunds)
-            (OrderStatus.Delivered, OrderStatus.Cancelled) => true,
-
-            // From Cancelled - can restore to Processing
-            (OrderStatus.Cancelled, OrderStatus.Processing) => true,
-
-            // All other transitions are invalid
-            _ => false
-        };
+    private static bool IsPostDeliveryWorkflowAttempt(
+        OrderStatus currentStatus,
+        OrderStatus newStatus)
+    {
+        return newStatus == OrderStatus.Returned ||
+               (currentStatus is OrderStatus.Shipped or OrderStatus.Delivered &&
+                newStatus == OrderStatus.Cancelled);
     }
 
     public bool IsValidPaymentStatusTransition(PaymentStatus currentStatus, PaymentStatus newStatus, OrderStatus orderStatus)
@@ -472,20 +362,13 @@ public class OrderAdminService : IOrderAdminService
         if (currentStatus == newStatus)
             return false;
 
-        // Refund is only allowed when order is Cancelled
-        if (newStatus == PaymentStatus.Refunded && orderStatus != OrderStatus.Cancelled)
+        // Refunded is written only by the dedicated refund workflow.
+        if (newStatus == PaymentStatus.Refunded)
             return false;
 
-        // Define valid payment transitions
         return (currentStatus, newStatus) switch
         {
-            // From Pending
             (PaymentStatus.Pending, PaymentStatus.Paid) => true,
-
-            // From Paid
-            (PaymentStatus.Paid, PaymentStatus.Refunded) => orderStatus == OrderStatus.Cancelled,
-
-            // All other transitions are invalid
             _ => false
         };
     }
@@ -607,6 +490,15 @@ public class OrderAdminService : IOrderAdminService
             var oldOrderStatus = order.Status;
             var oldPaymentStatus = order.PaymentStatus;
 
+            if (IsPostDeliveryWorkflowAttempt(oldOrderStatus, request.NewOrderStatus))
+                return OrderResult.Fail(OrderErrorType.InvalidStatusTransition, PostDeliveryWorkflowMessage);
+
+            if (request.NewPaymentStatus == PaymentStatus.Refunded &&
+                oldPaymentStatus != PaymentStatus.Refunded)
+            {
+                return OrderResult.Fail(OrderErrorType.InvalidPaymentStatusTransition, RefundWorkflowMessage);
+            }
+
             // Validate state transition (Requirements: 6.1, 6.2, 6.3, 6.4, 6.5)
             if (!IsValidStateTransition(oldOrderStatus, request.NewOrderStatus))
             {
@@ -621,31 +513,12 @@ public class OrderAdminService : IOrderAdminService
                     $"Tổ hợp trạng thái không hợp lệ: {request.NewOrderStatus} + {request.NewPaymentStatus} cho phương thức thanh toán {order.PaymentMethod}");
             }
 
-            // Handle stock management for order status changes
+            // Only pre-dispatch cancellation restores sellable stock.
             Dictionary<(int ProductId, int? VariantId), int>? changedStocks = null;
-            if (request.NewOrderStatus == OrderStatus.Cancelled && order.Status != OrderStatus.Cancelled)
+            if (request.NewOrderStatus == OrderStatus.Cancelled &&
+                oldOrderStatus != OrderStatus.Cancelled)
             {
-                // Restore stock when cancelling
                 changedStocks = await RestoreStockForOrder(order);
-            }
-            else if (request.NewOrderStatus == OrderStatus.Returned && order.Status != OrderStatus.Returned)
-            {
-                // Restore stock when returning (if not already cancelled)
-                if (order.Status != OrderStatus.Cancelled)
-                {
-                    changedStocks = await RestoreStockForOrder(order);
-                }
-            }
-            else if (order.Status == OrderStatus.Cancelled && request.NewOrderStatus != OrderStatus.Cancelled)
-            {
-                // Deduct stock when restoring from cancelled
-                var deduction = await CheckAndDeductStockForOrder(order);
-                if (deduction.InsufficientItems.Any())
-                {
-                    await transaction.RollbackAsync();
-                    return OrderResult.FailWithInsufficientStock(deduction.InsufficientItems);
-                }
-                changedStocks = deduction.StockLevels;
             }
 
             // Update both statuses atomically (Requirement 1.2)
@@ -671,9 +544,7 @@ public class OrderAdminService : IOrderAdminService
             if (oldOrderStatus != request.NewOrderStatus)
             {
                 await _notifier.NotifyOrderUpdatedAsync(order.Id, order.UserId, order.Status.ToString());
-                // Handle stock broadcast
-                if (request.NewOrderStatus == OrderStatus.Cancelled || request.NewOrderStatus == OrderStatus.Returned || 
-                    (oldOrderStatus == OrderStatus.Cancelled && request.NewOrderStatus != OrderStatus.Cancelled))
+                if (request.NewOrderStatus == OrderStatus.Cancelled)
                 {
                     await NotifyStockForItemsAsync(order.Items, changedStocks);
                 }

@@ -396,16 +396,6 @@ public class OrderService : IOrderService
             .ToListAsync();
     }
 
-    public async Task UpdateOrderStatusAsync(int orderId, OrderStatus status)
-    {
-        var order = await _unitOfWork.Orders.GetByIdAsync(orderId);
-        if (order != null)
-        {
-            order.Status = status;
-            await _unitOfWork.SaveChangesAsync();
-        }
-    }
-
     public async Task<Address?> GetShippingAddressFromSnapshotAsync(int orderId)
     {
         var order = await _unitOfWork.Orders.GetByIdAsync(orderId);

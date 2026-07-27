@@ -9,8 +9,7 @@ public interface IOrderService
     Task<Order?> GetOrderByIdAsync(int id);
     Task<Order?> GetOrderByNumberAsync(string orderNumber);
     Task<List<Order>> GetOrdersByUserIdAsync(int userId);
-    Task UpdateOrderStatusAsync(int orderId, OrderStatus status);
-    
+
     /// <summary>
     /// Gets the shipping address from order snapshot
     /// </summary>

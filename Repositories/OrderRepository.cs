@@ -98,50 +98,6 @@ public class OrderRepository : Repository<Order>, IOrderRepository
     }
 
     /// <summary>
-    /// Cập nhật đơn hàng với lý do hủy
-    /// </summary>
-    public async Task<bool> UpdateOrderStatusWithReasonAsync(int orderId, OrderStatus status, string? cancelReason = null, int? userId = null)
-    {
-        var order = await _dbSet.FindAsync(orderId);
-        if (order == null)
-        {
-            return false;
-        }
-
-        var oldStatus = order.Status;
-        order.Status = status;
-
-        // Nếu là hủy đơn hàng, lưu lý do hủy
-        if (status == OrderStatus.Cancelled && !string.IsNullOrEmpty(cancelReason))
-        {
-            order.CancelReason = cancelReason;
-        }
-
-        // Tạo lịch sử thay đổi trạng thái
-        var statusHistory = new OrderStatusHistory
-        {
-            OrderId = orderId,
-            OldStatus = oldStatus,
-            NewStatus = status,
-            AdminId = userId ?? order.UserId ?? 1, // Sử dụng userId được truyền vào hoặc userId của order
-            Notes = status == OrderStatus.Cancelled ? cancelReason : null,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        _context.Set<OrderStatusHistory>().Add(statusHistory);
-
-        try
-        {
-            await _context.SaveChangesAsync();
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    /// <summary>
     /// Kiểm tra xem đơn hàng có thuộc về user không
     /// </summary>
     public async Task<bool> IsOrderOwnedByUserAsync(int orderId, int userId)

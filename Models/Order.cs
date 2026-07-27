@@ -10,6 +10,9 @@ public enum OrderStatus
     Shipped,
     Delivered,
     Cancelled,
+
+    // Legacy read-only status. New post-delivery issues use ReturnRequest and must
+    // not transition an Order to Returned or restore sellable stock.
     Returned = 5
 }
 

@@ -15,9 +15,6 @@ public interface IOrderRepository : IRepository<Order>
     // Lấy lịch sử thay đổi trạng thái của đơn hàng
     Task<List<OrderStatusHistory>> GetOrderStatusHistoryAsync(int orderId);
 
-    // Cập nhật trạng thái đơn hàng kèm lý do hủy (nếu có)
-    Task<bool> UpdateOrderStatusWithReasonAsync(int orderId, OrderStatus status, string? cancelReason = null, int? userId = null);
-
     // Hủy đơn hàng + hoàn trả stock trong 1 transaction
     Task<StockRestoreResult> CancelOrderWithStockRestoreAsync(int orderId, string cancelReason, int? userId = null);
 }

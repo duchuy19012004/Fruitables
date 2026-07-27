@@ -9,8 +9,8 @@ using Fruitables.ViewModels;
 
 namespace Fruitables.Tests;
 
-// Guardrail N+1: flow cancel/restore phải lookup product theo batch, không truy vấn Products
-// mỗi item. Số SELECT trên Products phải ổn định khi order có 1, 5, 20 item.
+// Guardrail N+1: pre-dispatch cancellation must batch product lookups. Terminal
+// orders must be rejected before any product query.
 public class OrderAdminServiceNPlusOneTests
 {
     [Theory]
@@ -45,7 +45,7 @@ public class OrderAdminServiceNPlusOneTests
     [InlineData(1)]
     [InlineData(5)]
     [InlineData(20)]
-    public async Task UpdateOrderStatusAsync_RestoreFromCancelled_ProductLookupIsBatched(int itemCount)
+    public async Task UpdateOrderStatusAsync_CancelledOrderIsTerminal_ProductsAreNotQueried(int itemCount)
     {
         var (interceptor, options, products) = await SeedAsync(itemCount);
 
@@ -61,12 +61,12 @@ public class OrderAdminServiceNPlusOneTests
             OrderId = order.Id,
             NewStatus = OrderStatus.Processing,
             AdminId = 100,
-            Notes = "Bulk restore"
+            Notes = "Cancelled orders cannot reopen"
         });
 
-        Assert.True(result.Success);
-        // One batched product SELECT for the deduct path — must not scale with itemCount.
-        Assert.Equal(1, interceptor.GetCount("Products"));
+        Assert.False(result.Success);
+        Assert.Equal(OrderErrorType.InvalidStatusTransition, result.ErrorType);
+        Assert.Equal(0, interceptor.GetCount("Products"));
     }
 
     private static async Task<(CountingQueryInterceptor interceptor, DbContextOptions<ApplicationDbContext> options, List<Product> products)>

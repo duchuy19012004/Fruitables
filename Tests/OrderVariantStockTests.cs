@@ -72,6 +72,88 @@ public class OrderVariantStockTests
     }
 
     [Fact]
+    public async Task DeliveredToLegacyReturned_is_rejected_without_restoring_variant_stock()
+    {
+        var options = TestDbContextFactory.CreateSqliteOptions();
+        await using var context = new ApplicationDbContext(options);
+        context.Users.Add(new User
+        {
+            Id = 100,
+            Name = "Test Admin",
+            Email = "variant-return-admin@example.com",
+            Password = "hashed",
+            Role = UserRole.Admin,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        context.Categories.Add(new Category { Id = 1, Name = "Default", Slug = "default" });
+        var product = new Product
+        {
+            Id = 1,
+            CategoryId = 1,
+            Name = "Táo",
+            Slug = "tao-return",
+            Price = 50_000,
+            StockQuantity = 99,
+            IsActive = true
+        };
+        var variant = new ProductVariant
+        {
+            Id = 7,
+            ProductId = 1,
+            Name = "Hộp 2kg",
+            SKU = "TAO-RETURN-2",
+            Price = 180_000,
+            StockQuantity = 3,
+            IsActive = true
+        };
+        var order = new Order
+        {
+            Id = 9,
+            OrderNumber = "ORD-VARIANT-RETURN",
+            Status = OrderStatus.Delivered,
+            PaymentMethod = PaymentMethod.COD,
+            PaymentStatus = PaymentStatus.Paid,
+            Subtotal = 360_000,
+            Total = 360_000
+        };
+        order.Items.Add(new OrderItem
+        {
+            ProductId = 1,
+            ProductVariantId = 7,
+            ProductName = "Táo",
+            VariantName = "Hộp 2kg",
+            VariantSKU = "TAO-RETURN-2",
+            Quantity = 2,
+            Price = 180_000,
+            Total = 360_000
+        });
+        context.AddRange(product, variant, order);
+        await context.SaveChangesAsync();
+
+        var service = new OrderAdminService(
+            context,
+            Mock.Of<IOrderLogService>(),
+            Mock.Of<IRealtimeNotifier>());
+
+        var result = await service.UpdateCombinedStatusAsync(new UpdateCombinedStatusRequest
+        {
+            OrderId = order.Id,
+            NewOrderStatus = OrderStatus.Returned,
+            NewPaymentStatus = PaymentStatus.Refunded,
+            Notes = "Legacy return must be blocked"
+        }, 100);
+
+        Assert.False(result.Success);
+        Assert.Equal(OrderErrorType.InvalidStatusTransition, result.ErrorType);
+        Assert.Equal(OrderStatus.Delivered, order.Status);
+        Assert.Equal(PaymentStatus.Paid, order.PaymentStatus);
+        Assert.Equal(3, context.ProductVariants.Find(7)!.StockQuantity);
+        Assert.Equal(99, context.Products.Find(1)!.StockQuantity);
+    }
+
+    [Fact]
     public async Task CreateOrder_rejects_a_missing_or_stale_pricing_token()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
