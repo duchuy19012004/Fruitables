@@ -2,6 +2,7 @@ using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Models.Returns;
 using Fruitables.Services.Interfaces;
+using Fruitables.Services.Outbox;
 using Microsoft.EntityFrameworkCore;
 
 namespace Fruitables.Services.Returns;
@@ -10,7 +11,13 @@ public class RefundService : IRefundService
 {
     private readonly ApplicationDbContext _db;
     private readonly TimeProvider _clock;
-    public RefundService(ApplicationDbContext db, TimeProvider clock) { _db = db; _clock = clock; }
+    private readonly IOutboxService _outbox;
+    public RefundService(ApplicationDbContext db, TimeProvider clock, IOutboxService? outbox = null)
+    {
+        _db = db;
+        _clock = clock;
+        _outbox = outbox ?? new OutboxService(db, clock);
+    }
 
     public async Task<(bool Success, string? Error, Refund? Refund)> CreateAsync(int returnRequestId, int returnRequestItemId, decimal amount, RefundMethod method, string idempotencyKey, int adminId, CancellationToken cancellationToken = default)
     {
@@ -32,6 +39,11 @@ public class RefundService : IRefundService
         var previousStatus = request.Status;
         request.Status = ReturnRequestStatus.ResolutionPending;
         _db.ReturnEvents.Add(new ReturnEvent { ReturnRequestId = request.Id, Type = ReturnEventType.RefundCreated, FromStatus = previousStatus, ToStatus = ReturnRequestStatus.ResolutionPending, ActorUserId = adminId, Note = $"Tạo khoản hoàn {amount:N0}₫.", CreatedAtUtc = now });
+        await _outbox.EnqueueAsync(
+            OutboxMessageTypes.RefundCreated,
+            new { returnRequestId = request.Id, orderId = request.OrderId, amount, method = method.ToString(), refundIdempotencyKey = idempotencyKey },
+            $"refund:{idempotencyKey}:created",
+            cancellationToken);
         try { await _db.SaveChangesAsync(cancellationToken); return (true, null, refund); }
         catch (DbUpdateException)
         {
@@ -61,6 +73,11 @@ public class RefundService : IRefundService
         var target = refund.ReturnRequest.Items.Sum(x => x.ApprovedAmount) + (refund.ReturnRequest.ShippingFeeApproved ? refund.Order.ShippingFee : 0);
         if (requestPaid >= target) { refund.ReturnRequest.Status = ReturnRequestStatus.Resolved; refund.ReturnRequest.ResolvedAtUtc = now; }
         _db.ReturnEvents.Add(new ReturnEvent { ReturnRequestId = refund.ReturnRequestId, Type = ReturnEventType.RefundSucceeded, FromStatus = ReturnRequestStatus.ResolutionPending, ToStatus = refund.ReturnRequest.Status, ActorUserId = financeUserId, Note = "Bộ phận tài chính xác nhận hoàn tiền thủ công.", CreatedAtUtc = now });
+        await _outbox.EnqueueAsync(
+            OutboxMessageTypes.RefundSucceeded,
+            new { refundId = refund.Id, refund.ReturnRequestId, refund.OrderId, refund.Amount, requestStatus = refund.ReturnRequest.Status.ToString() },
+            $"refund:{refund.Id}:succeeded",
+            cancellationToken);
         try { await _db.SaveChangesAsync(cancellationToken); return (true, null); }
         catch (DbUpdateException) { return (false, "Mã giao dịch đã được sử dụng hoặc dữ liệu vừa thay đổi."); }
     }

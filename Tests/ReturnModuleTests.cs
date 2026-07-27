@@ -100,6 +100,7 @@ public class ReturnModuleTests
         Assert.False(exceeded.Success);
         var remaining = await service.SubmitAsync(graph.Customer.Id, Submit(graph, "last-key", 1));
         Assert.True(remaining.Success);
+        Assert.Equal(2, await db.OutboxMessages.CountAsync(x => x.Type == Fruitables.Services.Outbox.OutboxMessageTypes.ReturnSubmitted));
     }
 
     [Fact]

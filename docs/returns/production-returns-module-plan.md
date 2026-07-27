@@ -585,16 +585,18 @@ Khách hàng có thể gửi yêu cầu theo từng sản phẩm; nhân viên c�
 - Modify: `Data/ApplicationDbContext.cs`
 - Modify: `Program.cs`
 
-- [ ] Tạo bảng `OutboxMessages` với type, payload, occurred time, processed time, attempt count, next attempt và last error.
-- [ ] Tạo index cho message chưa xử lý theo `NextAttemptAtUtc`.
-- [ ] Ghi outbox message trong cùng transaction với return state change hoặc refund change.
-- [ ] Không gửi email hoặc SignalR trước khi database transaction commit.
-- [ ] Worker claim message an toàn khi chạy nhiều instance.
-- [ ] Retry theo exponential backoff có giới hạn.
-- [ ] Đưa message vượt retry limit vào trạng thái dead-letter.
-- [ ] Bảo đảm consumer idempotent.
-- [ ] Thêm cleanup policy cho message đã xử lý.
-- [ ] Viết integration test transaction rollback không phát notification.
+- [x] Tạo bảng `OutboxMessages` với type, payload, occurred time, processed time, attempt count, next attempt và last error.
+- [x] Tạo index cho message chưa xử lý theo `NextAttemptAtUtc`.
+- [x] Ghi outbox message trong cùng transaction với return state change hoặc refund change.
+- [x] Không gửi email hoặc SignalR trước khi database transaction commit.
+- [x] Worker claim message an toàn khi chạy nhiều instance.
+- [x] Retry theo exponential backoff có giới hạn.
+- [x] Đưa message vượt retry limit vào trạng thái dead-letter.
+- [x] Bảo đảm consumer idempotent.
+- [x] Thêm cleanup policy cho message đã xử lý.
+- [x] Viết integration test transaction rollback không phát notification.
+
+**Kết quả Task 2.1:** migration `AddTransactionalOutbox` đã apply local và rollback thành công trên database test; full suite **428/428 pass, 0 skipped** khi bật SQL Server integration; build **0 errors, 0 warnings**.
 
 ## Task 2.2 — Tự động hóa notification
 

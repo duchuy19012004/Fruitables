@@ -50,6 +50,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<ReturnPolicy> ReturnPolicies => Set<ReturnPolicy>();
     public DbSet<Refund> Refunds => Set<Refund>();
     public DbSet<InventoryDisposition> InventoryDispositions => Set<InventoryDisposition>();
+    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
     // RBAC
     public DbSet<Role> Roles => Set<Role>();
@@ -70,6 +71,7 @@ public class ApplicationDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        ConfigureOutbox(modelBuilder);
         ConfigureReturns(modelBuilder);
 
         // Category - Self-referencing
@@ -644,6 +646,19 @@ public class ApplicationDbContext : DbContext
             }
         );
 
+    }
+
+    private static void ConfigureOutbox(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<OutboxMessage>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.IdempotencyKey).IsUnique();
+            entity.HasIndex(x => new { x.NextAttemptAtUtc, x.OccurredAtUtc })
+                .HasDatabaseName("IX_OutboxMessages_Pending_NextAttemptAtUtc")
+                .HasFilter("[ProcessedAtUtc] IS NULL AND [DeadLetteredAtUtc] IS NULL");
+            entity.ToTable(t => t.HasCheckConstraint("CK_OutboxMessages_AttemptCount", "[AttemptCount] >= 0"));
+        });
     }
 
     private static void ConfigureReturns(ModelBuilder modelBuilder)

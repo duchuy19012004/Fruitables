@@ -2,6 +2,7 @@ using System.Data;
 using Fruitables.Data;
 using Fruitables.Models.Returns;
 using Fruitables.Services.Interfaces;
+using Fruitables.Services.Outbox;
 using Fruitables.ViewModels.Returns;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -26,13 +27,15 @@ public class ReturnService : IReturnService
     private readonly IReturnEligibilityService _eligibility;
     private readonly IRefundAmountCalculator _calculator;
     private readonly TimeProvider _clock;
+    private readonly IOutboxService _outbox;
 
-    public ReturnService(ApplicationDbContext db, IReturnEligibilityService eligibility, IRefundAmountCalculator calculator, TimeProvider clock)
+    public ReturnService(ApplicationDbContext db, IReturnEligibilityService eligibility, IRefundAmountCalculator calculator, TimeProvider clock, IOutboxService? outbox = null)
     {
         _db = db;
         _eligibility = eligibility;
         _calculator = calculator;
         _clock = clock;
+        _outbox = outbox ?? new OutboxService(db, clock);
     }
 
     public async Task<ReturnResult> SubmitAsync(int userId, ReturnSubmitViewModel model, CancellationToken cancellationToken = default)
@@ -90,6 +93,11 @@ public class ReturnService : IReturnService
 
             request.Events.Add(NewEvent(ReturnEventType.Submitted, null, request.Status, userId, "Khách hàng gửi yêu cầu.", now));
             _db.ReturnRequests.Add(request);
+            await _outbox.EnqueueAsync(
+                OutboxMessageTypes.ReturnSubmitted,
+                new { requestNumber = request.ReturnNumber, request.OrderId, request.UserId, status = request.Status.ToString() },
+                $"return:{request.ReturnNumber}:submitted",
+                cancellationToken);
             await _db.SaveChangesAsync(cancellationToken);
             if (transaction != null) await transaction.CommitAsync(cancellationToken);
             return ReturnResult.Ok(request);
@@ -193,6 +201,11 @@ public class ReturnService : IReturnService
         var now = _clock.GetUtcNow().UtcDateTime;
         if (target == ReturnRequestStatus.Resolved) request.ResolvedAtUtc = now;
         _db.ReturnEvents.Add(NewEvent(type, old, target, actorId, note, now, request.Id));
+        await _outbox.EnqueueAsync(
+            OutboxMessageTypes.ReturnStatusChanged,
+            new { returnRequestId = request.Id, fromStatus = old.ToString(), toStatus = target.ToString(), actorUserId = actorId },
+            $"return:{request.Id}:status:{target}:{Guid.NewGuid():N}",
+            cancellationToken);
         try { await _db.SaveChangesAsync(cancellationToken); return ReturnResult.Ok(request); }
         catch (DbUpdateConcurrencyException) { return ReturnResult.Fail("Yêu cầu đã được nhân viên khác cập nhật. Vui lòng tải lại.", true); }
     }

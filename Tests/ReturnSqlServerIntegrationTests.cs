@@ -1,6 +1,7 @@
 using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Models.Returns;
+using Fruitables.Services.Outbox;
 using Fruitables.Services.Returns;
 using Fruitables.ViewModels.Returns;
 using Microsoft.Data.SqlClient;
@@ -51,6 +52,42 @@ public class ReturnSqlServerIntegrationTests
         var results = await Task.WhenAll(Returns(db1).DecideAsync(1, Decision("Duyệt bởi nhân viên A")), Returns(db2).DecideAsync(2, Decision("Duyệt bởi nhân viên B")));
         Assert.Single(results.Where(x => x.Success));
         Assert.Single(results.Where(x => x.IsConcurrencyConflict));
+    }
+
+    [SqlServerFact]
+    public async Task RolledBackTransactionCannotPublishOutboxMessage()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        await using (var db = new ApplicationDbContext(database.Options))
+        {
+            await using var transaction = await db.Database.BeginTransactionAsync();
+            await new OutboxService(db, TimeProvider.System).EnqueueAsync("returns.test", new { returnRequestId = 42 }, "rollback-notification");
+            await db.SaveChangesAsync();
+            await transaction.RollbackAsync();
+        }
+        await using var verify = new ApplicationDbContext(database.Options);
+        var claimed = await new OutboxService(verify, TimeProvider.System).ClaimAsync(10, "verification-worker", TimeSpan.FromMinutes(1));
+        Assert.Empty(claimed);
+        Assert.Empty(await verify.OutboxMessages.ToListAsync());
+    }
+
+    [SqlServerFact]
+    public async Task ConcurrentOutboxWorkersClaimDisjointMessages()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        await using (var seedDb = new ApplicationDbContext(database.Options))
+        {
+            var outbox = new OutboxService(seedDb, TimeProvider.System);
+            for (var i = 0; i < 10; i++) await outbox.EnqueueAsync("returns.test", new { index = i }, $"claim-{i}");
+            await seedDb.SaveChangesAsync();
+        }
+        await using var db1 = new ApplicationDbContext(database.Options);
+        await using var db2 = new ApplicationDbContext(database.Options);
+        var claims = await Task.WhenAll(
+            new OutboxService(db1, TimeProvider.System).ClaimAsync(5, "worker-a", TimeSpan.FromMinutes(1)),
+            new OutboxService(db2, TimeProvider.System).ClaimAsync(5, "worker-b", TimeSpan.FromMinutes(1)));
+        Assert.Equal(10, claims.SelectMany(x => x).Select(x => x.Id).Distinct().Count());
+        Assert.Empty(claims[0].Select(x => x.Id).Intersect(claims[1].Select(x => x.Id)));
     }
 
     [SqlServerFact]
