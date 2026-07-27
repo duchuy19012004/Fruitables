@@ -21,6 +21,22 @@ public static class ReturnDisplay
         _ => value.ToString()
     };
 
+    public static string CustomerProgress(ReturnRequestStatus status) => status switch
+    {
+        ReturnRequestStatus.Submitted => "Đã tiếp nhận",
+        ReturnRequestStatus.AwaitingEvidence => "Cần bổ sung",
+        ReturnRequestStatus.UnderReview => "Đang xem xét",
+        ReturnRequestStatus.Approved or
+        ReturnRequestStatus.PartiallyApproved or
+        ReturnRequestStatus.ResolutionPending or
+        ReturnRequestStatus.ResolutionFailed => "Đang hoàn tiền",
+        ReturnRequestStatus.Resolved => "Đã hoàn tiền",
+        ReturnRequestStatus.Rejected => "Đã từ chối",
+        ReturnRequestStatus.Cancelled => "Đã hủy",
+        ReturnRequestStatus.Expired => "Đã quá hạn",
+        _ => Text(status)
+    };
+
     public static string Text(ReturnReasonCode value) => value switch
     {
         ReturnReasonCode.DamagedOrBruised => "Dập, vỡ hoặc hư hỏng",

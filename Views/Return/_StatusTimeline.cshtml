@@ -2,7 +2,9 @@
 @using Fruitables.Models.Returns
 @model IEnumerable<ReturnEvent>
 <ol class="list-group list-group-numbered">
-@foreach (var item in Model.OrderBy(x => x.CreatedAtUtc))
+@foreach (var item in Model
+    .Where(x => x.Type != ReturnEventType.RefundDestinationViewed)
+    .OrderBy(x => x.CreatedAtUtc))
 {
     var note = item.Note == "Finance xác nhận hoàn tiền thủ công." ? "Bộ phận tài chính xác nhận hoàn tiền thủ công." : item.Note;
     <li class="list-group-item">

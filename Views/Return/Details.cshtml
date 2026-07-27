@@ -1,12 +1,74 @@
 @using Fruitables.Helpers
 @using Fruitables.Models.Returns
 @model ReturnRequest
-@{ ViewData["Title"] = $"Yêu cầu {Model.ReturnNumber}"; }
+@{
+    ViewData["Title"] = $"Yêu cầu {Model.ReturnNumber}";
+    var aggregateRefund = Model.Refunds.SingleOrDefault(x => x.ReturnRequestItemId == null);
+    var canEditDestination = aggregateRefund?.Status is RefundStatus.AwaitingDestination or RefundStatus.AwaitingApproval;
+    var showDestinationSummary = aggregateRefund?.Status is RefundStatus.AwaitingApproval or RefundStatus.Processing or RefundStatus.Succeeded or RefundStatus.Failed or RefundStatus.Cancelled;
+    var approvedAmount = Model.Refunds.Where(x => x.ReturnRequestItemId == null).Sum(x => x.Amount);
+}
 <div class="container py-5 mt-5">
     @if (TempData["SuccessMessage"] != null) { <div class="alert alert-success">@TempData["SuccessMessage"]</div> }
     @if (TempData["ErrorMessage"] != null) { <div class="alert alert-danger">@TempData["ErrorMessage"]</div> }
-    <div class="d-flex justify-content-between"><div><h1>@Model.ReturnNumber</h1><p>Đơn @Model.Order.OrderNumber · <strong>@ReturnDisplay.Text(Model.Status)</strong></p></div><a asp-action="Index">Tất cả yêu cầu</a></div>
-    <div class="card mb-4"><div class="card-body"><h4>Sản phẩm</h4>@foreach (var item in Model.Items) { <div class="border-top py-3"><strong>@item.OrderItem.ProductName</strong><br/>Yêu cầu @item.RequestedQuantity · Đã duyệt @item.ApprovedQuantity · @ReturnDisplay.Text(item.Reason)<br/><span>@item.Description</span>@if (item.ApprovedAmount > 0) { <div class="text-success">Số tiền được duyệt: @item.ApprovedAmount.ToString("N0")₫</div> }</div> }@if (!string.IsNullOrWhiteSpace(Model.DecisionReason)) { <div class="alert alert-info">Kết quả: @Model.DecisionReason</div> }</div></div>
+    <div class="d-flex justify-content-between">
+        <div>
+            <h1>@Model.ReturnNumber</h1>
+            <p>Đơn @Model.Order.OrderNumber · <strong>@ReturnDisplay.CustomerProgress(Model.Status)</strong></p>
+        </div>
+        <a asp-action="Index">Tất cả yêu cầu</a>
+    </div>
+
+    <div class="card mb-4"><div class="card-body"><h4>Sản phẩm</h4>@foreach (var item in Model.Items) { <div class="border-top py-3"><strong>@item.OrderItem.ProductName</strong><br/>Yêu cầu @item.RequestedQuantity · Đã duyệt @item.ApprovedQuantity · @ReturnDisplay.Text(item.Reason)<br/><span>@item.Description</span>@if (item.ApprovedAmount > 0) { <div class="text-success">Số tiền được duyệt: @item.ApprovedAmount.ToString("N0")₫</div> }</div> }@if (approvedAmount > 0) { <div class="alert alert-success mt-3 mb-0">Số tiền hoàn dự kiến: @approvedAmount.ToString("N0")₫</div> }@if (!string.IsNullOrWhiteSpace(Model.DecisionReason)) { <div class="alert alert-info mt-3 mb-0">Kết quả: @Model.DecisionReason</div> }</div></div>
+
+    @if (aggregateRefund != null)
+    {
+        <div class="card mb-4">
+            <div class="card-body">
+                <h4>Thông tin nhận tiền</h4>
+                <p class="text-muted mb-3">Trạng thái hoàn tiền: <strong>@ReturnDisplay.Text(aggregateRefund.Status)</strong></p>
+                @if (showDestinationSummary && !string.IsNullOrWhiteSpace(aggregateRefund.DestinationBankCode) && !string.IsNullOrWhiteSpace(aggregateRefund.DestinationAccountLast4))
+                {
+                    <div class="alert alert-light border">
+                        <div><strong>Ngân hàng:</strong> @aggregateRefund.DestinationBankCode</div>
+                        <div><strong>Số tài khoản:</strong> ****@aggregateRefund.DestinationAccountLast4</div>
+                    </div>
+                }
+                @if (canEditDestination)
+                {
+                    <form asp-action="SaveRefundDestination" method="post" class="row g-3">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="RefundId" value="@aggregateRefund.Id" />
+                        <input type="hidden" name="ReturnRequestId" value="@Model.Id" />
+                        <div class="col-md-4">
+                            <label class="form-label" for="BankCode">Mã ngân hàng</label>
+                            <input class="form-control" id="BankCode" name="BankCode" list="common-bank-codes" minlength="2" maxlength="50" value="@aggregateRefund.DestinationBankCode" required />
+                            <datalist id="common-bank-codes">
+                                <option value="VCB"></option>
+                                <option value="TCB"></option>
+                                <option value="BIDV"></option>
+                                <option value="ACB"></option>
+                                <option value="MB"></option>
+                                <option value="VPB"></option>
+                            </datalist>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" for="AccountNumber">Số tài khoản</label>
+                            <input class="form-control" id="AccountNumber" name="AccountNumber" pattern="^[0-9A-Za-z]{6,34}$" minlength="6" maxlength="34" autocomplete="off" required />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" for="AccountHolder">Chủ tài khoản</label>
+                            <input class="form-control" id="AccountHolder" name="AccountHolder" minlength="2" maxlength="150" autocomplete="off" required />
+                        </div>
+                        <div class="col-12">
+                            <button class="btn btn-primary" type="submit">Lưu thông tin nhận tiền</button>
+                        </div>
+                    </form>
+                }
+            </div>
+        </div>
+    }
+
     @if (Model.Evidences.Any(x => !x.IsInternal)) { <div class="mb-4"><h4>Bằng chứng</h4>@foreach (var file in Model.Evidences.Where(x => !x.IsInternal)) { <a class="btn btn-sm btn-outline-secondary me-2" asp-controller="ReturnEvidence" asp-action="Download" asp-route-id="@file.Id">@file.OriginalFileName</a> }</div> }
     @if (Model.Status == ReturnRequestStatus.AwaitingEvidence) { <form asp-action="AddEvidence" method="post" enctype="multipart/form-data" class="card card-body mb-4">@Html.AntiForgeryToken()<input type="hidden" name="id" value="@Model.Id"/><label class="form-label">Bổ sung bằng chứng trước @(Model.EvidenceDueAtUtc?.ToLocalTime().ToString("dd/MM HH:mm"))</label><input class="form-control mb-2" type="file" name="files" multiple accept=".jpg,.jpeg,.png,.webp,.mp4" required/><button class="btn btn-primary">Tải lên</button></form> }
     @if (Model.Status is ReturnRequestStatus.Submitted or ReturnRequestStatus.AwaitingEvidence) { <form asp-action="Cancel" method="post" onsubmit="return confirm('Hủy yêu cầu này?')">@Html.AntiForgeryToken()<input type="hidden" name="id" value="@Model.Id"/><button class="btn btn-outline-danger">Hủy yêu cầu</button></form> }

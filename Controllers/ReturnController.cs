@@ -15,11 +15,12 @@ public class ReturnController : Controller
     private readonly IReturnService _returns;
     private readonly IReturnEligibilityService _eligibility;
     private readonly IReturnEvidenceService _evidence;
+    private readonly IRefundService _refunds;
     private readonly ApplicationDbContext _db;
 
-    public ReturnController(IReturnService returns, IReturnEligibilityService eligibility, IReturnEvidenceService evidence, ApplicationDbContext db)
+    public ReturnController(IReturnService returns, IReturnEligibilityService eligibility, IReturnEvidenceService evidence, IRefundService refunds, ApplicationDbContext db)
     {
-        _returns = returns; _eligibility = eligibility; _evidence = evidence; _db = db;
+        _returns = returns; _eligibility = eligibility; _evidence = evidence; _refunds = refunds; _db = db;
     }
 
     [HttpGet]
@@ -74,6 +75,22 @@ public class ReturnController : Controller
         var result = await _returns.CancelAsync(id, UserId);
         TempData[result.Success ? "SuccessMessage" : "ErrorMessage"] = result.Success ? "Đã hủy yêu cầu." : result.Error;
         return RedirectToAction(nameof(Details), new { id });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> SaveRefundDestination(RefundDestinationInputViewModel model)
+    {
+        if (!ModelState.IsValid)
+        {
+            TempData["ErrorMessage"] = "Thông tin nhận tiền không hợp lệ.";
+            return RedirectToAction(nameof(Details), new { id = model.ReturnRequestId });
+        }
+
+        var result = await _refunds.SaveDestinationAsync(model.RefundId, UserId, model);
+        TempData[result.Success ? "SuccessMessage" : "ErrorMessage"] = result.Success
+            ? "Đã lưu thông tin nhận tiền."
+            : result.Error;
+        return RedirectToAction(nameof(Details), new { id = model.ReturnRequestId });
     }
 
     private async Task<IActionResult> RedisplayCreate(ReturnSubmitViewModel model)

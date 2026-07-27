@@ -5,11 +5,13 @@ using Fruitables.Controllers;
 using Fruitables.Data;
 using Fruitables.Filters;
 using Fruitables.Services.Interfaces;
+using Fruitables.ViewModels.Returns;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -27,11 +29,52 @@ public class ReturnControllerSecurityTests
         var returns = new Mock<IReturnService>();
         returns.Setup(x => x.GetForCustomerAsync(42, 10, It.IsAny<CancellationToken>())).ReturnsAsync((Models.Returns.ReturnRequest?)null);
         await using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
-        var controller = new ReturnController(returns.Object, Mock.Of<IReturnEligibilityService>(), Mock.Of<IReturnEvidenceService>(), db)
+        var controller = new ReturnController(returns.Object, Mock.Of<IReturnEligibilityService>(), Mock.Of<IReturnEvidenceService>(), Mock.Of<IRefundService>(), db)
         {
             ControllerContext = Context(10, "Customer")
         };
         Assert.IsType<NotFoundResult>(await controller.Details(42));
+    }
+
+    [Fact]
+    public async Task CustomerDestinationPost_UsesAuthenticatedUserId()
+    {
+        var refunds = new Mock<IRefundService>();
+        refunds.Setup(x => x.SaveDestinationAsync(
+                7,
+                10,
+                It.IsAny<RefundDestinationInputViewModel>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((true, (string?)null));
+        await using var db = new ApplicationDbContext(
+            new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var controller = new ReturnController(
+            Mock.Of<IReturnService>(),
+            Mock.Of<IReturnEligibilityService>(),
+            Mock.Of<IReturnEvidenceService>(),
+            refunds.Object,
+            db)
+        {
+            ControllerContext = Context(10, "Customer"),
+            TempData = new TempDataDictionary(new DefaultHttpContext(), Mock.Of<ITempDataProvider>())
+        };
+
+        var result = await controller.SaveRefundDestination(new RefundDestinationInputViewModel
+        {
+            RefundId = 7,
+            ReturnRequestId = 42,
+            BankCode = "VCB",
+            AccountNumber = "0123456789",
+            AccountHolder = "NGUYEN VAN A"
+        });
+
+        refunds.Verify(x => x.SaveDestinationAsync(
+            7,
+            10,
+            It.IsAny<RefundDestinationInputViewModel>(),
+            It.IsAny<CancellationToken>()));
+        Assert.IsType<RedirectToActionResult>(result);
     }
 
     [Fact]

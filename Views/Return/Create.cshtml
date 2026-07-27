@@ -28,10 +28,9 @@
                 <p>Còn có thể yêu cầu: <strong>@rule.RemainingQuantity</strong> · Hạn gửi @rule.DeadlineAtUtc?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") <span class="badge bg-warning text-dark evidence-badge d-none">Cần bằng chứng</span></p>
                 <input type="hidden" name="Items[@index].OrderItemId" value="@item.Id" />
                 <div class="row g-3">
-                    <div class="col-md-2"><label class="form-label">Số lượng</label><input class="form-control" type="number" min="1" max="@rule.RemainingQuantity" name="Items[@index].Quantity" value="1" required /></div>
-                    <div class="col-md-4"><label class="form-label">Lý do</label><select class="form-select reason-select" name="Items[@index].Reason" required>@foreach (var reason in reasonRules[item.Id].Keys) { <option value="@reason" data-evidence-required="@reasonRules[item.Id][reason].ToString().ToLowerInvariant()">@ReturnDisplay.Text(reason)</option> }</select></div>
-                    <div class="col-md-4"><label class="form-label">Mong muốn xử lý</label><select class="form-select" name="Items[@index].RequestedResolution">@foreach (var resolution in new[] { ReturnResolutionType.PartialRefund, ReturnResolutionType.FullRefund, ReturnResolutionType.Replacement, ReturnResolutionType.StoreCredit }) { <option value="@resolution">@ReturnDisplay.Text(resolution)</option> }</select></div>
-                    <div class="col-12"><label class="form-label">Mô tả</label><textarea class="form-control" minlength="5" maxlength="1000" name="Items[@index].Description"></textarea></div>
+                    <div class="col-md-2"><label class="form-label">Số lượng</label><input class="form-control" type="number" min="1" max="@rule.RemainingQuantity" name="Items[@index].Quantity" value="1" data-item-field disabled /></div>
+                    <div class="col-md-4"><label class="form-label">Lý do</label><select class="form-select reason-select" name="Items[@index].Reason" data-item-field disabled>@foreach (var reason in reasonRules[item.Id].Keys) { <option value="@reason" data-evidence-required="@reasonRules[item.Id][reason].ToString().ToLowerInvariant()">@ReturnDisplay.Text(reason)</option> }</select></div>
+                    <div class="col-12"><label class="form-label">Mô tả</label><textarea class="form-control" minlength="5" maxlength="1000" name="Items[@index].Description" data-item-field data-optional="true" disabled></textarea></div>
                 </div>
             </div></div>
             index++;
@@ -49,9 +48,17 @@
             const fileInput = document.getElementById('EvidenceFiles');
             const requiredLabel = document.getElementById('evidenceRequiredLabel');
             if (!form || !fileInput) return;
+            const refreshItem = card => {
+                const selected = card.querySelector('.item-toggle').checked;
+                card.querySelectorAll('[data-item-field]').forEach(field => {
+                    field.disabled = !selected;
+                    field.required = selected && field.dataset.optional !== 'true';
+                });
+            };
             const refresh = () => {
                 let required = false;
                 form.querySelectorAll('.card').forEach(card => {
+                    refreshItem(card);
                     const selected = card.querySelector('.item-toggle')?.checked;
                     const option = card.querySelector('.reason-select')?.selectedOptions[0];
                     const itemRequired = selected && option?.dataset.evidenceRequired === 'true';

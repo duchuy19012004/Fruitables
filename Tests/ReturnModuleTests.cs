@@ -1,4 +1,5 @@
 using Fruitables.Data;
+using Fruitables.Helpers;
 using Fruitables.Models;
 using Fruitables.Models.Returns;
 using Fruitables.Services;
@@ -56,6 +57,18 @@ public class ReturnModuleTests
     public void ReturnEventType_PreservesDispositionRecordedNumericValue()
     {
         Assert.Equal(ReturnEventType.DispositionRecorded, (ReturnEventType)15);
+    }
+
+    [Theory]
+    [InlineData(ReturnRequestStatus.Submitted, "Đã tiếp nhận")]
+    [InlineData(ReturnRequestStatus.AwaitingEvidence, "Cần bổ sung")]
+    [InlineData(ReturnRequestStatus.UnderReview, "Đang xem xét")]
+    [InlineData(ReturnRequestStatus.ResolutionPending, "Đang hoàn tiền")]
+    [InlineData(ReturnRequestStatus.Resolved, "Đã hoàn tiền")]
+    [InlineData(ReturnRequestStatus.Rejected, "Đã từ chối")]
+    public void CustomerProgress_UsesBusinessCopy(ReturnRequestStatus status, string expected)
+    {
+        Assert.Equal(expected, ReturnDisplay.CustomerProgress(status));
     }
 
     [Fact]
