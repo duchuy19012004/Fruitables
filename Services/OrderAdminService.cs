@@ -17,12 +17,18 @@ public class OrderAdminService : IOrderAdminService
     private readonly ApplicationDbContext _context;
     private readonly IOrderLogService _logService;
     private readonly IRealtimeNotifier _notifier;
+    private readonly TimeProvider _timeProvider;
 
-    public OrderAdminService(ApplicationDbContext context, IOrderLogService logService, IRealtimeNotifier notifier)
+    public OrderAdminService(
+        ApplicationDbContext context,
+        IOrderLogService logService,
+        IRealtimeNotifier notifier,
+        TimeProvider? timeProvider = null)
     {
         _context = context;
         _logService = logService;
         _notifier = notifier;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public async Task<OrderListResult> GetOrdersAsync(OrderListRequest request)
@@ -155,6 +161,10 @@ public class OrderAdminService : IOrderAdminService
             // Stage status update + history so a single SaveChanges commits the full atomic flow.
             var oldStatus = order.Status;
             order.Status = request.NewStatus;
+            if (request.NewStatus == OrderStatus.Delivered && order.DeliveredAtUtc == null)
+            {
+                order.DeliveredAtUtc = _timeProvider.GetUtcNow().UtcDateTime;
+            }
             _context.OrderStatusHistories.Add(new OrderStatusHistory
             {
                 OrderId = order.Id,
@@ -524,6 +534,10 @@ public class OrderAdminService : IOrderAdminService
             // Update both statuses atomically (Requirement 1.2)
             order.Status = request.NewOrderStatus;
             order.PaymentStatus = request.NewPaymentStatus;
+            if (request.NewOrderStatus == OrderStatus.Delivered && order.DeliveredAtUtc == null)
+            {
+                order.DeliveredAtUtc = _timeProvider.GetUtcNow().UtcDateTime;
+            }
 
             await _context.SaveChangesAsync();
 

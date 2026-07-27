@@ -8,6 +8,7 @@ using Fruitables.Services.Chat;
 using Fruitables.Services.Chat.Intents;
 using Fruitables.Services.Interfaces;
 using Fruitables.Services.Search;
+using Fruitables.Services.Returns;
 using Fruitables.Options;
 using Fruitables.Filters;
 using Microsoft.AspNetCore.DataProtection;
@@ -69,6 +70,14 @@ builder.Services.AddScoped<IUserAuthService, UserAuthService>();
 builder.Services.AddScoped<IGoogleAuthService, GoogleAuthService>();
 builder.Services.AddScoped<IProfileService, ProfileService>();
 builder.Services.AddScoped<IOrderHistoryService, OrderHistoryService>();
+builder.Services.AddScoped<IReturnPolicyService, ReturnPolicyService>();
+builder.Services.AddScoped<IReturnEligibilityService, ReturnEligibilityService>();
+builder.Services.AddScoped<IRefundAmountCalculator, RefundAmountCalculator>();
+builder.Services.AddScoped<IReturnService, ReturnService>();
+builder.Services.AddScoped<IReturnEvidenceService, ReturnEvidenceService>();
+builder.Services.AddScoped<IRefundService, RefundService>();
+builder.Services.AddScoped<IReturnDispositionService, ReturnDispositionService>();
+builder.Services.AddScoped<ReturnPolicyVersionCommand>();
 builder.Services.AddScoped<ISalesAnalyticsService, SalesAnalyticsService>();
 builder.Services.AddScoped<IUserManagementService, UserManagementService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
@@ -192,6 +201,18 @@ builder.Services.AddDataProtection()
     .SetApplicationName("FruitablesApp");
 
 var app = builder.Build();
+
+var returnPolicyArgument = args.FirstOrDefault(argument =>
+    argument.StartsWith("--create-return-policy-version=", StringComparison.OrdinalIgnoreCase));
+if (returnPolicyArgument != null)
+{
+    var policyPath = returnPolicyArgument.Split('=', 2)[1].Trim('"');
+    using var policyScope = app.Services.CreateScope();
+    var command = policyScope.ServiceProvider.GetRequiredService<ReturnPolicyVersionCommand>();
+    var policy = await command.CreateFromFileAsync(policyPath);
+    app.Logger.LogInformation("Created return policy {PolicyId} version {Version}", policy.Id, policy.Version);
+    return;
+}
 
 var rollbackArgument = args.FirstOrDefault(argument =>
     argument.StartsWith("--rollback-product-images=", StringComparison.OrdinalIgnoreCase));

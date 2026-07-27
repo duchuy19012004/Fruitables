@@ -1,0 +1,30 @@
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
+using Fruitables.Models;
+
+namespace Fruitables.Models.Returns;
+
+public class Refund
+{
+    public int Id { get; set; }
+    public int ReturnRequestId { get; set; }
+    public int? ReturnRequestItemId { get; set; }
+    public int OrderId { get; set; }
+    [Column(TypeName = "decimal(12,2)")] public decimal Amount { get; set; }
+    public RefundMethod Method { get; set; }
+    public RefundStatus Status { get; set; } = RefundStatus.Pending;
+    [Required, MaxLength(64)] public string IdempotencyKey { get; set; } = string.Empty;
+    [MaxLength(128)] public string? TransactionReference { get; set; }
+    [MaxLength(128)] public string? TransferEvidenceStorageKey { get; set; }
+    [MaxLength(1000)] public string? FailureReason { get; set; }
+    public int CreatedByUserId { get; set; }
+    public int? ProcessedByUserId { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime? ProcessedAtUtc { get; set; }
+
+    public ReturnRequest ReturnRequest { get; set; } = null!;
+    public ReturnRequestItem? ReturnRequestItem { get; set; }
+    public Order Order { get; set; } = null!;
+    public User CreatedByUser { get; set; } = null!;
+    public User? ProcessedByUser { get; set; }
+}

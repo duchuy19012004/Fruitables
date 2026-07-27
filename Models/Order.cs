@@ -28,7 +28,8 @@ public enum PaymentStatus
 {
     Pending,
     Paid,
-    Refunded
+    Refunded,
+    PartiallyRefunded
 }
 
 public enum ShippingMethod
@@ -83,6 +84,7 @@ public class Order
     public string? CancelReason { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow.AddHours(7);
+    public DateTime? DeliveredAtUtc { get; set; }
 
     [Timestamp]
     public byte[]? RowVersion { get; set; }
@@ -93,4 +95,5 @@ public class Order
     public virtual ICollection<OrderItem> Items { get; set; } = new List<OrderItem>();
     public virtual ICollection<OrderStatusHistory> StatusHistory { get; set; } = new List<OrderStatusHistory>();
     public virtual ICollection<OrderNote> OrderNotes { get; set; } = new List<OrderNote>();
+    public virtual ICollection<Returns.ReturnRequest> ReturnRequests { get; set; } = new List<Returns.ReturnRequest>();
 }

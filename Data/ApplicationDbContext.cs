@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Fruitables.Models;
+using Fruitables.Models.Returns;
 
 namespace Fruitables.Data;
 
@@ -42,7 +43,14 @@ public class ApplicationDbContext : DbContext
     public DbSet<OrderStatusHistory> OrderStatusHistories => Set<OrderStatusHistory>();
     public DbSet<OrderNote> OrderNotes => Set<OrderNote>();
     public DbSet<UserAccountLog> UserAccountLogs => Set<UserAccountLog>();
-    
+    public DbSet<ReturnRequest> ReturnRequests => Set<ReturnRequest>();
+    public DbSet<ReturnRequestItem> ReturnRequestItems => Set<ReturnRequestItem>();
+    public DbSet<ReturnEvidence> ReturnEvidences => Set<ReturnEvidence>();
+    public DbSet<ReturnEvent> ReturnEvents => Set<ReturnEvent>();
+    public DbSet<ReturnPolicy> ReturnPolicies => Set<ReturnPolicy>();
+    public DbSet<Refund> Refunds => Set<Refund>();
+    public DbSet<InventoryDisposition> InventoryDispositions => Set<InventoryDisposition>();
+
     // RBAC
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<Permission> Permissions => Set<Permission>();
@@ -62,6 +70,7 @@ public class ApplicationDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        ConfigureReturns(modelBuilder);
 
         // Category - Self-referencing
         modelBuilder.Entity<Category>(entity =>
@@ -635,6 +644,82 @@ public class ApplicationDbContext : DbContext
             }
         );
 
+    }
+
+    private static void ConfigureReturns(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<ReturnRequest>(entity =>
+        {
+            entity.HasIndex(x => x.ReturnNumber).IsUnique();
+            entity.HasIndex(x => new { x.UserId, x.IdempotencyKey }).IsUnique();
+            entity.HasIndex(x => new { x.OrderId, x.Status });
+            entity.HasIndex(x => new { x.UserId, x.SubmittedAtUtc });
+            entity.HasIndex(x => new { x.Status, x.ReviewDueAtUtc });
+            entity.HasOne(x => x.Order).WithMany(x => x.ReturnRequests).HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.Reviewer).WithMany().HasForeignKey(x => x.ReviewerId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ReturnRequestItem>(entity =>
+        {
+            entity.HasIndex(x => new { x.ReturnRequestId, x.OrderItemId });
+            entity.Property(x => x.NetPaidAmountSnapshot).HasPrecision(12, 2);
+            entity.Property(x => x.RequestedAmount).HasPrecision(12, 2);
+            entity.Property(x => x.ApprovedAmount).HasPrecision(12, 2);
+            entity.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_ReturnRequestItems_RequestedQuantity", "[RequestedQuantity] > 0");
+                t.HasCheckConstraint("CK_ReturnRequestItems_ApprovedQuantity", "[ApprovedQuantity] >= 0 AND [ApprovedQuantity] <= [RequestedQuantity]");
+            });
+            entity.HasOne(x => x.ReturnRequest).WithMany(x => x.Items).HasForeignKey(x => x.ReturnRequestId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.OrderItem).WithMany().HasForeignKey(x => x.OrderItemId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.ReturnPolicy).WithMany().HasForeignKey(x => x.ReturnPolicyId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ReturnEvidence>(entity =>
+        {
+            entity.HasIndex(x => x.StorageKey).IsUnique();
+            entity.HasOne(x => x.ReturnRequest).WithMany(x => x.Evidences).HasForeignKey(x => x.ReturnRequestId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.ReturnRequestItem).WithMany(x => x.Evidences).HasForeignKey(x => x.ReturnRequestItemId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.UploadedByUser).WithMany().HasForeignKey(x => x.UploadedByUserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ReturnEvent>(entity =>
+        {
+            entity.HasIndex(x => new { x.ReturnRequestId, x.CreatedAtUtc });
+            entity.HasOne(x => x.ReturnRequest).WithMany(x => x.Events).HasForeignKey(x => x.ReturnRequestId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.ActorUser).WithMany().HasForeignKey(x => x.ActorUserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ReturnPolicy>(entity =>
+        {
+            entity.HasIndex(x => new { x.Scope, x.ProductId, x.CategoryId, x.Reason, x.IsActive });
+            entity.HasIndex(x => new { x.Version, x.EffectiveFromUtc });
+            entity.HasOne(x => x.Category).WithMany().HasForeignKey(x => x.CategoryId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<Refund>(entity =>
+        {
+            entity.Property(x => x.Amount).HasPrecision(12, 2);
+            entity.HasIndex(x => x.IdempotencyKey).IsUnique();
+            entity.HasIndex(x => x.TransactionReference).IsUnique().HasFilter("[TransactionReference] IS NOT NULL");
+            entity.HasIndex(x => new { x.Status, x.CreatedAtUtc });
+            entity.ToTable(t => t.HasCheckConstraint("CK_Refunds_Amount", "[Amount] > 0"));
+            entity.HasOne(x => x.ReturnRequest).WithMany(x => x.Refunds).HasForeignKey(x => x.ReturnRequestId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.ReturnRequestItem).WithMany(x => x.Refunds).HasForeignKey(x => x.ReturnRequestItemId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.Order).WithMany().HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.CreatedByUser).WithMany().HasForeignKey(x => x.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.ProcessedByUser).WithMany().HasForeignKey(x => x.ProcessedByUserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<InventoryDisposition>(entity =>
+        {
+            entity.ToTable(t => t.HasCheckConstraint("CK_InventoryDispositions_Quantity", "[Quantity] > 0"));
+            entity.HasIndex(x => new { x.ReturnRequestItemId, x.CreatedAtUtc });
+            entity.HasOne(x => x.ReturnRequestItem).WithMany(x => x.Dispositions).HasForeignKey(x => x.ReturnRequestItemId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.InspectorUser).WithMany().HasForeignKey(x => x.InspectorUserId).OnDelete(DeleteBehavior.Restrict);
+        });
     }
 
     /// <summary>
