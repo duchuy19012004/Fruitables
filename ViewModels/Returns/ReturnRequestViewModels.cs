@@ -4,13 +4,22 @@ using Microsoft.AspNetCore.Http;
 
 namespace Fruitables.ViewModels.Returns;
 
-public class ReturnSubmitViewModel
+public class ReturnSubmitViewModel : IValidatableObject
 {
     public int OrderId { get; set; }
     [Required, MaxLength(64)] public string IdempotencyKey { get; set; } = Guid.NewGuid().ToString("N");
     [MaxLength(2000)] public string? CustomerNote { get; set; }
     public List<ReturnSubmitItemViewModel> Items { get; set; } = new();
     public List<IFormFile>? EvidenceFiles { get; set; }
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        foreach (var item in Items.Where(x => x.Selected))
+        {
+            if (string.IsNullOrWhiteSpace(item.Description) || item.Description.Trim().Length < 5)
+                yield return new ValidationResult("Mô tả tối thiểu 5 ký tự là bắt buộc cho sản phẩm đã chọn.", [nameof(Items)]);
+        }
+    }
 }
 
 public class ReturnSubmitItemViewModel

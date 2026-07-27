@@ -30,7 +30,7 @@
                 <div class="row g-3">
                     <div class="col-md-2"><label class="form-label">Số lượng</label><input class="form-control" type="number" min="1" max="@rule.RemainingQuantity" name="Items[@index].Quantity" value="1" data-item-field disabled /></div>
                     <div class="col-md-4"><label class="form-label">Lý do</label><select class="form-select reason-select" name="Items[@index].Reason" data-item-field disabled>@foreach (var reason in reasonRules[item.Id].Keys) { <option value="@reason" data-evidence-required="@reasonRules[item.Id][reason].ToString().ToLowerInvariant()">@ReturnDisplay.Text(reason)</option> }</select></div>
-                    <div class="col-12"><label class="form-label">Mô tả</label><textarea class="form-control" minlength="5" maxlength="1000" name="Items[@index].Description" data-item-field data-optional="true" disabled></textarea></div>
+                    <div class="col-12"><label class="form-label">Mô tả</label><textarea class="form-control" minlength="5" maxlength="1000" name="Items[@index].Description" data-item-field disabled></textarea></div>
                 </div>
             </div></div>
             index++;

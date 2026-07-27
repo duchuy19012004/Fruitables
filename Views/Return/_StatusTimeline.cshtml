@@ -2,14 +2,13 @@
 @using Fruitables.Models.Returns
 @model IEnumerable<ReturnEvent>
 <ol class="list-group list-group-numbered">
-@foreach (var item in Model
-    .Where(x => x.Type != ReturnEventType.RefundDestinationViewed)
-    .OrderBy(x => x.CreatedAtUtc))
+@foreach (var item in Model.OrderBy(x => x.CreatedAtUtc))
 {
-    var note = item.Note == "Finance xác nhận hoàn tiền thủ công." ? "Bộ phận tài chính xác nhận hoàn tiền thủ công." : item.Note;
+    var entry = ReturnDisplay.CustomerTimelineEvent(item);
+    if (entry == null) { continue; }
     <li class="list-group-item">
-        <div class="d-flex justify-content-between gap-3"><strong>@ReturnDisplay.Text(item.Type)</strong><small class="text-muted">@item.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</small></div>
-        @if (!string.IsNullOrWhiteSpace(note)) { <span>@note</span> }
+        <div class="d-flex justify-content-between gap-3"><strong>@entry.Value.Title</strong><small class="text-muted">@item.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</small></div>
+        @if (!string.IsNullOrWhiteSpace(entry.Value.Note)) { <span>@entry.Value.Note</span> }
     </li>
 }
 </ol>

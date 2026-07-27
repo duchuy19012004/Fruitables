@@ -5,6 +5,8 @@ namespace Fruitables.Helpers;
 
 public static class ReturnDisplay
 {
+    public readonly record struct CustomerTimelineEntry(string Title, string? Note);
+
     public static string Text(ReturnRequestStatus value) => value switch
     {
         ReturnRequestStatus.Submitted => "Đã gửi",
@@ -102,6 +104,23 @@ public static class ReturnDisplay
         EvidenceScanStatus.Rejected => "Không hợp lệ",
         EvidenceScanStatus.ScanFailed => "Kiểm tra thất bại",
         _ => value.ToString()
+    };
+
+    public static CustomerTimelineEntry? CustomerTimelineEvent(ReturnEvent item) => item.Type switch
+    {
+        ReturnEventType.Submitted => new("Đã gửi yêu cầu", "Yêu cầu của bạn đã được tiếp nhận."),
+        ReturnEventType.EvidenceAdded => new("Đã bổ sung bằng chứng", "Đã nhận thêm bằng chứng từ bạn."),
+        ReturnEventType.EvidenceRequested => new("Cần bổ sung bằng chứng", item.Note),
+        ReturnEventType.Approved => new("Yêu cầu đã được duyệt", item.Note),
+        ReturnEventType.PartiallyApproved => new("Yêu cầu đã được duyệt một phần", item.Note),
+        ReturnEventType.Rejected => new("Yêu cầu đã bị từ chối", item.Note),
+        ReturnEventType.Cancelled => new("Yêu cầu đã bị hủy", item.Note),
+        ReturnEventType.Expired => new("Yêu cầu đã quá hạn", item.Note),
+        ReturnEventType.RefundCreated => new("Đã tạo khoản hoàn tiền", item.Note),
+        ReturnEventType.RefundDestinationSubmitted => new("Đã nhận thông tin nhận tiền", "Thông tin nhận tiền của bạn đã được ghi nhận."),
+        ReturnEventType.RefundDestinationCorrectionRequested => new("Cần cập nhật thông tin nhận tiền", "Thông tin nhận tiền cần được cập nhật. Vui lòng kiểm tra và gửi lại."),
+        ReturnEventType.RefundSucceeded => new("Đã hoàn tiền", "Khoản hoàn tiền đã được xác nhận thành công."),
+        _ => null
     };
 
     public static string Text(ReturnEventType value) => value switch

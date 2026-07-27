@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using Fruitables.Data;
 using Fruitables.Helpers;
 using Fruitables.Models;
@@ -69,6 +70,67 @@ public class ReturnModuleTests
     public void CustomerProgress_UsesBusinessCopy(ReturnRequestStatus status, string expected)
     {
         Assert.Equal(expected, ReturnDisplay.CustomerProgress(status));
+    }
+
+    [Fact]
+    public void CustomerTimelineEvent_HidesInternalFinanceNotes_AndUsesSafeCopy()
+    {
+        Assert.Null(ReturnDisplay.CustomerTimelineEvent(new ReturnEvent
+        {
+            Type = ReturnEventType.RefundFailed,
+            Note = "Sai số tài khoản nội bộ"
+        }));
+
+        var correction = Assert.NotNull(ReturnDisplay.CustomerTimelineEvent(new ReturnEvent
+        {
+            Type = ReturnEventType.RefundDestinationCorrectionRequested,
+            Note = "Sai tên chủ tài khoản nội bộ"
+        }));
+        Assert.Equal("Cần cập nhật thông tin nhận tiền", correction.Title);
+        Assert.Equal("Thông tin nhận tiền cần được cập nhật. Vui lòng kiểm tra và gửi lại.", correction.Note);
+    }
+
+    [Fact]
+    public void ReturnSubmitViewModel_RequiresDescriptionForSelectedItemsOnly()
+    {
+        var selected = new ReturnSubmitViewModel
+        {
+            IdempotencyKey = "selected-item",
+            Items =
+            {
+                new ReturnSubmitItemViewModel
+                {
+                    Selected = true,
+                    OrderItemId = 1,
+                    Quantity = 1,
+                    Reason = ReturnReasonCode.Other,
+                    Description = "abc"
+                }
+            }
+        };
+
+        var selectedResults = new List<ValidationResult>();
+        Assert.False(Validator.TryValidateObject(selected, new ValidationContext(selected), selectedResults, validateAllProperties: true));
+        Assert.Contains(selectedResults, x => x.ErrorMessage == "Mô tả tối thiểu 5 ký tự là bắt buộc cho sản phẩm đã chọn.");
+
+        var unselected = new ReturnSubmitViewModel
+        {
+            IdempotencyKey = "unselected-item",
+            Items =
+            {
+                new ReturnSubmitItemViewModel
+                {
+                    Selected = false,
+                    OrderItemId = 1,
+                    Quantity = 0,
+                    Reason = ReturnReasonCode.Other,
+                    Description = string.Empty
+                }
+            }
+        };
+
+        var unselectedResults = new List<ValidationResult>();
+        Assert.True(Validator.TryValidateObject(unselected, new ValidationContext(unselected), unselectedResults, validateAllProperties: true));
     }
 
     [Fact]
