@@ -38,6 +38,7 @@
 .return-admin .btn-rt-primary:hover { color: #fff; background: var(--rt-accent-dark); border-color: var(--rt-accent-dark); }
 .return-admin .btn-rt-soft { color: var(--rt-accent-dark); background: #edf5e3; border-color: #d6e8bf; }
 .return-admin .btn-rt-soft:hover { background: #e1efcf; }
+.return-admin .rt-tab-nav { display: flex; flex-wrap: wrap; gap: .65rem; }
 .return-admin .rt-table { margin: 0; }
 .return-admin .rt-table th { color: #526158; background: #f7faf8; font-size: .75rem; font-weight: 700; border-bottom: 1px solid var(--rt-line); padding: .8rem 1rem; white-space: nowrap; }
 .return-admin .rt-table td { border-color: #e9eeea; padding: .9rem 1rem; vertical-align: middle; }
@@ -72,6 +73,9 @@
 .return-admin .rt-file { display: inline-flex; align-items: center; gap: .55rem; color: var(--rt-ink); background: #f7faf8; border: 1px solid var(--rt-line); border-radius: .55rem; padding: .6rem .75rem; text-decoration: none; font-size: .8rem; }
 .return-admin .rt-file:hover { color: var(--rt-accent-dark); border-color: #b9cdbd; }
 .return-admin .rt-action { padding: 1rem; background: #fbfdfb; border: 1px solid var(--rt-line); border-radius: .7rem; }
+.return-admin .rt-action-card { display: grid; gap: .9rem; padding: 1rem; background: #fbfdfb; border: 1px solid var(--rt-line); border-radius: .7rem; }
+.return-admin .rt-masked-account { font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+.return-admin .rt-fixed-amount { font-size: 1rem; font-weight: 750; }
 .return-admin .rt-action + .rt-action { margin-top: .75rem; }
 .return-admin .rt-action-title { font-size: .92rem; font-weight: 720; margin: 0 0 .8rem; }
 .return-admin .rt-timeline { list-style: none; margin: 0; padding: 0; }

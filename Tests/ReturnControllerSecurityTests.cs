@@ -18,6 +18,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 using AdminReturnController = Fruitables.Areas.Admin.Controllers.ReturnController;
+using AdminRefundController = Fruitables.Areas.Admin.Controllers.RefundController;
 
 namespace Fruitables.Tests;
 
@@ -101,6 +102,24 @@ public class ReturnControllerSecurityTests
         Assert.Null(typeof(AdminReturnController).GetMethod("ConfirmRefund"));
         Assert.Null(typeof(AdminReturnController).GetMethod("UpdateResolution"));
         Assert.Null(typeof(AdminReturnController).GetMethod("RecordDisposition"));
+    }
+
+    [Fact]
+    public void FinanceRefundRoutes_RequireRefundPermissionAndAntiforgery()
+    {
+        var controllerType = typeof(AdminRefundController);
+        var authorize = Assert.Single(controllerType.GetCustomAttributes<AuthorizeAttribute>());
+        Assert.Equal("Admin,SuperAdmin", authorize.Roles);
+
+        var actions = controllerType
+            .GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)
+            .Where(x => !x.IsSpecialName)
+            .ToList();
+        Assert.All(actions, action =>
+            Assert.Contains(action.GetCustomAttributes<RequirePermissionAttribute>(),
+                attribute => attribute.Permissions.Contains("returns.refund")));
+        Assert.All(actions.Where(x => x.GetCustomAttribute<HttpPostAttribute>() != null),
+            action => Assert.NotNull(action.GetCustomAttribute<ValidateAntiForgeryTokenAttribute>()));
     }
 
     [Fact]

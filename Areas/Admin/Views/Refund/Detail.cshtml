@@ -1,0 +1,119 @@
+@using Fruitables.Helpers
+@using Fruitables.Models.Returns
+@using Fruitables.ViewModels.Returns
+@model FinanceRefundViewModel
+@{
+    ViewData["Title"] = $"Hoàn tiền {Model.ReturnNumber}";
+    Layout = "~/Areas/Admin/Views/Shared/_AdminDashboardLayout.cshtml";
+    var failureReason = ViewBag.FailureReason as string;
+    var transactionReference = ViewBag.TransactionReference as string;
+    var processedAtUtc = ViewBag.ProcessedAtUtc as DateTime?;
+    var transferEvidenceId = ViewBag.TransferEvidenceId as int?;
+    var maskedDestination = string.IsNullOrWhiteSpace(Model.BankCode) || string.IsNullOrWhiteSpace(Model.AccountLast4)
+        ? "Chưa có"
+        : $"{Model.BankCode} ••••{Model.AccountLast4}";
+}
+@functions {
+    private static string StatusClass(RefundStatus status) => status switch
+    {
+        RefundStatus.AwaitingDestination => "rt-badge-warning",
+        RefundStatus.AwaitingApproval or RefundStatus.Processing => "rt-badge-info",
+        RefundStatus.Succeeded => "rt-badge-success",
+        RefundStatus.Failed or RefundStatus.Cancelled => "rt-badge-danger",
+        _ => "rt-badge-neutral"
+    };
+}
+@section Styles { <link rel="stylesheet" href="~/css/return-admin.css" asp-append-version="true" /> }
+
+<main class="return-admin">
+    @if (TempData["Success"] != null) { <div class="alert alert-success rt-alert">@TempData["Success"]</div> }
+    @if (TempData["Error"] != null) { <div class="alert alert-danger rt-alert">@TempData["Error"]</div> }
+
+    <header class="rt-page-header">
+        <div>
+            <div class="d-flex align-items-center gap-2 mb-2"><span class="rt-badge @StatusClass(Model.Status)">@ReturnDisplay.Text(Model.Status)</span></div>
+            <h1 class="rt-title">@Model.ReturnNumber</h1>
+            <p class="rt-subtitle">Đơn hàng @Model.OrderNumber · Khách hàng @Model.CustomerName</p>
+        </div>
+        <a asp-action="Index" class="rt-back"><i class="fas fa-arrow-left me-2"></i>Về hàng đợi</a>
+    </header>
+
+    <section class="rt-panel rt-summary" aria-label="Thông tin khoản hoàn">
+        <div class="rt-summary-item"><span class="rt-summary-label">Yêu cầu</span><span class="rt-summary-value">@Model.ReturnNumber</span></div>
+        <div class="rt-summary-item"><span class="rt-summary-label">Đơn hàng</span><span class="rt-summary-value">@Model.OrderNumber</span></div>
+        <div class="rt-summary-item"><span class="rt-summary-label">Khách hàng</span><span class="rt-summary-value">@Model.CustomerName</span></div>
+        <div class="rt-summary-item"><span class="rt-summary-label">Số tiền hoàn</span><span class="rt-summary-value rt-fixed-amount">@Model.Amount.ToString("N0")₫</span></div>
+    </section>
+
+    <div class="rt-detail-grid">
+        <section class="rt-panel">
+            <div class="rt-panel-head"><h2>Thông tin nhận tiền</h2></div>
+            <div class="rt-panel-body">
+                @if (Model.Status == RefundStatus.AwaitingDestination)
+                {
+                    <div class="alert alert-info mb-0" role="status">Đang chờ khách cung cấp tài khoản</div>
+                }
+                else if (Model.Status is RefundStatus.AwaitingApproval or RefundStatus.Processing or RefundStatus.Failed)
+                {
+                    <div class="rt-action-card">
+                        <div><span class="rt-data-label">Ngân hàng</span><div class="rt-data-value">@Model.BankCode</div></div>
+                        <div><span class="rt-data-label">Số tài khoản</span><div class="rt-data-value">@Model.AccountNumber</div></div>
+                        <div><span class="rt-data-label">Chủ tài khoản</span><div class="rt-data-value">@Model.AccountHolder</div></div>
+                        <div><span class="rt-data-label">Số tiền hoàn</span><div class="rt-data-value rt-fixed-amount">@Model.Amount.ToString("N0")₫</div></div>
+                    </div>
+                }
+                else if (Model.Status == RefundStatus.Succeeded)
+                {
+                    <div class="rt-action-card">
+                        <div><span class="rt-data-label">Tài khoản nhận tiền</span><div class="rt-data-value rt-masked-account">@maskedDestination</div></div>
+                        <div><span class="rt-data-label">Mã giao dịch</span><div class="rt-data-value">@(transactionReference ?? "Chưa có")</div></div>
+                        <div><span class="rt-data-label">Thời điểm hoàn tất</span><div class="rt-data-value">@(processedAtUtc?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? "Chưa có")</div></div>
+                        @if (transferEvidenceId.HasValue)
+                        {
+                            <div><a class="rt-file" asp-area="" asp-controller="ReturnEvidence" asp-action="Download" asp-route-id="@transferEvidenceId.Value"><i class="far fa-file-image"></i><span>Xem chứng từ chuyển khoản</span></a></div>
+                        }
+                    </div>
+                }
+            </div>
+        </section>
+
+        <aside>
+            @if (Model.Status == RefundStatus.AwaitingApproval)
+            {
+                <section class="rt-panel"><div class="rt-panel-head"><h2>Thao tác</h2></div><div class="rt-panel-body"><form asp-action="Start" method="post">@Html.AntiForgeryToken()<input type="hidden" name="id" value="@Model.RefundId" /><button class="btn btn-rt-primary w-100" type="submit">Bắt đầu xử lý</button></form></div></section>
+            }
+            else if (Model.Status == RefundStatus.Processing)
+            {
+                <section class="rt-panel">
+                    <div class="rt-panel-head"><h2>Xác nhận hoàn tiền</h2></div>
+                    <div class="rt-panel-body">
+                        <form asp-action="Confirm" method="post" enctype="multipart/form-data">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="id" value="@Model.RefundId" />
+                            <div class="mb-3"><label class="form-label" for="transactionReference">Mã giao dịch</label><input id="transactionReference" class="form-control" name="transactionReference" required maxlength="128" /></div>
+                            <div class="mb-3"><label class="form-label" for="transferEvidence">Chứng từ chuyển khoản</label><input id="transferEvidence" class="form-control" type="file" name="transferEvidence" accept=".jpg,.jpeg,.png,.webp,.mp4" required /></div>
+                            <div class="mb-3"><span class="rt-data-label">Số tiền hoàn</span><div class="rt-data-value rt-fixed-amount">@Model.Amount.ToString("N0")₫</div></div>
+                            <button class="btn btn-rt-primary w-100" type="submit">Xác nhận đã chuyển tiền</button>
+                        </form>
+                    </div>
+                </section>
+                <section class="rt-panel">
+                    <div class="rt-panel-head"><h2>Ghi nhận thất bại</h2></div>
+                    <div class="rt-panel-body">
+                        <form asp-action="Fail" method="post">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="RefundId" value="@Model.RefundId" />
+                            <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="RequestCustomerCorrection" value="true" id="RequestCustomerCorrection" /><label class="form-check-label" for="RequestCustomerCorrection">Yêu cầu khách cập nhật lại thông tin nhận tiền</label></div>
+                            <div class="mb-3"><label class="form-label" for="Reason">Lý do</label><textarea id="Reason" class="form-control" name="Reason" rows="4" required minlength="5" maxlength="1000"></textarea></div>
+                            <button class="btn btn-outline-danger w-100" type="submit">Lưu trạng thái thất bại</button>
+                        </form>
+                    </div>
+                </section>
+            }
+            else if (Model.Status == RefundStatus.Failed)
+            {
+                <section class="rt-panel"><div class="rt-panel-head"><h2>Hoàn tiền thất bại</h2></div><div class="rt-panel-body"><p class="mb-3">@(failureReason ?? "Chưa có lý do thất bại.")</p><form asp-action="Start" method="post">@Html.AntiForgeryToken()<input type="hidden" name="id" value="@Model.RefundId" /><button class="btn btn-rt-primary w-100" type="submit">Thử xử lý lại</button></form></div></section>
+            }
+        </aside>
+    </div>
+</main>

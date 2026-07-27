@@ -1,0 +1,107 @@
+@using Fruitables.Helpers
+@using Fruitables.Models.Returns
+@using Fruitables.ViewModels.Returns
+@model IReadOnlyList<RefundQueueItemViewModel>
+@{
+    ViewData["Title"] = "Hoàn tiền";
+    Layout = "~/Areas/Admin/Views/Shared/_AdminDashboardLayout.cshtml";
+    var filter = ViewBag.Filter as RefundQueueFilter ?? new RefundQueueFilter();
+}
+@functions {
+    private static string StatusClass(RefundStatus status) => status switch
+    {
+        RefundStatus.AwaitingDestination => "rt-badge-warning",
+        RefundStatus.AwaitingApproval or RefundStatus.Processing => "rt-badge-info",
+        RefundStatus.Succeeded => "rt-badge-success",
+        RefundStatus.Failed or RefundStatus.Cancelled => "rt-badge-danger",
+        _ => "rt-badge-neutral"
+    };
+
+    private static string Masked(string? bankCode, string? last4) => string.IsNullOrWhiteSpace(bankCode) || string.IsNullOrWhiteSpace(last4)
+        ? "Chưa có"
+        : $"{bankCode} ••••{last4}";
+}
+@section Styles { <link rel="stylesheet" href="~/css/return-admin.css" asp-append-version="true" /> }
+
+<main class="return-admin">
+    <header class="rt-page-header">
+        <div>
+            <div class="rt-eyebrow">Finance</div>
+            <h1 class="rt-title">Hàng đợi hoàn tiền</h1>
+            <p class="rt-subtitle">Xử lý chuyển khoản thủ công, xác nhận chứng từ và theo dõi trạng thái hoàn tiền.</p>
+        </div>
+    </header>
+
+    <section class="rt-panel" aria-label="Nhóm hàng đợi hoàn tiền">
+        <div class="rt-panel-body">
+            <div class="rt-tab-nav" role="tablist" aria-label="Nhóm hàng đợi hoàn tiền">
+                @foreach (var bucket in new[]
+                {
+                    (RefundQueueBucket.WaitingCustomer, "WaitingCustomer", "Chờ khách cập nhật"),
+                    (RefundQueueBucket.Ready, "Ready", "Sẵn sàng xử lý"),
+                    (RefundQueueBucket.Working, "Working", "Đang xử lý"),
+                    (RefundQueueBucket.Completed, "Completed", "Đã hoàn tất")
+                })
+                {
+                    var active = filter.Bucket == bucket.Item1;
+                    <a asp-action="Index" asp-route-Bucket="@bucket.Item2" asp-route-Search="@filter.Search" class="btn @(active ? "btn-rt-primary" : "btn-rt-soft")" aria-current="@(active ? "page" : null)">@bucket.Item3</a>
+                }
+            </div>
+        </div>
+    </section>
+
+    <form method="get" class="rt-panel rt-filter" aria-label="Tìm kiếm khoản hoàn">
+        <input type="hidden" name="Bucket" value="@filter.Bucket" />
+        <div class="row g-3 align-items-end">
+            <div class="col-lg-8">
+                <label class="form-label" for="refundSearch">Tìm kiếm</label>
+                <input id="refundSearch" class="form-control" name="Search" value="@filter.Search" placeholder="Mã hoàn, mã đơn hoặc email khách hàng" />
+            </div>
+            <div class="col-lg-4 d-flex gap-2">
+                <button class="btn btn-rt-primary flex-grow-1" type="submit"><i class="fas fa-filter me-2"></i>Lọc</button>
+                <a asp-action="Index" asp-route-Bucket="@filter.Bucket" class="btn btn-outline-secondary" aria-label="Xóa bộ lọc"><i class="fas fa-redo"></i></a>
+            </div>
+        </div>
+    </form>
+
+    <section class="rt-panel" aria-labelledby="refundQueueHeading">
+        <div class="rt-panel-head">
+            <h2 id="refundQueueHeading">Danh sách khoản hoàn</h2>
+            <span class="text-muted small">@Model.Count khoản hoàn trên trang này</span>
+        </div>
+        @if (Model.Count == 0)
+        {
+            <div class="rt-empty"><i class="fas fa-hand-holding-usd"></i><span>Không có khoản hoàn trong nhóm này.</span></div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table rt-table mb-0">
+                    <thead>
+                        <tr>
+                            <th>Yêu cầu</th>
+                            <th>Đơn hàng</th>
+                            <th>Khách hàng</th>
+                            <th>Số tiền</th>
+                            <th>Trạng thái</th>
+                            <th>Tài khoản</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var item in Model)
+                    {
+                        <tr>
+                            <td><a class="rt-code" asp-action="Detail" asp-route-id="@item.RefundId">@item.ReturnNumber</a></td>
+                            <td>@item.OrderNumber</td>
+                            <td>@item.CustomerName</td>
+                            <td class="fw-bold">@item.Amount.ToString("N0")₫</td>
+                            <td><span class="rt-badge @StatusClass(item.Status)">@ReturnDisplay.Text(item.Status)</span></td>
+                            <td><span class="rt-masked-account">@Masked(item.BankCode, item.AccountLast4)</span></td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+</main>
