@@ -85,6 +85,16 @@
                 <span>Đơn hàng</span>
             </a>
         </li>
+        @if (userId > 0 && await RbacService.HasPermissionAsync(userId, "returns.view"))
+        {
+            <li class="sidebar-nav-item">
+                <a asp-action="Index" asp-controller="Return" asp-area="Admin"
+                   class="sidebar-nav-link @(controller == "Return" ? "active" : "")">
+                    <i class="fas fa-undo-alt"></i>
+                    <span>Khiếu nại & đổi trả</span>
+                </a>
+            </li>
+        }
         <li class="sidebar-nav-item">
             <a asp-action="Index" asp-controller="Coupon" asp-area="Admin"
                class="sidebar-nav-link @(controller == "Coupon" ? "active" : "")">

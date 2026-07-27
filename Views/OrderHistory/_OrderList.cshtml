@@ -60,6 +60,7 @@
                                     PaymentStatus.Pending => "text-warning",
                                     PaymentStatus.Paid => "text-success",
                                     PaymentStatus.Refunded => "text-info",
+                                    PaymentStatus.PartiallyRefunded => "text-info",
                                     _ => "text-secondary"
                                 };
                                 var paymentText = order.PaymentStatus switch
@@ -67,6 +68,7 @@
                                     PaymentStatus.Pending => "Chưa thanh toán",
                                     PaymentStatus.Paid => "Đã thanh toán",
                                     PaymentStatus.Refunded => "Đã hoàn tiền",
+                                    PaymentStatus.PartiallyRefunded => "Đã hoàn một phần",
                                     _ => "Không xác định"
                                 };
                             }
@@ -83,6 +85,12 @@
                                         data-id="@order.Id" data-order="@order.OrderNumber">
                                     <i class="fa fa-times"></i> Hủy
                                 </button>
+                            }
+                            @if (order.Status == OrderStatus.Delivered)
+                            {
+                                <a asp-controller="Return" asp-action="Create" asp-route-orderId="@order.Id" class="btn btn-sm btn-outline-warning">
+                                    <i class="fa fa-life-ring"></i> Yêu cầu hỗ trợ
+                                </a>
                             }
                             @if (order.CanReview)
                             {

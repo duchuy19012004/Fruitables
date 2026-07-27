@@ -1,0 +1,13 @@
+@using Fruitables.Helpers
+@using Fruitables.Models.Returns
+@model IEnumerable<ReturnEvent>
+<ol class="list-group list-group-numbered">
+@foreach (var item in Model.OrderBy(x => x.CreatedAtUtc))
+{
+    var note = item.Note == "Finance xác nhận hoàn tiền thủ công." ? "Bộ phận tài chính xác nhận hoàn tiền thủ công." : item.Note;
+    <li class="list-group-item">
+        <div class="d-flex justify-content-between gap-3"><strong>@ReturnDisplay.Text(item.Type)</strong><small class="text-muted">@item.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</small></div>
+        @if (!string.IsNullOrWhiteSpace(note)) { <span>@note</span> }
+    </li>
+}
+</ol>

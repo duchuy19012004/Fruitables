@@ -236,6 +236,7 @@
                                     PaymentStatus.Pending => "text-warning",
                                     PaymentStatus.Paid => "text-success",
                                     PaymentStatus.Refunded => "text-info",
+                                    PaymentStatus.PartiallyRefunded => "text-info",
                                     _ => "text-secondary"
                                 };
                                 var paymentText = Model.PaymentStatus switch
@@ -243,6 +244,7 @@
                                     PaymentStatus.Pending => "Chưa thanh toán",
                                     PaymentStatus.Paid => "Đã thanh toán",
                                     PaymentStatus.Refunded => "Đã hoàn tiền",
+                                    PaymentStatus.PartiallyRefunded => "Đã hoàn một phần",
                                     _ => "Không xác định"
                                 };
                             }
@@ -277,6 +279,12 @@
                             <button type="button" class="btn btn-danger w-100 mb-2" data-bs-toggle="modal" data-bs-target="#cancelModal">
                                 <i class="fa fa-times me-2"></i>Hủy đơn hàng
                             </button>
+                        }
+                        @if (ViewBag.ReturnEligibility?.Eligible == true)
+                        {
+                            <a asp-controller="Return" asp-action="Create" asp-route-orderId="@Model.Id" class="btn btn-warning w-100 mb-2">
+                                <i class="fa fa-life-ring me-2"></i>Yêu cầu hỗ trợ
+                            </a>
                         }
                         @if (Model.CanReview)
                         {

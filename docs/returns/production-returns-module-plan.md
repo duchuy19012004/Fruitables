@@ -100,7 +100,7 @@ Module được triển khai dưới dạng **modular monolith** trong ứng d�
 # Tổng quan tiến độ
 
 - [x] **Phase 0 — Chốt chính sách và khóa các đường xử lý nguy hiểm hiện tại**
-- [ ] **Phase 1 — MVP an toàn: tạo yêu cầu, duyệt theo item và hoàn tiền thủ công**
+- [x] **Phase 1 — MVP an toàn: tạo yêu cầu, duyệt theo item và hoàn tiền thủ công**
 - [ ] **Phase 2 — Production: reliability, security, automation, replacement và analytics**
 - [ ] **Phase 3 — Kho thực phẩm tươi: lot, hạn sử dụng, FEFO và truy xuất nguồn gốc**
 - [ ] **Release Acceptance — Toàn bộ tiêu chí production đã đạt**
@@ -234,7 +234,7 @@ Khách hàng có thể gửi yêu cầu theo từng sản phẩm; nhân viên c�
 - Create: `Models/Returns/ReturnEnums.cs`
 - Modify: `Models/Order.cs`
 
-- [ ] Tạo `ReturnRequestStatus` gồm:
+- [x] Tạo `ReturnRequestStatus` gồm:
   - `Submitted`.
   - `AwaitingEvidence`.
   - `UnderReview`.
@@ -246,22 +246,22 @@ Khách hàng có thể gửi yêu cầu theo từng sản phẩm; nhân viên c�
   - `Resolved`.
   - `Cancelled`.
   - `Expired`.
-- [ ] Tạo `ReturnReasonCode` theo policy của Task 0.1.
-- [ ] Tạo `ReturnResolutionType` gồm `None`, `PartialRefund`, `FullRefund`, `Replacement`, `StoreCredit` và `Reject`.
-- [ ] Tạo `RefundStatus` gồm `Pending`, `AwaitingDestination`, `AwaitingApproval`, `Processing`, `Succeeded`, `Failed` và `Cancelled`.
-- [ ] Tạo `RefundMethod` gồm `ManualBankTransfer`, `OriginalPaymentMethod` và `StoreCredit`.
-- [ ] Tạo `InventoryDispositionType` gồm `NotReturned`, `Quarantined`, `Discarded`, `Donated`, `ReturnedToSupplier` và `Restocked`.
-- [ ] Tạo `EvidenceScanStatus` gồm `Pending`, `Clean`, `Rejected` và `ScanFailed`.
-- [ ] Tạo `ReturnRequest` với return number, order, user, status, resolution, policy version, SLA timestamps, reviewer, notes và `RowVersion`.
-- [ ] Tạo `ReturnRequestItem` liên kết đúng `OrderItem`, lưu requested quantity, approved quantity, reason, amount snapshot và approved amount.
-- [ ] Tạo `ReturnEvidence` lưu storage key, MIME type, size, checksum, scan status và upload timestamp.
-- [ ] Tạo `ReturnEvent` append-only để lưu mọi transition và quyết định.
-- [ ] Tạo `ReturnPolicy` hỗ trợ scope mặc định, category hoặc product; reason; window hours; evidence requirement; resolution flags; thời gian hiệu lực và version.
-- [ ] Tạo `Refund` lưu amount, method, status, idempotency key, reference, failure reason và processed timestamp.
-- [ ] Tạo `InventoryDisposition` liên kết return item, quantity, disposition, inspector và notes.
-- [ ] Thêm `DeliveredAtUtc` nullable vào `Order`.
-- [ ] Thêm navigation từ `Order` đến danh sách `ReturnRequests`.
-- [ ] Không thêm navigation khiến xóa order cascade làm mất audit tài chính ngoài ý muốn.
+- [x] Tạo `ReturnReasonCode` theo policy của Task 0.1.
+- [x] Tạo `ReturnResolutionType` gồm `None`, `PartialRefund`, `FullRefund`, `Replacement`, `StoreCredit` và `Reject`.
+- [x] Tạo `RefundStatus` gồm `Pending`, `AwaitingDestination`, `AwaitingApproval`, `Processing`, `Succeeded`, `Failed` và `Cancelled`.
+- [x] Tạo `RefundMethod` gồm `ManualBankTransfer`, `OriginalPaymentMethod` và `StoreCredit`.
+- [x] Tạo `InventoryDispositionType` gồm `NotReturned`, `Quarantined`, `Discarded`, `Donated`, `ReturnedToSupplier` và `Restocked`.
+- [x] Tạo `EvidenceScanStatus` gồm `Pending`, `Clean`, `Rejected` và `ScanFailed`.
+- [x] Tạo `ReturnRequest` với return number, order, user, status, resolution, policy version, SLA timestamps, reviewer, notes và `RowVersion`.
+- [x] Tạo `ReturnRequestItem` liên kết đúng `OrderItem`, lưu requested quantity, approved quantity, reason, amount snapshot và approved amount.
+- [x] Tạo `ReturnEvidence` lưu storage key, MIME type, size, checksum, scan status và upload timestamp.
+- [x] Tạo `ReturnEvent` append-only để lưu mọi transition và quyết định.
+- [x] Tạo `ReturnPolicy` hỗ trợ scope mặc định, category hoặc product; reason; window hours; evidence requirement; resolution flags; thời gian hiệu lực và version.
+- [x] Tạo `Refund` lưu amount, method, status, idempotency key, reference, failure reason và processed timestamp.
+- [x] Tạo `InventoryDisposition` liên kết return item, quantity, disposition, inspector và notes.
+- [x] Thêm `DeliveredAtUtc` nullable vào `Order`.
+- [x] Thêm navigation từ `Order` đến danh sách `ReturnRequests`.
+- [x] Không thêm navigation khiến xóa order cascade làm mất audit tài chính ngoài ý muốn.
 
 ## Task 1.2 — Cấu hình EF Core và database constraints
 
@@ -271,26 +271,26 @@ Khách hàng có thể gửi yêu cầu theo từng sản phẩm; nhân viên c�
 - Create: `Migrations/*_AddReturnClaimsFoundation.cs`
 - Modify: `Migrations/ApplicationDbContextModelSnapshot.cs`
 
-- [ ] Thêm `DbSet` cho tất cả entity của module.
-- [ ] Tạo unique index cho `ReturnRequest.ReturnNumber`.
-- [ ] Tạo unique index cho `ReturnRequest.IdempotencyKey` theo user hoặc global theo contract đã chọn.
-- [ ] Tạo index `(OrderId, Status)` cho truy vấn yêu cầu đang hoạt động.
-- [ ] Tạo index `(UserId, SubmittedAtUtc)` cho lịch sử khách hàng.
-- [ ] Tạo index `(Status, ReviewDueAtUtc)` cho hàng chờ admin và SLA worker.
-- [ ] Tạo index `(ReturnRequestId, OrderItemId)` cho return lines.
-- [ ] Tạo unique index cho `Refund.IdempotencyKey`.
-- [ ] Tạo filtered unique index cho provider reference khi reference khác null.
-- [ ] Tạo index `(Status, CreatedAtUtc)` cho refund worker.
-- [ ] Cấu hình money column bằng decimal có precision nhất quán với `Order.Total`.
-- [ ] Tạo check constraint đảm bảo requested quantity lớn hơn 0.
-- [ ] Tạo check constraint đảm bảo approved quantity không âm và không lớn hơn requested quantity.
-- [ ] Tạo check constraint đảm bảo refund amount lớn hơn 0.
-- [ ] Dùng `DeleteBehavior.Restrict` hoặc `NoAction` cho dữ liệu quyết định, refund và audit.
-- [ ] Dùng cascade chỉ cho evidence chưa có giá trị tài chính khi xóa draft chưa submit, nếu luồng draft được hỗ trợ.
-- [ ] Tạo migration `AddReturnClaimsFoundation`.
-- [ ] Review SQL migration trước khi apply.
-- [ ] Apply migration trên database local.
-- [ ] Xác nhận migration rollback được trên database test không chứa giao dịch production.
+- [x] Thêm `DbSet` cho tất cả entity của module.
+- [x] Tạo unique index cho `ReturnRequest.ReturnNumber`.
+- [x] Tạo unique index cho `ReturnRequest.IdempotencyKey` theo user hoặc global theo contract đã chọn.
+- [x] Tạo index `(OrderId, Status)` cho truy vấn yêu cầu đang hoạt động.
+- [x] Tạo index `(UserId, SubmittedAtUtc)` cho lịch sử khách hàng.
+- [x] Tạo index `(Status, ReviewDueAtUtc)` cho hàng chờ admin và SLA worker.
+- [x] Tạo index `(ReturnRequestId, OrderItemId)` cho return lines.
+- [x] Tạo unique index cho `Refund.IdempotencyKey`.
+- [x] Tạo filtered unique index cho provider reference khi reference khác null.
+- [x] Tạo index `(Status, CreatedAtUtc)` cho refund worker.
+- [x] Cấu hình money column bằng decimal có precision nhất quán với `Order.Total`.
+- [x] Tạo check constraint đảm bảo requested quantity lớn hơn 0.
+- [x] Tạo check constraint đảm bảo approved quantity không âm và không lớn hơn requested quantity.
+- [x] Tạo check constraint đảm bảo refund amount lớn hơn 0.
+- [x] Dùng `DeleteBehavior.Restrict` hoặc `NoAction` cho dữ liệu quyết định, refund và audit.
+- [x] Dùng cascade chỉ cho evidence chưa có giá trị tài chính khi xóa draft chưa submit, nếu luồng draft được hỗ trợ.
+- [x] Tạo migration `AddReturnClaimsFoundation`.
+- [x] Review SQL migration trước khi apply.
+- [x] Apply migration trên database local.
+- [x] Xác nhận migration rollback được trên database test không chứa giao dịch production.
 
 ## Task 1.3 — Ghi nhận thời điểm giao hàng chính xác
 
@@ -301,13 +301,13 @@ Khách hàng có thể gửi yêu cầu theo từng sản phẩm; nhân viên c�
 - Modify: các integration nhận trạng thái giao hàng nếu có
 - Create: script hoặc command backfill được review riêng
 
-- [ ] Khi order chuyển sang `Delivered`, set `DeliveredAtUtc` trong cùng transaction với status change.
-- [ ] Không ghi đè `DeliveredAtUtc` nếu status update được gửi lặp lại.
-- [ ] Không cho admin tự sửa `DeliveredAtUtc` từ form thông thường.
-- [ ] Xây script báo cáo đơn `Delivered` nhưng thiếu `DeliveredAtUtc`.
-- [ ] Backfill từ lần đầu `OrderStatusHistory.NewStatus == Delivered` chỉ khi xác định được timestamp hợp lệ.
-- [ ] Đưa đơn legacy không xác định được thời gian vào diện manual review, không tự mở vô hạn thời gian trả hàng.
-- [ ] Test thời điểm giao hàng được ghi một lần và dùng UTC.
+- [x] Khi order chuyển sang `Delivered`, set `DeliveredAtUtc` trong cùng transaction với status change.
+- [x] Không ghi đè `DeliveredAtUtc` nếu status update được gửi lặp lại.
+- [x] Không cho admin tự sửa `DeliveredAtUtc` từ form thông thường.
+- [x] Xây script báo cáo đơn `Delivered` nhưng thiếu `DeliveredAtUtc`.
+- [x] Backfill từ lần đầu `OrderStatusHistory.NewStatus == Delivered` chỉ khi xác định được timestamp hợp lệ.
+- [x] Đưa đơn legacy không xác định được thời gian vào diện manual review, không tự mở vô hạn thời gian trả hàng.
+- [x] Test thời điểm giao hàng được ghi một lần và dùng UTC.
 
 ## Task 1.4 — Xây policy engine và eligibility service
 
@@ -320,19 +320,19 @@ Khách hàng có thể gửi yêu cầu theo từng sản phẩm; nhân viên c�
 - Create: `ViewModels/Returns/ReturnEligibilityViewModels.cs`
 - Modify: `Program.cs`
 
-- [ ] Implement thứ tự ưu tiên policy: product trước, category sau, cuối cùng là default.
-- [ ] Chỉ lấy policy đang active và nằm trong thời gian hiệu lực.
-- [ ] Tính deadline từ `DeliveredAtUtc` bằng `TimeProvider`.
-- [ ] Chỉ cho tạo yêu cầu từ order thuộc user hiện tại.
-- [ ] Chỉ cho tạo yêu cầu khi order đã `Delivered`.
-- [ ] Từ chối order `Pending`, `Processing`, `Shipped` hoặc `Cancelled`.
-- [ ] Kiểm tra reason có được policy hỗ trợ hay không.
-- [ ] Kiểm tra evidence requirement theo reason và policy.
-- [ ] Tính remaining claimable quantity bằng ordered quantity trừ quantity đã được approve hoặc đang xử lý.
-- [ ] Không cho nhiều request đồng thời claim vượt số lượng đã mua.
-- [ ] Trả về lý do không đủ điều kiện rõ ràng cho từng order item.
-- [ ] Snapshot policy id, version, deadline và rule quan trọng vào return item khi submit.
-- [ ] Đăng ký services trong `Program.cs`.
+- [x] Implement thứ tự ưu tiên policy: product trước, category sau, cuối cùng là default.
+- [x] Chỉ lấy policy đang active và nằm trong thời gian hiệu lực.
+- [x] Tính deadline từ `DeliveredAtUtc` bằng `TimeProvider`.
+- [x] Chỉ cho tạo yêu cầu từ order thuộc user hiện tại.
+- [x] Chỉ cho tạo yêu cầu khi order đã `Delivered`.
+- [x] Từ chối order `Pending`, `Processing`, `Shipped` hoặc `Cancelled`.
+- [x] Kiểm tra reason có được policy hỗ trợ hay không.
+- [x] Kiểm tra evidence requirement theo reason và policy.
+- [x] Tính remaining claimable quantity bằng ordered quantity trừ quantity đã được approve hoặc đang xử lý.
+- [x] Không cho nhiều request đồng thời claim vượt số lượng đã mua.
+- [x] Trả về lý do không đủ điều kiện rõ ràng cho từng order item.
+- [x] Snapshot policy id, version, deadline và rule quan trọng vào return item khi submit.
+- [x] Đăng ký services trong `Program.cs`.
 
 ## Task 1.5 — Xây bộ tính số tiền hoàn
 
@@ -342,18 +342,18 @@ Khách hàng có thể gửi yêu cầu theo từng sản phẩm; nhân viên c�
 - Create: `Services/Returns/RefundAmountCalculator.cs`
 - Create: `Models/Returns/RefundCalculationResult.cs`
 
-- [ ] Dùng giá trị snapshot trong `OrderItem`, không dùng giá sản phẩm hiện tại.
-- [ ] Tính trên `OrderItem.Total` sau product promotion và combo discount.
-- [ ] Phân bổ `Order.Discount` xuống các order item theo tỷ lệ giá trị.
-- [ ] Dùng thuật toán làm tròn xác định, phân bổ phần dư theo `OrderItem.Id` để tổng allocation đúng bằng `Order.Discount`.
-- [ ] Tính refundable amount theo approved quantity.
-- [ ] Hỗ trợ item thuộc combo mà không tự động hoàn toàn bộ combo.
-- [ ] Trừ các refund `Succeeded` trước đó của cùng order item.
-- [ ] Không trừ refund `Failed` hoặc `Cancelled`.
-- [ ] Không cho tổng refund thành công vượt tổng tiền khách đã trả.
-- [ ] Chỉ hoàn shipping fee khi quyết định có cờ merchant fault và toàn bộ điều kiện policy được thỏa mãn.
-- [ ] Lưu `NetPaidAmountSnapshot`, `RequestedAmount` và `ApprovedAmount` trên return item để audit.
-- [ ] Test các trường hợp coupon, combo discount, partial quantity, rounding và nhiều refund liên tiếp.
+- [x] Dùng giá trị snapshot trong `OrderItem`, không dùng giá sản phẩm hiện tại.
+- [x] Tính trên `OrderItem.Total` sau product promotion và combo discount.
+- [x] Phân bổ `Order.Discount` xuống các order item theo tỷ lệ giá trị.
+- [x] Dùng thuật toán làm tròn xác định, phân bổ phần dư theo `OrderItem.Id` để tổng allocation đúng bằng `Order.Discount`.
+- [x] Tính refundable amount theo approved quantity.
+- [x] Hỗ trợ item thuộc combo mà không tự động hoàn toàn bộ combo.
+- [x] Trừ các refund `Succeeded` trước đó của cùng order item.
+- [x] Không trừ refund `Failed` hoặc `Cancelled`.
+- [x] Không cho tổng refund thành công vượt tổng tiền khách đã trả.
+- [x] Chỉ hoàn shipping fee khi quyết định có cờ merchant fault và toàn bộ điều kiện policy được thỏa mãn.
+- [x] Lưu `NetPaidAmountSnapshot`, `RequestedAmount` và `ApprovedAmount` trên return item để audit.
+- [x] Test các trường hợp coupon, combo discount, partial quantity, rounding và nhiều refund liên tiếp.
 
 ## Task 1.6 — Xây state machine và ReturnService
 
@@ -365,21 +365,21 @@ Khách hàng có thể gửi yêu cầu theo từng sản phẩm; nhân viên c�
 - Create: `ViewModels/Returns/ReturnRequestViewModels.cs`
 - Modify: `Program.cs`
 
-- [ ] Định nghĩa transition matrix tập trung, không rải điều kiện trong controller.
-- [ ] Cho phép `Submitted -> AwaitingEvidence`, `UnderReview` hoặc `Cancelled`.
-- [ ] Cho phép `AwaitingEvidence -> UnderReview`, `Expired` hoặc `Cancelled`.
-- [ ] Cho phép `UnderReview -> Approved`, `PartiallyApproved` hoặc `Rejected`.
-- [ ] Cho phép `Approved/PartiallyApproved -> ResolutionPending`.
-- [ ] Cho phép `ResolutionPending -> Resolved` hoặc `ResolutionFailed`.
-- [ ] Cho phép retry `ResolutionFailed -> ResolutionPending` với quyền phù hợp.
-- [ ] Không cho sửa requested items sau khi request đã submit.
-- [ ] Cho phép thêm evidence khi status là `AwaitingEvidence`.
-- [ ] Ghi `ReturnEvent` trong cùng transaction với mỗi transition.
-- [ ] Dùng `RowVersion` để phát hiện hai admin xử lý cùng yêu cầu.
-- [ ] Dùng transaction khi submit để kiểm tra lại remaining quantity và tạo request atomically.
-- [ ] Dùng isolation level hoặc conditional update phù hợp để hai request đồng thời không claim vượt quantity.
-- [ ] Hỗ trợ idempotency key khi khách submit lại do double click hoặc retry mạng.
-- [ ] Đăng ký `IReturnService` trong `Program.cs`.
+- [x] Định nghĩa transition matrix tập trung, không rải điều kiện trong controller.
+- [x] Cho phép `Submitted -> AwaitingEvidence`, `UnderReview` hoặc `Cancelled`.
+- [x] Cho phép `AwaitingEvidence -> UnderReview`, `Expired` hoặc `Cancelled`.
+- [x] Cho phép `UnderReview -> Approved`, `PartiallyApproved` hoặc `Rejected`.
+- [x] Cho phép `Approved/PartiallyApproved -> ResolutionPending`.
+- [x] Cho phép `ResolutionPending -> Resolved` hoặc `ResolutionFailed`.
+- [x] Cho phép retry `ResolutionFailed -> ResolutionPending` với quyền phù hợp.
+- [x] Không cho sửa requested items sau khi request đã submit.
+- [x] Cho phép thêm evidence khi status là `AwaitingEvidence`.
+- [x] Ghi `ReturnEvent` trong cùng transaction với mỗi transition.
+- [x] Dùng `RowVersion` để phát hiện hai admin xử lý cùng yêu cầu.
+- [x] Dùng transaction khi submit để kiểm tra lại remaining quantity và tạo request atomically.
+- [x] Dùng isolation level hoặc conditional update phù hợp để hai request đồng thời không claim vượt quantity.
+- [x] Hỗ trợ idempotency key khi khách submit lại do double click hoặc retry mạng.
+- [x] Đăng ký `IReturnService` trong `Program.cs`.
 
 ## Task 1.7 — Upload và bảo vệ bằng chứng bản MVP
 
@@ -391,19 +391,19 @@ Khách hàng có thể gửi yêu cầu theo từng sản phẩm; nhân viên c�
 - Create directory at runtime: `App_Data/ReturnEvidence`
 - Modify: `Program.cs`
 
-- [ ] Lưu file dưới `App_Data/ReturnEvidence`, không lưu trong `wwwroot`.
-- [ ] Sinh storage key ngẫu nhiên; không dùng tên file khách gửi làm đường dẫn.
-- [ ] Chuẩn hóa và lưu original file name chỉ để hiển thị audit.
-- [ ] Giới hạn số lượng file trên request và trên item.
-- [ ] Giới hạn dung lượng từng file và tổng dung lượng request.
-- [ ] Allowlist MIME type và extension theo policy đã chốt.
-- [ ] Kiểm tra file signature, không chỉ tin `Content-Type` từ browser.
-- [ ] Tính SHA-256 checksum.
-- [ ] Chặn path traversal và tên file nguy hiểm.
-- [ ] Chỉ owner, admin có permission hoặc worker được đọc evidence.
-- [ ] Stream file qua controller có authorization; không expose physical path.
-- [ ] Thêm cache header phù hợp để dữ liệu riêng tư không bị public cache.
-- [ ] Gắn `EvidenceScanStatus.Pending`; Phase 2 sẽ tích hợp malware scan.
+- [x] Lưu file dưới `App_Data/ReturnEvidence`, không lưu trong `wwwroot`.
+- [x] Sinh storage key ngẫu nhiên; không dùng tên file khách gửi làm đường dẫn.
+- [x] Chuẩn hóa và lưu original file name chỉ để hiển thị audit.
+- [x] Giới hạn số lượng file trên request và trên item.
+- [x] Giới hạn dung lượng từng file và tổng dung lượng request.
+- [x] Allowlist MIME type và extension theo policy đã chốt.
+- [x] Kiểm tra file signature, không chỉ tin `Content-Type` từ browser.
+- [x] Tính SHA-256 checksum.
+- [x] Chặn path traversal và tên file nguy hiểm.
+- [x] Chỉ owner, admin có permission hoặc worker được đọc evidence.
+- [x] Stream file qua controller có authorization; không expose physical path.
+- [x] Thêm cache header phù hợp để dữ liệu riêng tư không bị public cache.
+- [x] Gắn `EvidenceScanStatus.Pending`; Phase 2 sẽ tích hợp malware scan.
 
 ## Task 1.8 — Xây UI khách hàng
 
@@ -418,21 +418,21 @@ Khách hàng có thể gửi yêu cầu theo từng sản phẩm; nhân viên c�
 - Modify: `Views/OrderHistory/Details.cshtml`
 - Modify: `Views/OrderHistory/Index.cshtml`
 
-- [ ] Thêm nút “Yêu cầu hỗ trợ” ở đơn đủ điều kiện.
-- [ ] Chỉ hiển thị item còn claimable quantity.
-- [ ] Cho khách chọn item, quantity, reason, mô tả và resolution mong muốn.
-- [ ] Hiển thị deadline khiếu nại rõ ràng.
-- [ ] Hiển thị yêu cầu bằng chứng theo reason trước khi submit.
-- [ ] Validate cả client và server; server là nguồn quyết định cuối cùng.
-- [ ] Dùng antiforgery token cho tất cả POST.
-- [ ] Không bind `UserId`, `ApprovedAmount`, `Status` hoặc admin fields từ form khách hàng.
-- [ ] Tạo idempotency key cho form submit.
-- [ ] Hiển thị mã yêu cầu và timeline trạng thái.
-- [ ] Cho khách bổ sung evidence khi `AwaitingEvidence`.
-- [ ] Cho khách hủy khi request chưa được duyệt và chưa có resolution đang xử lý.
-- [ ] Không lộ internal admin notes cho khách.
-- [ ] Hiển thị lý do từ chối hoặc số tiền được duyệt bằng ngôn ngữ rõ ràng.
-- [ ] Bổ sung trạng thái empty, loading, validation error và file upload error.
+- [x] Thêm nút “Yêu cầu hỗ trợ” ở đơn đủ điều kiện.
+- [x] Chỉ hiển thị item còn claimable quantity.
+- [x] Cho khách chọn item, quantity, reason, mô tả và resolution mong muốn.
+- [x] Hiển thị deadline khiếu nại rõ ràng.
+- [x] Hiển thị yêu cầu bằng chứng theo reason trước khi submit.
+- [x] Validate cả client và server; server là nguồn quyết định cuối cùng.
+- [x] Dùng antiforgery token cho tất cả POST.
+- [x] Không bind `UserId`, `ApprovedAmount`, `Status` hoặc admin fields từ form khách hàng.
+- [x] Tạo idempotency key cho form submit.
+- [x] Hiển thị mã yêu cầu và timeline trạng thái.
+- [x] Cho khách bổ sung evidence khi `AwaitingEvidence`.
+- [x] Cho khách hủy khi request chưa được duyệt và chưa có resolution đang xử lý.
+- [x] Không lộ internal admin notes cho khách.
+- [x] Hiển thị lý do từ chối hoặc số tiền được duyệt bằng ngôn ngữ rõ ràng.
+- [x] Bổ sung trạng thái empty, loading, validation error và file upload error.
 
 ## Task 1.9 — Xây admin queue và màn hình duyệt
 
@@ -446,20 +446,20 @@ Khách hàng có thể gửi yêu cầu theo từng sản phẩm; nhân viên c�
 - Create: `Areas/Admin/Views/Return/_EvidenceGallery.cshtml`
 - Modify: `Areas/Admin/Views/Shared/_AdminSidebar.cshtml`
 
-- [ ] Tạo queue lọc theo status, reason, ngày tạo, SLA, order number và customer.
-- [ ] Sắp xếp ưu tiên request sắp quá SLA.
-- [ ] Hiển thị order snapshot, shipping snapshot và payment method.
-- [ ] Hiển thị từng item với ordered quantity, claimed quantity, prior approved quantity và refundable cap.
-- [ ] Hiển thị evidence bằng URL được authorization.
-- [ ] Cho admin yêu cầu bổ sung bằng chứng và đặt deadline.
-- [ ] Cho admin duyệt toàn phần hoặc từng phần theo item.
-- [ ] Bắt buộc reason khi duyệt khác requested quantity hoặc requested amount.
-- [ ] Bắt buộc reason khi từ chối.
-- [ ] Không cho admin nhập approved amount vượt calculator cap.
-- [ ] Server luôn tính lại amount; không tin hidden input từ browser.
-- [ ] Hiển thị conflict message khi `RowVersion` thay đổi.
-- [ ] Ghi đầy đủ `ReturnEvent` cho mọi quyết định.
-- [ ] Không cho xóa return request đã submit.
+- [x] Tạo queue lọc theo status, reason, ngày tạo, SLA, order number và customer.
+- [x] Sắp xếp ưu tiên request sắp quá SLA.
+- [x] Hiển thị order snapshot, shipping snapshot và payment method.
+- [x] Hiển thị từng item với ordered quantity, claimed quantity, prior approved quantity và refundable cap.
+- [x] Hiển thị evidence bằng URL được authorization.
+- [x] Cho admin yêu cầu bổ sung bằng chứng và đặt deadline.
+- [x] Cho admin duyệt toàn phần hoặc từng phần theo item.
+- [x] Bắt buộc reason khi duyệt khác requested quantity hoặc requested amount.
+- [x] Bắt buộc reason khi từ chối.
+- [x] Không cho admin nhập approved amount vượt calculator cap.
+- [x] Server luôn tính lại amount; không tin hidden input từ browser.
+- [x] Hiển thị conflict message khi `RowVersion` thay đổi.
+- [x] Ghi đầy đủ `ReturnEvent` cho mọi quyết định.
+- [x] Không cho xóa return request đã submit.
 
 ## Task 1.10 — Thêm RBAC cho module
 
@@ -469,17 +469,17 @@ Khách hàng có thể gửi yêu cầu theo từng sản phẩm; nhân viên c�
 - Modify: `Areas/Admin/Controllers/ReturnController.cs`
 - Modify: role/permission admin views nếu cần
 
-- [ ] Thêm permission `returns.view`.
-- [ ] Thêm permission `returns.review`.
-- [ ] Thêm permission `returns.approve`.
-- [ ] Thêm permission `returns.reject`.
-- [ ] Thêm permission `returns.refund`.
-- [ ] Thêm permission `returns.override_policy`.
-- [ ] Gán permission mặc định cho SuperAdmin.
-- [ ] Chốt permission mặc định cho Admin và nhân viên CSKH.
-- [ ] Dùng `[RequirePermission]` trên từng admin action nhạy cảm.
-- [ ] Viết test user thiếu permission nhận `Forbid`.
-- [ ] Viết test customer không truy cập được admin return routes.
+- [x] Thêm permission `returns.view`.
+- [x] Thêm permission `returns.review`.
+- [x] Thêm permission `returns.approve`.
+- [x] Thêm permission `returns.reject`.
+- [x] Thêm permission `returns.refund`.
+- [x] Thêm permission `returns.override_policy`.
+- [x] Gán permission mặc định cho SuperAdmin.
+- [x] Chốt permission mặc định cho Admin và nhân viên CSKH.
+- [x] Dùng `[RequirePermission]` trên từng admin action nhạy cảm.
+- [x] Viết test user thiếu permission nhận `Forbid`.
+- [x] Viết test customer không truy cập được admin return routes.
 
 ## Task 1.11 — Hoàn tiền thủ công có kiểm soát
 
@@ -492,19 +492,19 @@ Khách hàng có thể gửi yêu cầu theo từng sản phẩm; nhân viên c�
 - Modify: `Areas/Admin/Views/Return/Detail.cshtml`
 - Modify: `Models/Order.cs`
 
-- [ ] Bổ sung `PaymentStatus.PartiallyRefunded` nhưng không thay đổi numeric value của các enum cũ.
-- [ ] Chỉ tạo refund từ return request đã `Approved` hoặc `PartiallyApproved`.
-- [ ] Tạo refund `Pending` bằng idempotency key.
-- [ ] Không cho tạo refund mới nếu số tiền sẽ vượt refundable remaining.
-- [ ] Với refund thủ công, yêu cầu finance nhập transaction reference và bằng chứng chuyển tiền.
-- [ ] Chỉ chuyển refund sang `Succeeded` sau khi finance xác nhận giao dịch đã hoàn tất.
-- [ ] Không cho cùng một admin vừa approve refund giá trị vượt ngưỡng vừa xác nhận thành công nếu policy yêu cầu maker-checker.
-- [ ] Khi refund thành công một phần, cập nhật projection `Order.PaymentStatus = PartiallyRefunded`.
-- [ ] Khi tổng refund thành công bằng tổng số tiền đã thanh toán, cập nhật projection `Order.PaymentStatus = Refunded`.
-- [ ] Không thay đổi `Order.Status` khi refund thành công.
-- [ ] Ghi `ReturnEvent` và refund audit trong cùng transaction.
-- [ ] Lưu reference có unique constraint để tránh ghi nhận một giao dịch hai lần.
-- [ ] Mask reference nhạy cảm trên UI khách hàng.
+- [x] Bổ sung `PaymentStatus.PartiallyRefunded` nhưng không thay đổi numeric value của các enum cũ.
+- [x] Chỉ tạo refund từ return request đã `Approved` hoặc `PartiallyApproved`.
+- [x] Tạo refund `Pending` bằng idempotency key.
+- [x] Không cho tạo refund mới nếu số tiền sẽ vượt refundable remaining.
+- [x] Với refund thủ công, yêu cầu finance nhập transaction reference và bằng chứng chuyển tiền.
+- [x] Chỉ chuyển refund sang `Succeeded` sau khi finance xác nhận giao dịch đã hoàn tất.
+- [x] Không cho cùng một admin vừa approve refund giá trị vượt ngưỡng vừa xác nhận thành công nếu policy yêu cầu maker-checker.
+- [x] Khi refund thành công một phần, cập nhật projection `Order.PaymentStatus = PartiallyRefunded`.
+- [x] Khi tổng refund thành công bằng tổng số tiền đã thanh toán, cập nhật projection `Order.PaymentStatus = Refunded`.
+- [x] Không thay đổi `Order.Status` khi refund thành công.
+- [x] Ghi `ReturnEvent` và refund audit trong cùng transaction.
+- [x] Lưu reference có unique constraint để tránh ghi nhận một giao dịch hai lần.
+- [x] Mask reference nhạy cảm trên UI khách hàng.
 
 ## Task 1.12 — Xử lý disposition mà không hoàn kho
 
@@ -514,49 +514,57 @@ Khách hàng có thể gửi yêu cầu theo từng sản phẩm; nhân viên c�
 - Create: `Services/Returns/ReturnDispositionService.cs`
 - Modify: admin return detail UI
 
-- [ ] Mặc định hàng tươi là `NotReturned` hoặc `Discarded` tùy quyết định nghiệp vụ.
-- [ ] Không gọi code tăng `Product.StockQuantity` hoặc `ProductVariant.StockQuantity` khi disposition không phải `Restocked`.
-- [ ] Chỉ cho chọn `Restocked` đối với nhóm hàng được policy cho phép.
-- [ ] Bắt buộc ghi QA note và inspector khi chọn `Restocked`.
-- [ ] Bắt buộc supervisor permission khi restock hàng đã ra khỏi kho.
-- [ ] Ghi disposition append-only; sửa sai bằng event điều chỉnh, không xóa lịch sử.
-- [ ] Test mọi disposition của hàng tươi đều không tăng sellable stock.
+- [x] Mặc định hàng tươi là `NotReturned` hoặc `Discarded` tùy quyết định nghiệp vụ.
+- [x] Không gọi code tăng `Product.StockQuantity` hoặc `ProductVariant.StockQuantity` khi disposition không phải `Restocked`.
+- [x] Chỉ cho chọn `Restocked` đối với nhóm hàng được policy cho phép.
+- [x] Bắt buộc ghi QA note và inspector khi chọn `Restocked`.
+- [x] Bắt buộc supervisor permission khi restock hàng đã ra khỏi kho.
+- [x] Ghi disposition append-only; sửa sai bằng event điều chỉnh, không xóa lịch sử.
+- [x] Test mọi disposition của hàng tươi đều không tăng sellable stock.
 
 ## Task 1.13 — Seed policy mặc định
 
-- [ ] Seed policy cho rau lá, rau thơm, quả mọng và nấm theo thời hạn đã duyệt.
-- [ ] Seed policy cho trái cây và củ quả thông thường.
-- [ ] Seed policy cho hàng khô hoặc hàng đóng gói.
-- [ ] Seed policy từ chối mặc định reason `ChangeOfMind` đối với thực phẩm tươi.
-- [ ] Seed evidence requirement cho damage, spoilage, temperature và underweight.
-- [ ] Version seed policy và không sửa trực tiếp policy cũ đã được snapshot.
-- [ ] Viết admin hoặc command có kiểm soát để tạo version policy mới.
+- [x] Seed policy cho rau lá, rau thơm, quả mọng và nấm theo thời hạn đã duyệt.
+- [x] Seed policy cho trái cây và củ quả thông thường.
+- [x] Seed policy cho hàng khô hoặc hàng đóng gói.
+- [x] Seed policy từ chối mặc định reason `ChangeOfMind` đối với thực phẩm tươi.
+- [x] Seed evidence requirement cho damage, spoilage, temperature và underweight.
+- [x] Version seed policy và không sửa trực tiếp policy cũ đã được snapshot.
+- [x] Viết admin hoặc command có kiểm soát để tạo version policy mới.
 
 ## Task 1.14 — Test và nghiệm thu Phase 1
 
-- [ ] Unit test policy precedence product > category > default.
-- [ ] Unit test boundary chính xác tại deadline và sau deadline một tick.
-- [ ] Unit test order không thuộc user bị từ chối.
-- [ ] Unit test claim vượt quantity bị từ chối.
-- [ ] Unit test hai claim liên tiếp chỉ dùng remaining quantity.
-- [ ] Unit test state transition hợp lệ và không hợp lệ.
-- [ ] Unit test partial approval.
-- [ ] Unit test refund calculator với coupon và combo.
-- [ ] Unit test shipping fee refund rule.
-- [ ] Unit test total refund không vượt tiền đã trả.
-- [ ] Unit test hàng tươi không được hoàn kho.
-- [ ] Integration test idempotent submit trên SQL Server.
-- [ ] Integration test hai submit đồng thời không claim vượt quantity.
-- [ ] Integration test hai admin duyệt đồng thời sinh concurrency conflict.
-- [ ] Integration test duplicate refund reference bị unique constraint chặn.
-- [ ] Controller test antiforgery, ownership và permission.
-- [ ] Playwright test customer submit request và xem timeline.
-- [ ] Playwright test admin yêu cầu evidence, duyệt một phần và finance xác nhận refund.
-- [ ] Chạy toàn bộ test suite.
-- [ ] Chạy `dotnet build Fruitables.csproj --no-restore` và xác nhận 0 errors.
-- [ ] Review migration và tạo backup database trước khi apply trên môi trường staging.
-- [ ] Commit Phase 1 theo các commit nhỏ, mỗi commit có test tương ứng.
-- [ ] **Phase 1 hoàn thành.**
+- [x] Unit test policy precedence product > category > default.
+- [x] Unit test boundary chính xác tại deadline và sau deadline một tick.
+- [x] Unit test order không thuộc user bị từ chối.
+- [x] Unit test claim vượt quantity bị từ chối.
+- [x] Unit test hai claim liên tiếp chỉ dùng remaining quantity.
+- [x] Unit test state transition hợp lệ và không hợp lệ.
+- [x] Unit test partial approval.
+- [x] Unit test refund calculator với coupon và combo.
+- [x] Unit test shipping fee refund rule.
+- [x] Unit test total refund không vượt tiền đã trả.
+- [x] Unit test hàng tươi không được hoàn kho.
+- [x] Integration test idempotent submit trên SQL Server.
+- [x] Integration test hai submit đồng thời không claim vượt quantity.
+- [x] Integration test hai admin duyệt đồng thời sinh concurrency conflict.
+- [x] Integration test duplicate refund reference bị unique constraint chặn.
+- [x] Controller test antiforgery, ownership và permission.
+- [x] Playwright test customer submit request và xem timeline.
+- [x] Playwright test admin yêu cầu evidence, duyệt một phần và finance xác nhận refund.
+- [x] Chạy toàn bộ test suite.
+- [x] Chạy `dotnet build Fruitables.csproj --no-restore` và xác nhận 0 errors.
+- [x] Review migration và tạo backup database trước khi apply trên môi trường staging.
+- [x] Commit Phase 1 theo các commit nhỏ, mỗi commit có test tương ứng.
+- [x] **Phase 1 hoàn thành.**
+
+### Kết quả nghiệm thu Phase 1
+
+- Full suite với SQL Server integration bật: **422/422 tests pass, 0 skipped**.
+- Build production project: **0 errors, 0 warnings**.
+- Migration `AddReturnClaimsFoundation` và `ProtectInternalReturnEvidence` đã apply trên local, rollback thành công trên database test tách biệt.
+- Backup SQL Server `Fruitables_PreReturnsPhase1_20260727.bak` đã tạo bằng `COPY_ONLY`, `CHECKSUM` và được xác minh bằng `RESTORE VERIFYONLY`.
+- SQL migration đã review tại `docs/returns/add-return-claims-foundation.sql`; backfill legacy bắt buộc dùng danh sách timestamp đã xác minh.
 
 ---
 
