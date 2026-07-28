@@ -242,11 +242,14 @@ public class RefundService : IRefundService
             tracked.ProcessedByUserId = financeUserId;
             AcceptExecutedUpdate(tracked);
         }
+        var request = await _db.ReturnRequests.SingleAsync(x => x.Id == candidate.ReturnRequestId, cancellationToken);
+        if (request.Status == ReturnRequestStatus.ResolutionFailed)
+            request.Status = ReturnRequestStatus.ResolutionPending;
         _db.ReturnEvents.Add(NewEvent(
             candidate.ReturnRequestId,
             ReturnEventType.RefundProcessingStarted,
             candidate.RequestStatus,
-            candidate.RequestStatus,
+            request.Status,
             financeUserId,
             "Bộ phận tài chính bắt đầu xử lý.",
             _clock.GetUtcNow().UtcDateTime));

@@ -397,8 +397,10 @@ public class ReturnModuleTests
             Reason = "Ngân hàng tạm từ chối"
         })).Success);
         Assert.Equal(RefundStatus.Failed, refund.Status);
+        Assert.Equal(ReturnRequestStatus.ResolutionFailed, request.Status);
         Assert.NotNull(refund.DestinationAccountNumberProtected);
         Assert.True((await service.StartProcessingAsync(refund.Id, finance.Id)).Success);
+        Assert.Equal(ReturnRequestStatus.ResolutionPending, request.Status);
 
         Assert.True((await service.ConfirmManualAsync(refund.Id, "BANK-001", "proof.jpg", finance.Id)).Success);
         Assert.Null(refund.DestinationAccountNumberProtected);
