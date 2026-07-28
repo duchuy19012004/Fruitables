@@ -65,6 +65,25 @@ public class RefundController : Controller
         return View(task.Data);
     }
 
+    [RequirePermission("returns.refund")]
+    public async Task<IActionResult> DownloadProof(int id)
+    {
+        var isLinkedProof = await _db.ReturnEvidences.AsNoTracking().AnyAsync(e =>
+            e.Id == id
+            && e.IsInternal
+            && _db.Refunds.Any(r =>
+                r.ReturnRequestId == e.ReturnRequestId
+                && r.TransferEvidenceStorageKey == e.StorageKey));
+        if (!isLinkedProof) return NotFound();
+
+        var result = await _evidence.OpenReadAsync(id, AdminId, true);
+        if (result == null) return NotFound();
+        Response.Headers.CacheControl = "private, no-store, max-age=0";
+        Response.Headers.Pragma = "no-cache";
+        Response.Headers["X-Content-Type-Options"] = "nosniff";
+        return File(result.Value.Content, result.Value.Evidence.MimeType, result.Value.Evidence.OriginalFileName);
+    }
+
     [HttpPost, ValidateAntiForgeryToken, RequirePermission("returns.refund")]
     public async Task<IActionResult> Start(int id)
     {

@@ -123,52 +123,60 @@ public class ReturnControllerSecurityTests
     }
 
     [Fact]
-    public async Task FinanceRefundPermissionCanReachEvidenceDownload()
+    public async Task FinanceRefundProofDownload_OnlyUsesEvidenceLinkedToRefund()
     {
-        var rbac = new Mock<IRbacService>();
-        rbac.Setup(x => x.HasAnyPermissionAsync(
-                10,
-                It.Is<string[]>(permissions => permissions.Contains("returns.view") && permissions.Contains("returns.refund"))))
-            .ReturnsAsync(true);
-        var controller = new ReturnEvidenceController(Mock.Of<IReturnEvidenceService>(), rbac.Object)
+        await using var db = new ApplicationDbContext(
+            new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var refund = new Models.Returns.Refund
         {
-            ControllerContext = Context(10, "Admin")
+            ReturnRequestId = 42,
+            OrderId = 1,
+            Amount = 100m,
+            Method = Models.Returns.RefundMethod.ManualBankTransfer,
+            Status = Models.Returns.RefundStatus.Succeeded,
+            IdempotencyKey = "refund-proof",
+            TransferEvidenceStorageKey = "proof-key",
+            CreatedByUserId = 10,
+            CreatedAtUtc = DateTime.UtcNow
         };
-
-        var result = await controller.Download(7);
-
-        Assert.IsType<NotFoundResult>(result);
-    }
-
-    [Fact]
-    public async Task ReturnEvidenceDownload_AllowsRefundPermissionForAdminUsers()
-    {
+        var proof = new Models.Returns.ReturnEvidence
+        {
+            ReturnRequestId = 42,
+            UploadedByUserId = 10,
+            OriginalFileName = "proof.png",
+            MimeType = "image/png",
+            StorageKey = "proof-key",
+            Sha256Checksum = new string('a', 64),
+            IsInternal = true,
+            UploadedAtUtc = DateTime.UtcNow
+        };
+        var unrelated = new Models.Returns.ReturnEvidence
+        {
+            ReturnRequestId = 42,
+            UploadedByUserId = 10,
+            OriginalFileName = "unrelated.png",
+            MimeType = "image/png",
+            StorageKey = "unrelated-key",
+            Sha256Checksum = new string('b', 64),
+            IsInternal = true,
+            UploadedAtUtc = DateTime.UtcNow
+        };
+        db.AddRange(refund, proof, unrelated);
+        await db.SaveChangesAsync();
         var evidence = new Mock<IReturnEvidenceService>();
-        evidence.Setup(x => x.OpenReadAsync(7, 10, true, It.IsAny<CancellationToken>()))
-            .ReturnsAsync((new Models.Returns.ReturnEvidence
-            {
-                Id = 7,
-                ReturnRequestId = 42,
-                OriginalFileName = "proof.png",
-                MimeType = "image/png",
-                StorageKey = "proof-key"
-            }, (Stream)new MemoryStream([1, 2, 3])));
-        var rbac = new Mock<IRbacService>();
-        rbac.Setup(x => x.HasAnyPermissionAsync(10, It.Is<string[]>(permissions =>
-                permissions.Contains("returns.view") && permissions.Contains("returns.refund"))))
-            .ReturnsAsync(true);
-        var controller = new ReturnEvidenceController(evidence.Object, rbac.Object)
+        evidence.Setup(x => x.OpenReadAsync(proof.Id, 10, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((proof, (Stream)new MemoryStream([1, 2, 3])));
+        var controller = new AdminRefundController(Mock.Of<IRefundService>(), evidence.Object, db)
         {
             ControllerContext = Context(10, "Admin")
         };
 
-        var result = await controller.Download(7);
+        var result = await controller.DownloadProof(proof.Id);
 
         var file = Assert.IsType<FileStreamResult>(result);
-        Assert.Equal("image/png", file.ContentType);
         Assert.Equal("proof.png", file.FileDownloadName);
-        rbac.Verify(x => x.HasAnyPermissionAsync(10, It.Is<string[]>(permissions =>
-            permissions.Contains("returns.view") && permissions.Contains("returns.refund"))), Times.Once);
+        Assert.IsType<NotFoundResult>(await controller.DownloadProof(unrelated.Id));
     }
 
     [Fact]

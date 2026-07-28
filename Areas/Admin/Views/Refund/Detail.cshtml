@@ -70,7 +70,7 @@
                         <div><span class="rt-data-label">Thời điểm hoàn tất</span><div class="rt-data-value">@(processedAtUtc?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? "Chưa có")</div></div>
                         @if (transferEvidenceId.HasValue)
                         {
-                            <div><a class="rt-file" asp-area="" asp-controller="ReturnEvidence" asp-action="Download" asp-route-id="@transferEvidenceId.Value"><i class="far fa-file-image"></i><span>Xem chứng từ chuyển khoản</span></a></div>
+                            <div><a class="rt-file" asp-action="DownloadProof" asp-route-id="@transferEvidenceId.Value"><i class="far fa-file-image"></i><span>Xem chứng từ chuyển khoản</span></a></div>
                         }
                     </div>
                 }
