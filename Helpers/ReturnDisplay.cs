@@ -78,6 +78,9 @@ public static class ReturnDisplay
         _ => value.ToString()
     };
 
+    public static bool ShowFullRefundDestination(RefundStatus status) =>
+        status is RefundStatus.AwaitingApproval or RefundStatus.Processing;
+
     public static string Text(RefundMethod value) => value switch
     {
         RefundMethod.ManualBankTransfer => "Chuyển khoản thủ công",

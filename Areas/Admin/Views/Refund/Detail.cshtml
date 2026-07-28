@@ -53,7 +53,7 @@
                 {
                     <div class="alert alert-info mb-0" role="status">Đang chờ khách cung cấp tài khoản</div>
                 }
-                else if (Model.Status is RefundStatus.AwaitingApproval or RefundStatus.Processing or RefundStatus.Failed)
+                else if (ReturnDisplay.ShowFullRefundDestination(Model.Status))
                 {
                     <div class="rt-action-card">
                         <div><span class="rt-data-label">Ngân hàng</span><div class="rt-data-value">@Model.BankCode</div></div>

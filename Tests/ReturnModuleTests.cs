@@ -90,6 +90,16 @@ public class ReturnModuleTests
         Assert.Equal("Thông tin nhận tiền cần được cập nhật. Vui lòng kiểm tra và gửi lại.", correction.Note);
     }
 
+    [Theory]
+    [InlineData(RefundStatus.AwaitingApproval, true)]
+    [InlineData(RefundStatus.Processing, true)]
+    [InlineData(RefundStatus.Failed, false)]
+    [InlineData(RefundStatus.Succeeded, false)]
+    public void FinanceDestinationVisibility_OnlyShowsFullDetailsWhileActionable(RefundStatus status, bool expected)
+    {
+        Assert.Equal(expected, ReturnDisplay.ShowFullRefundDestination(status));
+    }
+
     [Fact]
     public void ReturnSubmitViewModel_RequiresDescriptionForSelectedItemsOnly()
     {

@@ -17,7 +17,7 @@ public class ReturnEvidenceController : Controller
     {
         var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
         var isAdmin = User.IsInRole("Admin") || User.IsInRole("SuperAdmin");
-        if (isAdmin && !await _rbac.HasPermissionAsync(userId, "returns.view")) return Forbid();
+        if (isAdmin && !await _rbac.HasAnyPermissionAsync(userId, "returns.view", "returns.refund")) return Forbid();
         var result = await _evidence.OpenReadAsync(id, userId, isAdmin);
         if (result == null) return NotFound();
         Response.Headers.CacheControl = "private, no-store, max-age=0";
