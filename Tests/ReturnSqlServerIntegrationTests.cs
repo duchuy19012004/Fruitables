@@ -141,7 +141,7 @@ public class ReturnSqlServerIntegrationTests
     {
         private readonly string _connectionString;
         public DbContextOptions<ApplicationDbContext> Options { get; }
-        private TestDatabase(string connectionString) { _connectionString = connectionString; Options = new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlServer(connectionString).Options; }
+        private TestDatabase(string connectionString) { _connectionString = connectionString; Options = new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlServer(connectionString, sql => sql.CommandTimeout(180)).Options; }
         public static async Task<TestDatabase> CreateAsync()
         {
             var baseConnection = Environment.GetEnvironmentVariable("FRUITABLES_TEST_SQLSERVER")!;

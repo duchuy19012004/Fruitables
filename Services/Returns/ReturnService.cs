@@ -237,6 +237,10 @@ public class ReturnService : IReturnService
         {
             return ReturnResult.Fail("Yêu cầu đã được nhân viên khác cập nhật. Vui lòng tải lại.", true);
         }
+        catch (DbUpdateException ex) when (IsDecisionConcurrencyFailure(ex))
+        {
+            return ReturnResult.Fail("Yêu cầu đã được nhân viên khác cập nhật. Vui lòng tải lại.", true);
+        }
     }
 
     public async Task<ReturnResult> CancelAsync(int id, int userId, CancellationToken cancellationToken = default)
@@ -292,6 +296,13 @@ public class ReturnService : IReturnService
             if (current is SqlException sql && sql.Number is 1205 or 3960) return true;
         return exception is DbUpdateConcurrencyException;
     }
+    private static bool IsDecisionConcurrencyFailure(Exception exception)
+    {
+        for (Exception? current = exception; current != null; current = current.InnerException)
+            if (current is SqlException sql && sql.Number is 2601 or 2627) return true;
+        return false;
+    }
+
     private static async Task RollbackSafelyAsync(IDbContextTransaction? transaction, CancellationToken cancellationToken)
     {
         if (transaction == null) return;
