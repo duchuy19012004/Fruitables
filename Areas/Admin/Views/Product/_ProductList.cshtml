@@ -15,6 +15,7 @@
                         <th>Danh mục</th>
                         <th class="text-end">Giá</th>
                         <th class="text-center">Tồn kho</th>
+                        <th class="text-center">Cảm xúc</th>
                         <th class="text-center">Trạng thái</th>
                         <th class="text-center sticky-action-col" style="width: 100px;">Thao tác</th>
                     </tr>
@@ -64,6 +65,31 @@
                                 else
                                 {
                                     <span class="badge bg-danger">Hết hàng</span>
+                                }
+                            </td>
+                            <td class="text-center">
+                                @if (ViewBag.Sentiments != null)
+                                {
+                                    var sent = (System.Collections.Generic.Dictionary<int, Fruitables.Services.ProductSentimentSummary>)ViewBag.Sentiments;
+                                    if (sent.TryGetValue(product.Id, out var s) && s.TotalCount > 0)
+                                    {
+                                        <a asp-area="Admin" asp-controller="Sentiment" asp-action="Reviews" asp-route-productId="@product.Id"
+                                           class="text-decoration-none d-inline-block" title="Xem review theo cảm xúc">
+                                            @if (s.NegativeCount > 0)
+                                            {
+                                                <span class="badge bg-danger">@s.NegativeCount tiêu cực</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-success">Tích cực</span>
+                                            }
+                                            <div class="small text-muted mt-1">@s.TotalCount review · @s.NegativeRate.ToString("0.0")% chê</div>
+                                        </a>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-light text-muted border">Chưa có</span>
+                                    }
                                 }
                             </td>
                             <td class="text-center">

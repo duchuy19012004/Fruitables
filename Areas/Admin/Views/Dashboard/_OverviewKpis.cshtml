@@ -19,4 +19,22 @@
         <strong class="overview-kpi__value">@Model.Inventory.LowStockProducts</strong>
         <span class="overview-kpi__note">@Model.Inventory.OutOfStockProducts sản phẩm đã hết hàng</span>
     </article>
+    <article class="overview-kpi overview-kpi--sentiment @(Model.Sentiment.PendingAlerts > 0 ? "overview-kpi--alert" : "")">
+        <span class="overview-kpi__label">Review tiêu cực · 7 ngày</span>
+        <strong class="overview-kpi__value">@Model.Sentiment.Negative7d<span class="overview-kpi__unit">/@Model.Sentiment.Total7d</span></strong>
+        <span class="overview-kpi__note @(Model.Sentiment.PendingAlerts > 0 ? "overview-kpi__note--danger" : "")">
+            @if (Model.Sentiment.PendingAlerts > 0)
+            {
+                <text>@Model.Sentiment.PendingAlerts cảnh báo nghiêm trọng chưa xử lý</text>
+            }
+            else if (Model.Sentiment.PendingReviews > 0)
+            {
+                <text>@Model.Sentiment.PendingReviews review chờ admin duyệt</text>
+            }
+            else
+            {
+                <text>Không có cảnh báo nghiêm trọng</text>
+            }
+        </span>
+    </article>
 </section>

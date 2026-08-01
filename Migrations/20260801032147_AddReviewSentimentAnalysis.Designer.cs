@@ -4,6 +4,7 @@ using Fruitables.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Fruitables.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260801032147_AddReviewSentimentAnalysis")]
+    partial class AddReviewSentimentAnalysis
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -2103,30 +2106,11 @@ namespace Fruitables.Migrations
                     b.Property<int>("AlertStatus")
                         .HasColumnType("int");
 
-                    b.Property<string>("AnalysisVersion")
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
                     b.Property<DateTime?>("AnalyzedAtUtc")
                         .HasColumnType("datetime2");
 
-                    b.Property<int?>("CommentSentiment")
-                        .HasColumnType("int");
-
                     b.Property<float?>("Confidence")
                         .HasColumnType("real");
-
-                    b.Property<bool>("HasRatingCommentConflict")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("HasSafetyRisk")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("NeedsManualReview")
-                        .HasColumnType("bit");
-
-                    b.Property<int>("RatingSentiment")
-                        .HasColumnType("int");
 
                     b.Property<string>("Reason")
                         .HasMaxLength(500)
@@ -2151,16 +2135,6 @@ namespace Fruitables.Migrations
                     b.HasIndex("AdminOverrideById");
 
                     b.HasIndex("AlertStatus");
-
-                    b.HasIndex("CommentSentiment");
-
-                    b.HasIndex("HasRatingCommentConflict");
-
-                    b.HasIndex("HasSafetyRisk");
-
-                    b.HasIndex("NeedsManualReview");
-
-                    b.HasIndex("RatingSentiment");
 
                     b.HasIndex("ReviewId")
                         .IsUnique();

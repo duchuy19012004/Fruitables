@@ -109,5 +109,18 @@ namespace Fruitables.Services
                 _logger.LogError(ex, "Error broadcasting PriceChanged for ProductId: {ProductId}", productId);
             }
         }
+
+        public async Task NotifySevereReviewAlertAsync(int reviewId, string productName, string commentSnippet)
+        {
+            try
+            {
+                await _hubContext.Clients.Group("Admins").SendAsync("SevereReviewAlert",
+                    new { ReviewId = reviewId, ProductName = productName, CommentSnippet = commentSnippet });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error broadcasting SevereReviewAlert for ReviewId: {ReviewId}", reviewId);
+            }
+        }
     }
 }

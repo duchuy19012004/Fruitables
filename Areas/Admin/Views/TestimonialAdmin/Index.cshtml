@@ -1,0 +1,98 @@
+@model List<Fruitables.Models.Testimonial>
+@{
+    ViewData["Title"] = "Testimonial";
+    Layout = "~/Areas/Admin/Views/Shared/_AdminDashboardLayout.cshtml";
+}
+
+<div class="container-fluid px-4 py-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
+        <div>
+            <h1 class="h3 mb-1 fw-bold">Testimonial (cảm nhận khách hàng)</h1>
+            <p class="text-muted mb-0 small">Duyệt đề xuất tự động từ review tích cực hoặc quản lý testimonial đang hiển thị</p>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center">
+            <span><i class="fas fa-quote-right me-2"></i>@Model.Count testimonial</span>
+        </div>
+        <div class="card-body p-0 table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width: 60px">#</th>
+                        <th>Khách hàng</th>
+                        <th>Nội dung</th>
+                        <th class="text-center">Sao</th>
+                        <th class="text-center">Trạng thái</th>
+                        <th class="text-center">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model.Count == 0)
+                    {
+                        <tr><td colspan="6" class="text-center text-muted py-5">Chưa có testimonial nào</td></tr>
+                    }
+                    @foreach (var t in Model)
+                    {
+                        <tr id="trow-@t.Id">
+                            <td>@t.Id</td>
+                            <td>
+                                <div class="fw-semibold">@t.Name</div>
+                                <small class="text-muted">@t.CreatedAt.ToString("dd/MM/yyyy")</small>
+                            </td>
+                            <td style="max-width: 420px;">
+                                <div class="text-truncate" title="@t.Content">@t.Content</div>
+                            </td>
+                            <td class="text-center">@t.Rating/5</td>
+                            <td class="text-center">
+                                @if (t.IsActive)
+                                {
+                                    <span class="badge bg-success">Đang hiển thị</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-warning text-dark">Chờ duyệt</span>
+                                }
+                            </td>
+                            <td class="text-center">
+                                <div class="btn-group btn-group-sm">
+                                    <button type="button" class="btn btn-@(t.IsActive ? "warning" : "success")"
+                                            onclick="setActive(@t.Id, @(!t.IsActive).ToString().ToLower(), this)">
+                                        @(t.IsActive ? "Gỡ" : "Duyệt")
+                                    </button>
+                                    <button type="button" class="btn btn-outline-danger" onclick="del(@t.Id, this)">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        function setActive(id, active, btn) {
+            const formData = new FormData();
+            formData.append('id', id);
+            formData.append('active', active);
+            fetch('@Url.Action("SetActive", "TestimonialAdmin", new { area = "Admin" })', { method: 'POST', body: formData })
+                .then(r => r.json())
+                .then(d => { if (d.success) { location.reload(); } else alert(d.message); })
+                .catch(() => alert('Lỗi kết nối'));
+        }
+        function del(id, btn) {
+            if (!confirm('Xóa testimonial này?')) return;
+            const formData = new FormData();
+            formData.append('id', id);
+            fetch('@Url.Action("Delete", "TestimonialAdmin", new { area = "Admin" })', { method: 'POST', body: formData })
+                .then(r => r.json())
+                .then(d => { if (d.success) { location.reload(); } else alert(d.message); })
+                .catch(() => alert('Lỗi kết nối'));
+        }
+    </script>
+}

@@ -6,4 +6,7 @@ public static class OutboxMessageTypes
     public const string ReturnStatusChanged = "returns.request.status-changed";
     public const string RefundCreated = "returns.refund.created";
     public const string RefundSucceeded = "returns.refund.succeeded";
+
+    public const string ReviewSentimentAnalyze = "reviews.sentiment.analyze";
+    public const string ReviewSentimentBackfill = "reviews.sentiment.backfill";
 }

@@ -75,6 +75,43 @@ public class EmailService : IEmailService
         }
     }
 
+    public async Task<bool> SendReturnNotificationEmailAsync(
+        string customerEmail,
+        string customerName,
+        string returnNumber,
+        string subject,
+        string message)
+    {
+        try
+        {
+            var body = GenerateReturnNotificationEmailBody(customerName, returnNumber, message);
+            return await SendEmailAsync(customerEmail, subject, body);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send return notification email to {Email}", customerEmail);
+            return false;
+        }
+    }
+
+    public async Task<bool> SendFollowUpEmailAsync(
+        string customerEmail,
+        string customerName,
+        string subject,
+        string message)
+    {
+        try
+        {
+            var body = GenerateFollowUpEmailBody(customerName, message);
+            return await SendEmailAsync(customerEmail, subject, body);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send follow-up email to {Email}", customerEmail);
+            return false;
+        }
+    }
+
     // Gửi email qua SMTP (MailKit), cấu hình đọc từ DB thông qua ISettingsService
     private async Task<bool> SendEmailAsync(string toEmail, string subject, string htmlBody)
     {
@@ -261,6 +298,88 @@ public class EmailService : IEmailService
     <div class=""footer"">
         <p>© {DateTime.Now.Year} {COMPANY_NAME}. Tất cả quyền được bảo lưu.</p>
         <p>Email này được gửi tự động, vui lòng không trả lời trực tiếp.</p>
+        <p>Nếu bạn cần hỗ trợ, hãy liên hệ: {SUPPORT_EMAIL}</p>
+    </div>
+</body>
+</html>";
+    }
+
+    // Template HTML email thông báo trả hàng / đổi trả
+    private string GenerateReturnNotificationEmailBody(string customerName, string returnNumber, string message)
+    {
+        return $@"
+<!DOCTYPE html>
+<html lang=""vi"">
+<head>
+    <meta charset=""UTF-8"">
+    <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
+    <title>Thông báo yêu cầu trả hàng</title>
+    <style>
+        body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }}
+        .header {{ background-color: #0d6efd; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }}
+        .content {{ background-color: #f8f9fa; padding: 30px; border: 1px solid #dee2e6; }}
+        .info-box {{ background-color: #fff; border-left: 4px solid #0d6efd; padding: 15px; margin: 20px 0; }}
+        .footer {{ background-color: #343a40; color: #adb5bd; padding: 20px; text-align: center; font-size: 12px; border-radius: 0 0 8px 8px; }}
+        h1 {{ margin: 0; font-size: 22px; }}
+        .highlight {{ color: #0d6efd; font-weight: bold; }}
+    </style>
+</head>
+<body>
+    <div class=""header"">
+        <h1>📦 Thông báo yêu cầu trả hàng</h1>
+    </div>
+
+    <div class=""content"">
+        <p>Xin chào <strong>{customerName}</strong>,</p>
+        <p>{message}</p>
+
+        <div class=""info-box"">
+            <p><strong>Mã yêu cầu trả hàng:</strong> {returnNumber}</p>
+        </div>
+
+        <p>Trân trọng,<br><strong>Đội ngũ {COMPANY_NAME}</strong></p>
+    </div>
+
+    <div class=""footer"">
+        <p>© {DateTime.Now.Year} {COMPANY_NAME}. Tất cả quyền được bảo lưu.</p>
+        <p>Email này được gửi tự động, vui lòng không trả lời trực tiếp.</p>
+        <p>Nếu bạn cần hỗ trợ, hãy liên hệ: {SUPPORT_EMAIL}</p>
+    </div>
+</body>
+</html>";
+    }
+
+    // Template HTML email chăm sóc khách hàng (follow-up sau phản hồi tiêu cực)
+    private string GenerateFollowUpEmailBody(string customerName, string message)
+    {
+        return $@"
+<!DOCTYPE html>
+<html lang=""vi"">
+<head>
+    <meta charset=""UTF-8"">
+    <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
+    <title>Thư từ Fruitables</title>
+    <style>
+        body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }}
+        .header {{ background-color: #81c408; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }}
+        .content {{ background-color: #f8f9fa; padding: 30px; border: 1px solid #dee2e6; }}
+        .footer {{ background-color: #343a40; color: #adb5bd; padding: 20px; text-align: center; font-size: 12px; border-radius: 0 0 8px 8px; }}
+        h1 {{ margin: 0; font-size: 22px; }}
+    </style>
+</head>
+<body>
+    <div class=""header"">
+        <h1>🌱 {COMPANY_NAME}</h1>
+    </div>
+
+    <div class=""content"">
+        <p>Xin chào <strong>{customerName}</strong>,</p>
+        <p>{message}</p>
+        <p>Trân trọng,<br><strong>Đội ngũ {COMPANY_NAME}</strong></p>
+    </div>
+
+    <div class=""footer"">
+        <p>© {DateTime.Now.Year} {COMPANY_NAME}. Tất cả quyền được bảo lưu.</p>
         <p>Nếu bạn cần hỗ trợ, hãy liên hệ: {SUPPORT_EMAIL}</p>
     </div>
 </body>

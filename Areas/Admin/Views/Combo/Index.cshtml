@@ -59,7 +59,24 @@
                                     <span class="text-muted">—</span>
                                 }
                             </td>
-                            <td>@item.Name</td>
+                            <td>@item.Name
+                                @{
+                                    var comboWarningsMap = ViewBag.ComboWarnings as System.Collections.Generic.Dictionary<int, System.Collections.Generic.List<string>>;
+                                    System.Collections.Generic.List<string>? comboWarnings = null;
+                                    var hasWarnings = comboWarningsMap != null && comboWarningsMap.TryGetValue(item.Id, out comboWarnings);
+                                }
+                                @if (hasWarnings)
+                                {
+                                    <div class="mt-1">
+                                        <span class="badge bg-danger"><i class="fas fa-exclamation-triangle me-1"></i>Sản phẩm bị chê</span>
+                                        @foreach (var w in comboWarnings ?? new System.Collections.Generic.List<string>())
+                                        {
+                                            <small class="d-block text-danger mt-1" title="@w">@w</small>
+                                        }
+                                        <a asp-area="Admin" asp-controller="Sentiment" asp-action="Reviews" class="small text-decoration-none">Xem phân tích cảm xúc</a>
+                                    </div>
+                                }
+                            </td>
                             <td>@item.ItemCount sản phẩm</td>
                             <td>
                                 <strong>@item.TotalPrice.ToString("N0") đ</strong>

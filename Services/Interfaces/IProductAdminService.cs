@@ -27,4 +27,7 @@ public interface IProductAdminService
     Task<ProductResult> AddVariantAsync(CreateVariantRequest request);
     Task<ProductResult> UpdateVariantAsync(int variantId, UpdateVariantRequest request);
     Task<ProductResult> DeleteVariantAsync(int variantId);
+
+    // Sentiment summary per product (badge trên danh sách sản phẩm)
+    Task<Dictionary<int, ProductSentimentSummary>> GetSentimentSummariesAsync(IReadOnlyList<int> productIds);
 }

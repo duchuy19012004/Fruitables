@@ -807,4 +807,41 @@ public class ProductAdminService : IProductAdminService
             return null;
         return await _unitOfWork.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
     }
+
+    public async Task<Dictionary<int, ProductSentimentSummary>> GetSentimentSummariesAsync(IReadOnlyList<int> productIds)
+    {
+        var ids = productIds.Distinct().ToArray();
+        if (ids.Length == 0) return new Dictionary<int, ProductSentimentSummary>();
+
+        var rows = await (
+            from r in _unitOfWork.Reviews.Query()
+            join s in _unitOfWork.ReviewSentiments.Query() on r.Id equals s.ReviewId
+            where ids.Contains(r.ProductId) && !r.IsDeleted && !s.NeedsManualReview
+            group s by r.ProductId into g
+            select new
+            {
+                ProductId = g.Key,
+                Negative = g.Count(x => x.Sentiment == SentimentLabel.Negative),
+                Conflict = g.Count(x => x.HasRatingCommentConflict),
+                Total = g.Count()
+            }).ToListAsync();
+
+        return rows.ToDictionary(
+            x => x.ProductId,
+            x => new ProductSentimentSummary
+            {
+                NegativeCount = x.Negative,
+                ConflictCount = x.Conflict,
+                TotalCount = x.Total,
+                NegativeRate = x.Total == 0 ? 0 : (float)Math.Round(x.Negative * 100f / x.Total, 1)
+            });
+    }
+}
+
+public sealed class ProductSentimentSummary
+{
+    public int NegativeCount { get; set; }
+    public int ConflictCount { get; set; }
+    public int TotalCount { get; set; }
+    public float NegativeRate { get; set; }
 }

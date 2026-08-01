@@ -23,6 +23,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<Review> Reviews => Set<Review>();
     public DbSet<ReviewReport> ReviewReports => Set<ReviewReport>();
     public DbSet<ReviewHelpful> ReviewHelpfuls => Set<ReviewHelpful>();
+    public DbSet<ReviewSentiment> ReviewSentiments => Set<ReviewSentiment>();
+    public DbSet<ReviewSentimentAspect> ReviewSentimentAspects => Set<ReviewSentimentAspect>();
     public DbSet<Cart> Carts => Set<Cart>();
     public DbSet<CartGroup> CartGroups => Set<CartGroup>();
     public DbSet<CartItem> CartItems => Set<CartItem>();
@@ -494,6 +496,45 @@ public class ApplicationDbContext : DbContext
                   .WithMany()
                   .HasForeignKey(h => h.UserId)
                   .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ReviewSentiment - 1-1 với Review, index theo nhãn + cảnh báo
+        modelBuilder.Entity<ReviewSentiment>(entity =>
+        {
+            entity.HasIndex(e => e.ReviewId).IsUnique();
+            entity.HasIndex(e => e.Sentiment);
+            entity.HasIndex(e => e.RatingSentiment);
+            entity.HasIndex(e => e.CommentSentiment);
+            entity.HasIndex(e => e.HasRatingCommentConflict);
+            entity.HasIndex(e => e.NeedsManualReview);
+            entity.HasIndex(e => e.HasSafetyRisk);
+            entity.HasIndex(e => e.AlertStatus);
+            entity.Property(e => e.AnalysisVersion).HasMaxLength(50);
+
+            entity.HasOne(s => s.Review)
+                  .WithOne(r => r.Sentiment)
+                  .HasForeignKey<ReviewSentiment>(s => s.ReviewId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(s => s.AdminOverrideBy)
+                  .WithMany()
+                  .HasForeignKey(s => s.AdminOverrideById)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(s => s.AcknowledgedBy)
+                  .WithMany()
+                  .HasForeignKey(s => s.AcknowledgedById)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ReviewSentimentAspect
+        modelBuilder.Entity<ReviewSentimentAspect>(entity =>
+        {
+            entity.HasIndex(e => e.ReviewSentimentId);
+            entity.HasOne(a => a.ReviewSentiment)
+                  .WithMany(s => s.Aspects)
+                  .HasForeignKey(a => a.ReviewSentimentId)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
 
         // ChatSession

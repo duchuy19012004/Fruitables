@@ -10,6 +10,7 @@ using Fruitables.Services.Interfaces;
 using Fruitables.Services.Search;
 using Fruitables.Services.Returns;
 using Fruitables.Services.Outbox;
+using Fruitables.Services.Sentiment;
 using Fruitables.Options;
 using Fruitables.Filters;
 using Microsoft.AspNetCore.DataProtection;
@@ -82,7 +83,12 @@ builder.Services.AddScoped<ReturnPolicyVersionCommand>();
 builder.Services.Configure<OutboxOptions>(builder.Configuration.GetSection(OutboxOptions.SectionName));
 builder.Services.AddScoped<IOutboxService, OutboxService>();
 builder.Services.AddScoped<IOutboxMessageHandler, ReturnDomainEventOutboxHandler>();
+builder.Services.AddScoped<IOutboxMessageHandler, SentimentAnalysisOutboxHandler>();
 builder.Services.AddHostedService<OutboxDispatcherWorker>();
+
+// ----- Phân tích cảm xúc review (dùng chung LLM cấu hình "Chat") -----
+builder.Services.Configure<SentimentOptions>(builder.Configuration.GetSection(SentimentOptions.SectionName));
+builder.Services.AddScoped<ISentimentAnalysisService, SentimentAnalysisService>();
 builder.Services.AddScoped<ISalesAnalyticsService, SalesAnalyticsService>();
 builder.Services.AddScoped<IUserManagementService, UserManagementService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
@@ -104,15 +110,15 @@ static void ConfigureChatHttpClient(IServiceProvider sp, HttpClient client)
 
 }
 
-// AI chat qua endpoint local OpenAI-compatible.
-builder.Services.AddHttpClient<ILlmClient, SpaceXaiLlmClient>(ConfigureChatHttpClient);
+// AI chat qua endpoint OpenAI-compatible.
+builder.Services.AddHttpClient<ILlmClient, OpenAiLlmClient>(ConfigureChatHttpClient);
 
 // Mã hóa tri thức: mặc định Local (không gọi API embedding).
 // Đổi Chat:EmbeddingProvider=OpenAICompatible nếu sau này dùng embed qua API
 var embeddingProvider = builder.Configuration["Chat:EmbeddingProvider"] ?? "Local";
 if (string.Equals(embeddingProvider, "OpenAICompatible", StringComparison.OrdinalIgnoreCase))
 {
-    builder.Services.AddHttpClient<IEmbeddingClient, SpaceXaiEmbeddingClient>(ConfigureChatHttpClient);
+    builder.Services.AddHttpClient<IEmbeddingClient, OpenAiEmbeddingClient>(ConfigureChatHttpClient);
 }
 else
 {

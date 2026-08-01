@@ -13,5 +13,9 @@ public interface IIndexingService
     Task IndexAllowlistedSettingsAsync(CancellationToken ct = default);
     /// <summary>Top bán chạy (từ đơn) + sản phẩm nổi bật — chunk template server-side.</summary>
     Task IndexCatalogInsightsAsync(CancellationToken ct = default);
+
+    /// <summary>Tóm tắt cảm xúc đánh giá 1 sản phẩm (số liệu + khía cạnh bị chê) cho chatbot.</summary>
+    Task IndexProductReviewSummaryAsync(int productId, CancellationToken ct = default);
+
     Task ReindexAllAsync(CancellationToken ct = default);
 }

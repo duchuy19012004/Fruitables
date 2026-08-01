@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Fruitables.Services.Interfaces;
 using Fruitables.ViewModels;
 using System.Security.Claims;
+using Microsoft.EntityFrameworkCore;
 
 namespace Fruitables.Areas.Admin.Controllers;
 
@@ -13,17 +14,72 @@ public class ComboController : Controller
 {
     private readonly IComboService _comboService;
     private readonly IImageUploadService _imageUploadService;
+    private readonly Fruitables.Repositories.Interfaces.IUnitOfWork _unitOfWork;
+    private readonly ILogger<ComboController> _logger;
 
-    public ComboController(IComboService comboService, IImageUploadService imageUploadService)
+    public ComboController(IComboService comboService, IImageUploadService imageUploadService, Fruitables.Repositories.Interfaces.IUnitOfWork unitOfWork, ILogger<ComboController> logger)
     {
         _comboService = comboService;
         _imageUploadService = imageUploadService;
+        _unitOfWork = unitOfWork;
+        _logger = logger;
     }
 
     public async Task<IActionResult> Index()
     {
         var items = await _comboService.GetAdminListAsync();
+        ViewBag.ComboWarnings = await GetSentimentWarningsAsync();
         return View(new ComboListViewModel { Items = items.ToList() });
+    }
+
+    // Cảnh báo combo chứa sản phẩm có review tiêu cực nhiều (kết hợp module phân tích cảm xúc)
+    private async Task<Dictionary<int, List<string>>> GetSentimentWarningsAsync()
+    {
+        var warnings = new Dictionary<int, List<string>>();
+        try
+        {
+            var combos = await _unitOfWork.Combos.Query()
+                .Include(c => c.Items)
+                .Where(c => !c.IsActive || c.Items.Any())
+                .ToListAsync();
+
+            var productIds = combos.SelectMany(c => c.Items.Select(i => i.ProductId)).Distinct().ToList();
+            if (productIds.Count == 0) return warnings;
+
+            var sentiments = await (
+                from r in _unitOfWork.Reviews.Query()
+                join s in _unitOfWork.ReviewSentiments.Query() on r.Id equals s.ReviewId
+                where productIds.Contains(r.ProductId) && !r.IsDeleted
+                group s by r.ProductId into g
+                select new
+                {
+                    ProductId = g.Key,
+                    Negative = g.Count(x => x.Sentiment == Fruitables.Models.SentimentLabel.Negative),
+                    Total = g.Count()
+                }).ToListAsync();
+
+            foreach (var combo in combos)
+            {
+                var comboWarnings = new List<string>();
+                foreach (var item in combo.Items)
+                {
+                    var stat = sentiments.FirstOrDefault(s => s.ProductId == item.ProductId);
+                    if (stat is null) continue;
+                    var rate = stat.Total == 0 ? 0 : (float)Math.Round(stat.Negative * 100f / stat.Total, 1);
+                    if (stat.Negative >= 2 || rate >= 40)
+                    {
+                        comboWarnings.Add($"{item.Product?.Name ?? $"Sản phẩm #{item.ProductId}"}: {stat.Negative} review tiêu cực ({rate.ToString("0.0")}%)");
+                    }
+                }
+                if (comboWarnings.Count > 0)
+                    warnings[combo.Id] = comboWarnings;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error computing combo sentiment warnings");
+        }
+        return warnings;
     }
 
     public async Task<IActionResult> Create()

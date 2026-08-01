@@ -1,0 +1,459 @@
+@model Fruitables.Services.Interfaces.PagedSentimentReviews
+@using Fruitables.Models
+@using Fruitables.Services.Interfaces
+@{
+    ViewData["Title"] = "Danh sách đánh giá theo cảm xúc";
+    Layout = "~/Areas/Admin/Views/Shared/_AdminDashboardLayout.cshtml";
+
+    var productId = Context.Request.Query["productId"];
+    var sentiment = Context.Request.Query["sentiment"];
+    var severity = Context.Request.Query["severity"];
+    var alertOnly = Context.Request.Query["alertOnly"];
+    var conflictOnly = Context.Request.Query["conflictOnly"];
+    var manualOnly = Context.Request.Query["needsManualReviewOnly"];
+    var safetyOnly = Context.Request.Query["safetyOnly"];
+    var from = Context.Request.Query["from"];
+    var to = Context.Request.Query["to"];
+
+    string SentimentBadge(SentimentLabel label) => label switch
+    {
+        SentimentLabel.Positive => "bg-success",
+        SentimentLabel.Neutral => "bg-secondary",
+        SentimentLabel.Negative => "bg-danger",
+        _ => "bg-dark"
+    };
+
+    string SentimentText(SentimentLabel label) => label switch
+    {
+        SentimentLabel.Positive => "Tích cực",
+        SentimentLabel.Neutral => "Trung tính",
+        SentimentLabel.Negative => "Tiêu cực",
+        _ => "Chưa phân tích được"
+    };
+
+    string SourceText(SentimentSource s) => s switch
+    {
+        SentimentSource.AiModel => "AI",
+        SentimentSource.RatingFallback => "Sao",
+        SentimentSource.AdminOverride => "Thủ công",
+        _ => "?"
+    };
+
+    var baseUrl = Url.Action("Reviews", "Sentiment", new { area = "Admin" }) + "?";
+    var qs = new List<string>();
+    if (!string.IsNullOrEmpty(productId)) qs.Add($"productId={productId}");
+    if (!string.IsNullOrEmpty(sentiment)) qs.Add($"sentiment={sentiment}");
+    if (!string.IsNullOrEmpty(severity)) qs.Add($"severity={severity}");
+    if (alertOnly == "true") qs.Add("alertOnly=true");
+    if (conflictOnly == "true") qs.Add("conflictOnly=true");
+    if (manualOnly == "true") qs.Add("needsManualReviewOnly=true");
+    if (safetyOnly == "true") qs.Add("safetyOnly=true");
+    if (!string.IsNullOrEmpty(from)) qs.Add($"from={from}");
+    if (!string.IsNullOrEmpty(to)) qs.Add($"to={to}");
+    var qsString = qs.Count > 0 ? string.Join("&", qs) + "&" : "";
+}
+
+@section Styles {
+    <style>
+        .sent-table { font-size: .875rem; }
+        .sent-table td { vertical-align: middle; }
+        .sent-comment { max-width: 320px; }
+        .aspect-chip { font-size: .72rem; }
+    </style>
+}
+
+<div class="container-fluid px-4 py-4">
+    @Html.AntiForgeryToken()
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
+        <div>
+            <h1 class="h3 mb-1 fw-bold">Danh sách đánh giá theo cảm xúc</h1>
+            <p class="text-muted mb-0 small">Lọc và sửa tay nhãn cảm xúc do AI phân tích</p>
+        </div>
+        <div class="d-flex gap-2">
+            <a asp-action="Index" asp-controller="Sentiment" asp-area="Admin" class="btn btn-outline-secondary btn-sm">
+                <i class="fas fa-chart-pie me-1"></i>Bảng phân tích
+            </a>
+            <a href="@Url.Action("ExportCsv", "Sentiment", new { area = "Admin" })?@qsString" class="btn btn-outline-secondary btn-sm">
+                <i class="fas fa-file-csv me-1"></i>Export CSV
+            </a>
+        </div>
+    </div>
+
+    <!-- Filter -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-2 align-items-end">
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold mb-1">Sản phẩm ID</label>
+                    <input type="number" name="productId" value="@productId" class="form-control form-control-sm" placeholder="VD: 12" min="1" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold mb-1">Cảm xúc</label>
+                    <select name="sentiment" class="form-select form-select-sm">
+                        <option value="">Tất cả</option>
+                        <option value="0" selected="@(sentiment == "0")">Tích cực</option>
+                        <option value="1" selected="@(sentiment == "1")">Trung tính</option>
+                        <option value="2" selected="@(sentiment == "2")">Tiêu cực</option>
+                        <option value="3" selected="@(sentiment == "3")">Lỗi phân tích</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold mb-1">Mức độ</label>
+                    <select name="severity" class="form-select form-select-sm">
+                        <option value="">Tất cả</option>
+                        <option value="1" selected="@(severity == "1")">Mức 1 (nhẹ)</option>
+                        <option value="2" selected="@(severity == "2")">Mức 2</option>
+                        <option value="3" selected="@(severity == "3")">Mức 3 (nghiêm trọng)</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold mb-1">Từ ngày</label>
+                    <input type="date" name="from" value="@from" class="form-control form-control-sm" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold mb-1">Đến ngày</label>
+                    <input type="date" name="to" value="@to" class="form-control form-control-sm" />
+                </div>
+                <div class="col-md-2 d-flex flex-wrap gap-2 align-items-end">
+                    <div class="form-check mb-2">
+                        <input type="checkbox" name="alertOnly" value="true" class="form-check-input" id="alertOnly" @(alertOnly == "true" ? "checked" : null) />
+                        <label class="form-check-label small" for="alertOnly">Chỉ cảnh báo chưa xử lý</label>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input type="checkbox" name="conflictOnly" value="true" class="form-check-input" id="conflictOnly" @(conflictOnly == "true" ? "checked" : null) />
+                        <label class="form-check-label small" for="conflictOnly">Mâu thuẫn sao/comment</label>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input type="checkbox" name="needsManualReviewOnly" value="true" class="form-check-input" id="needsManualReviewOnly" @(manualOnly == "true" ? "checked" : null) />
+                        <label class="form-check-label small" for="needsManualReviewOnly">Chờ admin duyệt</label>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input type="checkbox" name="safetyOnly" value="true" class="form-check-input" id="safetyOnly" @(safetyOnly == "true" ? "checked" : null) />
+                        <label class="form-check-label small" for="safetyOnly">Rủi ro an toàn</label>
+                    </div>
+                    <button type="submit" class="btn btn-admin-primary btn-sm"><i class="fas fa-filter me-1"></i>Lọc</button>
+                    <a href="@Url.Action("Reviews", "Sentiment", new { area = "Admin" })" class="btn btn-outline-secondary btn-sm">Reset</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Table -->
+    <div class="card">
+        <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center">
+            <span>@Model.TotalCount đánh giá</span>
+        </div>
+        <div class="card-body p-0 table-responsive">
+            <table class="table table-hover mb-0 sent-table">
+                <thead class="table-light">
+                    <tr>
+                        <th>#</th>
+                        <th>Sản phẩm</th>
+                        <th>Khách hàng</th>
+                        <th>Nội dung</th>
+                        <th class="text-center">Cảm xúc</th>
+                        <th class="text-center">Mức độ</th>
+                        <th>Lý do / Khía cạnh</th>
+                        <th class="text-center">Nguồn</th>
+                        <th class="text-center">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model.Items.Count == 0)
+                    {
+                        <tr><td colspan="9" class="text-center text-muted py-5">Không có đánh giá nào khớp bộ lọc</td></tr>
+                    }
+                    @foreach (var r in Model.Items)
+                    {
+                        <tr id="row-@r.ReviewId">
+                            <td>@r.ReviewId</td>
+                            <td>
+                                <div class="fw-bold">@r.ProductName</div>
+                                <div class="small text-muted">@(r.Rating)/5 @(r.IsVerifiedPurchase ? "· <i class='fas fa-check-circle text-success' title='Đã mua hàng'></i>" : "")</div>
+                            </td>
+                            <td>@r.UserName</td>
+                            <td class="sent-comment">
+                                <div class="text-truncate" title="@r.Comment">@(r.Comment.Length > 150 ? r.Comment[..150] + "..." : r.Comment)</div>
+                                <div class="small text-muted">@r.CreatedAt.ToString("dd/MM/yyyy HH:mm")</div>
+                            </td>
+                            <td class="text-center">
+                                <span class="badge @SentimentBadge(r.Label)">@SentimentText(r.Label)</span>
+                                <div class="small text-muted mt-1">Sao: @SentimentText(r.RatingSentiment)</div>
+                                @if (r.CommentSentiment.HasValue)
+                                {
+                                    <div class="small text-muted">Comment: @SentimentText(r.CommentSentiment.Value)</div>
+                                }
+                                @if (r.HasRatingCommentConflict)
+                                {
+                                    <div><span class="badge bg-warning text-dark mt-1"><i class="fas fa-code-branch me-1"></i>Mâu thuẫn</span></div>
+                                }
+                                @if (r.NeedsManualReview)
+                                {
+                                    <div><span class="badge bg-primary mt-1"><i class="fas fa-user-check me-1"></i>Chờ admin duyệt</span></div>
+                                }
+                                @if (r.HasSafetyRisk)
+                                {
+                                    <div><span class="badge bg-danger mt-1"><i class="fas fa-shield-alt me-1"></i>An toàn thực phẩm</span></div>
+                                }
+                                @if (r.AlertStatus == SentimentAlertStatus.Pending)
+                                {
+                                    <div><span class="badge bg-warning text-dark mt-1"><i class="fas fa-exclamation-triangle me-1"></i>Chưa xử lý</span></div>
+                                }
+                                @if (r.AlertStatus == SentimentAlertStatus.Acknowledged)
+                                {
+                                    <div><span class="badge bg-info mt-1">Đã xác nhận</span></div>
+                                }
+                            </td>
+                            <td class="text-center">
+                                @if (r.Severity.HasValue)
+                                {
+                                    <span class="badge bg-danger">Mức @r.Severity</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">-</span>
+                                }
+                            </td>
+                            <td>
+                                <div class="small text-muted" title="@r.Reason">@(r.Reason?.Length > 80 ? r.Reason[..80] + "..." : r.Reason ?? "-")</div>
+                                <div>
+                                    @foreach (var a in r.Aspects.Take(3))
+                                    {
+                                        <span class="badge @(a.Sentiment == "Negative" ? "bg-danger" : a.Sentiment == "Positive" ? "bg-success" : "bg-secondary") aspect-chip me-1">@a.Aspect</span>
+                                    }
+                                </div>
+                            </td>
+                            <td class="text-center"><span class="badge bg-light text-dark border">@SourceText(r.Source)</span></td>
+                            <td class="text-center">
+                                <div class="btn-group btn-group-sm">
+                                    <button type="button" class="btn btn-outline-primary" onclick="openOverride(@r.ReviewId, @((int)r.Label), @(r.Severity?.ToString() ?? "null"))" title="Sửa nhãn thủ công">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-info" title="Xem đơn hàng của khách" onclick="viewOrder(@r.ReviewId)">
+                                        <i class="fas fa-box"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-primary" title="Gửi email hỏi thăm khách" onclick="openFollowUp(@r.ReviewId, '@r.UserName.Replace("'", "\\'")', '@r.ProductName.Replace("'", "\\'")')">
+                                        <i class="fas fa-envelope"></i>
+                                    </button>
+                                    @if (r.Label == SentimentLabel.Positive
+                                        && r.Rating >= 4
+                                        && r.RatingSentiment == SentimentLabel.Positive
+                                        && r.CommentSentiment == SentimentLabel.Positive
+                                        && !r.HasRatingCommentConflict
+                                        && !r.NeedsManualReview)
+                                    {
+                                        <button type="button" class="btn btn-outline-warning" title="Đề xuất làm testimonial" onclick="suggestTestimonial(@r.ReviewId, this)">
+                                            <i class="fas fa-quote-right"></i>
+                                        </button>
+                                    }
+                                    @if (r.AlertStatus == SentimentAlertStatus.Pending)
+                                    {
+                                        <button type="button" class="btn btn-success" onclick="ackAlert(@r.ReviewId, this)" title="Xác nhận cảnh báo">
+                                            <i class="fas fa-check"></i>
+                                        </button>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (Model.TotalPages > 1)
+        {
+            <div class="card-footer bg-white d-flex justify-content-center">
+                <nav>
+                    <ul class="pagination pagination-sm mb-0">
+                        @for (var p = 1; p <= Model.TotalPages; p++)
+                        {
+                            <li class="page-item @(p == Model.Page ? "active" : "")">
+                                <a class="page-link" href="@(baseUrl + qsString + "page=" + p)">@p</a>
+                            </li>
+                        }
+                    </ul>
+                </nav>
+            </div>
+        }
+    </div>
+</div>
+
+<!-- Override Modal -->
+<div class="modal fade" id="overrideModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Sửa tay nhãn cảm xúc</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="ovReviewId" />
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Cảm xúc</label>
+                    <select id="ovLabel" class="form-select">
+                        <option value="0">Tích cực</option>
+                        <option value="1">Trung tính</option>
+                        <option value="2">Tiêu cực</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Mức độ (chỉ áp dụng khi tiêu cực)</label>
+                    <select id="ovSeverity" class="form-select">
+                        <option value="">Không áp dụng</option>
+                        <option value="1">Mức 1 (nhẹ)</option>
+                        <option value="2">Mức 2</option>
+                        <option value="3">Mức 3 (nghiêm trọng)</option>
+                    </select>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label fw-bold">Ghi chú của admin</label>
+                    <textarea id="ovNote" class="form-control" rows="2" maxlength="400" placeholder="Lý do sửa nhãn..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Hủy</button>
+                <button type="button" class="btn btn-admin-primary" onclick="submitOverride()">Lưu</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Follow-up email modal -->
+<div class="modal fade" id="followUpModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Email hỏi thăm khách hàng</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="small text-muted">Gửi tới: <strong id="fuCustomer"></strong></p>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Tiêu đề</label>
+                    <input id="fuSubject" class="form-control" maxlength="120" />
+                </div>
+                <div class="mb-2">
+                    <label class="form-label fw-bold">Nội dung</label>
+                    <textarea id="fuMessage" class="form-control" rows="5" maxlength="2000"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Hủy</button>
+                <button type="button" class="btn btn-outline-info" id="fuAiBtn" onclick="generateReplyDraft()">
+                    <i class="fas fa-magic me-1"></i>Gợi ý bằng AI
+                </button>
+                <button type="button" class="btn btn-admin-primary" id="fuSendBtn" onclick="sendFollowUp()">Gửi email</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        let overrideReviewId = 0;
+
+        function antiforgeryHeaders() {
+            return {
+                'RequestVerificationToken': document.querySelector('input[name="__RequestVerificationToken"]')?.value || ''
+            };
+        }
+
+        function openOverride(reviewId, label, severity) {
+            overrideReviewId = reviewId;
+            document.getElementById('ovReviewId').value = reviewId;
+            document.getElementById('ovLabel').value = label;
+            document.getElementById('ovSeverity').value = severity ?? '';
+            document.getElementById('ovNote').value = '';
+            new bootstrap.Modal(document.getElementById('overrideModal')).show();
+        }
+
+        function submitOverride() {
+            const formData = new FormData();
+            formData.append('reviewId', overrideReviewId);
+            formData.append('label', document.getElementById('ovLabel').value);
+            const sev = document.getElementById('ovSeverity').value;
+            if (sev) formData.append('severity', sev);
+            const note = document.getElementById('ovNote').value.trim();
+            if (note) formData.append('note', note);
+
+            fetch('@Url.Action("Override", "Sentiment", new { area = "Admin" })', { method: 'POST', headers: antiforgeryHeaders(), body: formData })
+                .then(r => r.json())
+                .then(d => {
+                    bootstrap.Modal.getInstance(document.getElementById('overrideModal')).hide();
+                    if (d.success) { location.reload(); } else { alert(d.message || 'Lỗi'); }
+                })
+                .catch(() => alert('Lỗi kết nối'));
+        }
+
+        function ackAlert(reviewId, btn) {
+            const formData = new FormData();
+            formData.append('reviewId', reviewId);
+            fetch('@Url.Action("Acknowledge", "Sentiment", new { area = "Admin" })', { method: 'POST', headers: antiforgeryHeaders(), body: formData })
+                .then(r => r.json())
+                .then(d => { if (d.success) { location.reload(); } else alert(d.message); })
+                .catch(() => alert('Lỗi kết nối'));
+        }
+
+        // Xem đơn hàng của khách
+        function viewOrder(reviewId) {
+            fetch('@Url.Action("OrderInfo", "Sentiment", new { area = "Admin" })?reviewId=' + reviewId)
+                .then(r => r.json())
+                .then(d => {
+                    if (d.success) { window.open('@Url.Action("Detail", "Order", new { area = "Admin" })/' + d.orderId, '_blank'); }
+                    else alert(d.message || 'Không tìm thấy đơn hàng');
+                })
+                .catch(() => alert('Lỗi kết nối'));
+        }
+
+        // Đề xuất testimonial từ review tích cực
+        function suggestTestimonial(reviewId, btn) {
+            const formData = new FormData();
+            formData.append('reviewId', reviewId);
+            btn.disabled = true;
+            fetch('@Url.Action("SuggestTestimonial", "Sentiment", new { area = "Admin" })', { method: 'POST', headers: antiforgeryHeaders(), body: formData })
+                .then(r => r.json())
+                .then(d => { alert(d.message || (d.success ? 'Đã thêm' : 'Lỗi')); btn.disabled = false; })
+                .catch(() => { alert('Lỗi kết nối'); btn.disabled = false; });
+        }
+
+        // Email hỏi thăm khách (mở modal)
+        let followUpReviewId = 0;
+        function openFollowUp(reviewId, customerName, productName) {
+            followUpReviewId = reviewId;
+            document.getElementById('fuCustomer').textContent = customerName;
+            document.getElementById('fuSubject').value = '[' + productName + '] Cảm ơn phản hồi của bạn';
+            document.getElementById('fuMessage').value = 'Xin chào, chúng tôi rất tiếc về trải nghiệm của bạn với sản phẩm ' + productName + '. Chúng tôi muốn tìm hiểu thêm và hỗ trợ bạn tốt nhất có thể.';
+            document.getElementById('fuAiBtn').disabled = false;
+            new bootstrap.Modal(document.getElementById('followUpModal')).show();
+        }
+        function generateReplyDraft() {
+            const btn = document.getElementById('fuAiBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Đang viết...';
+            fetch('@Url.Action("GenerateReply", "Sentiment", new { area = "Admin" })?reviewId=' + followUpReviewId)
+                .then(r => r.json())
+                .then(d => {
+                    if (d.success) { document.getElementById('fuMessage').value = d.draft; }
+                    else alert(d.message || 'Lỗi');
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-magic me-1"></i>Gợi ý bằng AI';
+                })
+                .catch(() => { alert('Lỗi kết nối'); btn.disabled = false; btn.innerHTML = '<i class="fas fa-magic me-1"></i>Gợi ý bằng AI'; });
+        }
+        function sendFollowUp() {
+            const formData = new FormData();
+            formData.append('reviewId', followUpReviewId);
+            formData.append('subject', document.getElementById('fuSubject').value);
+            formData.append('message', document.getElementById('fuMessage').value);
+            const btn = document.getElementById('fuSendBtn');
+            btn.disabled = true;
+            fetch('@Url.Action("SendFollowUp", "Sentiment", new { area = "Admin" })', { method: 'POST', headers: antiforgeryHeaders(), body: formData })
+                .then(r => r.json())
+                .then(d => {
+                    bootstrap.Modal.getInstance(document.getElementById('followUpModal')).hide();
+                    alert(d.message || (d.success ? 'Đã gửi' : 'Lỗi'));
+                    btn.disabled = false;
+                })
+                .catch(() => { alert('Lỗi kết nối'); btn.disabled = false; });
+        }
+    </script>
+}

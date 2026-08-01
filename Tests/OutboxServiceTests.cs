@@ -81,6 +81,32 @@ public class OutboxServiceTests
         Assert.Equal(new[] { "pending", "recent-processed" }, await db.OutboxMessages.OrderBy(x => x.IdempotencyKey).Select(x => x.IdempotencyKey).ToArrayAsync());
     }
 
+    [Fact]
+    public async Task ExtendLocksExtendsOnlyMatchingLockedMessages()
+    {
+        var options = TestDbContextFactory.CreateSqliteOptions();
+        var clock = new MutableTimeProvider(Utc(2026, 7, 27));
+        await SeedAsync(options, clock, "extend-a");
+        await SeedAsync(options, clock, "extend-b");
+
+        await using var db = new ApplicationDbContext(options);
+        var service = new OutboxService(db, clock);
+        var claimed = await service.ClaimAsync(10, "worker-a", TimeSpan.FromMinutes(1));
+        Assert.Equal(2, claimed.Count);
+
+        clock.UtcNow = clock.UtcNow.AddMinutes(5);
+        var ids = claimed.Select(m => m.Id).ToList();
+        var extended = await service.ExtendLocksAsync(ids, "worker-a", TimeSpan.FromMinutes(30));
+
+        Assert.Equal(2, extended);
+        foreach (var m in claimed)
+            Assert.Equal(clock.UtcNow.AddMinutes(30), m.LockedUntilUtc);
+
+        // Lock token lệch → không được gia hạn (instance khác không thể cướp lock).
+        var wrongToken = await service.ExtendLocksAsync(ids, "worker-b", TimeSpan.FromMinutes(30));
+        Assert.Equal(0, wrongToken);
+    }
+
     private static async Task SeedAsync(DbContextOptions<ApplicationDbContext> options, TimeProvider clock, string key)
     {
         await using var db = new ApplicationDbContext(options);

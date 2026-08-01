@@ -1,9 +1,12 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Fruitables.Models;
+using Fruitables.Options;
 using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Interfaces;
+using Fruitables.Services.Outbox;
 using Fruitables.ViewModels;
+using Microsoft.Extensions.Options;
 
 namespace Fruitables.Services;
 
@@ -13,7 +16,9 @@ public class ReviewService : IReviewService
     private readonly IWordMaskingService _wordMaskingService;
     private readonly IMemoryCache _cache;
     private readonly ILogger<ReviewService> _logger;
-    
+    private readonly IOutboxService? _outbox;
+    private readonly bool _sentimentEnabled;
+
     private const int MAX_REVIEWS_PER_DAY = 100; // Tăng lên cho môi trường test
     private const int EDIT_TIME_LIMIT_HOURS = 24;
     private const int AUTO_HIDE_REPORT_THRESHOLD = 5;
@@ -24,12 +29,16 @@ public class ReviewService : IReviewService
         IUnitOfWork unitOfWork,
         IWordMaskingService wordMaskingService,
         IMemoryCache cache,
-        ILogger<ReviewService> logger)
+        ILogger<ReviewService> logger,
+        IOutboxService? outbox = null,
+        IOptions<SentimentOptions>? sentimentOptions = null)
     {
         _unitOfWork = unitOfWork;
         _wordMaskingService = wordMaskingService;
         _cache = cache;
         _logger = logger;
+        _outbox = outbox;
+        _sentimentEnabled = sentimentOptions?.Value.Enabled ?? true;
     }
 
     #region Customer Operations
@@ -84,6 +93,10 @@ public class ReviewService : IReviewService
                 CreatedAt = DateTime.UtcNow
             };
 
+            // Review + outbox message phải atomic: enqueue thất bại → rollback, không để lại
+            // review không bao giờ được phân tích tự động. (Dispose tự rollback nếu chưa commit.)
+            await using var transaction = await _unitOfWork.BeginTransactionAsync();
+
             await _unitOfWork.ReviewRepository.AddAsync(review);
             await _unitOfWork.SaveChangesAsync();
 
@@ -93,7 +106,12 @@ public class ReviewService : IReviewService
             // 7. Load user info for response
             var user = await _unitOfWork.Users.GetByIdAsync(userId);
 
-            _logger.LogInformation("User {UserId} created review {ReviewId} for product {ProductId}", 
+            // 8. Enqueue phân tích cảm xúc (realtime qua outbox; handler sẽ gọi LLM)
+            await EnqueueSentimentAnalysisAsync(review.Id);
+
+            await transaction.CommitAsync();
+
+            _logger.LogInformation("User {UserId} created review {ReviewId} for product {ProductId}",
                 userId, review.Id, dto.ProductId);
 
             return new ReviewResult
@@ -190,6 +208,11 @@ public class ReviewService : IReviewService
                 {
                     await RecalculateProductRatingAsync(review.ProductId);
                 }
+
+                await InvalidateSentimentAfterReviewChangeAsync(review.Id);
+
+                // Review nội dung đổi → phân tích lại cảm xúc
+                await EnqueueSentimentAnalysisAsync(review.Id, $"edit-{review.UpdatedAt?.Ticks ?? DateTime.UtcNow.Ticks}");
 
                 _logger.LogInformation("User {UserId} updated review {ReviewId}", userId, reviewId);
             }
@@ -899,4 +922,42 @@ public class ReviewService : IReviewService
     }
 
     #endregion
+
+    // Enqueue phân tích cảm xúc cho review. Mỗi phiên bản review cần key mới,
+    // nếu không idempotency key cũ sẽ chặn phân tích lại sau khi khách chỉnh sửa.
+    // Không nuốt lỗi: lỗi enqueue phải nổi lên để transaction (ở luồng tạo) rollback,
+    // tránh để review tồn tại mà không bao giờ được phân tích.
+    private async Task EnqueueSentimentAnalysisAsync(int reviewId, string? revision = null)
+    {
+        if (!_sentimentEnabled || _outbox is null) return;
+        await _outbox.EnqueueAsync(
+            OutboxMessageTypes.ReviewSentimentAnalyze,
+            new { ReviewId = reviewId },
+            revision is null ? $"sentiment-{reviewId}" : $"sentiment-{reviewId}-{revision}");
+        await _unitOfWork.SaveChangesAsync();
+    }
+
+    private async Task InvalidateSentimentAfterReviewChangeAsync(int reviewId)
+    {
+        var sentiment = await _unitOfWork.ReviewSentiments
+            .FirstOrDefaultAsync(s => s.ReviewId == reviewId);
+        if (sentiment is null) return;
+
+        sentiment.Sentiment = SentimentLabel.Failed;
+        sentiment.CommentSentiment = null;
+        sentiment.HasRatingCommentConflict = false;
+        sentiment.HasSafetyRisk = false;
+        sentiment.NeedsManualReview = true;
+        sentiment.Severity = null;
+        sentiment.Confidence = null;
+        sentiment.Reason = "Review đã thay đổi, đang chờ phân tích lại";
+        sentiment.Source = SentimentSource.AiModel;
+        sentiment.AnalysisVersion = null;
+        sentiment.AlertStatus = SentimentAlertStatus.None;
+        sentiment.AdminOverrideById = null;
+        sentiment.AdminOverrideAtUtc = null;
+        sentiment.AdminReviewNote = null;
+        _unitOfWork.ReviewSentiments.Update(sentiment);
+        await _unitOfWork.SaveChangesAsync();
+    }
 }

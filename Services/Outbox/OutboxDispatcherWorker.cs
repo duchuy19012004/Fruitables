@@ -36,8 +36,16 @@ public sealed class OutboxDispatcherWorker : BackgroundService
                     TimeSpan.FromSeconds(Math.Max(10, _options.LockSeconds)),
                     stoppingToken);
 
+                var perMessageLease = TimeSpan.FromSeconds(Math.Max(10, _options.LockSeconds));
+                var remaining = messages.Select(m => m.Id).ToList();
+
                 foreach (var message in messages)
                 {
+                    // Gia hạn lock cho message sắp xử lý và các message chưa tới lượt, để lock
+                    // không hết hạn giữa chừng khi xử lý tuần tự (tránh instance khác claim trùng).
+                    if (remaining.Count > 0)
+                        await outbox.ExtendLocksAsync(remaining, _instanceId, perMessageLease, stoppingToken);
+
                     try
                     {
                         var matchingHandlers = handlers.Where(x => x.CanHandle(message.Type)).ToArray();
@@ -58,6 +66,8 @@ public sealed class OutboxDispatcherWorker : BackgroundService
                             stoppingToken);
                         _logger.LogWarning(ex, "Outbox message {MessageId} ({MessageType}) failed on attempt {Attempt}", message.Id, message.Type, message.AttemptCount);
                     }
+
+                    remaining.Remove(message.Id);
                 }
 
                 var now = _clock.GetUtcNow().UtcDateTime;

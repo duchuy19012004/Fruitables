@@ -42,4 +42,20 @@ public interface IEmailService
     /// <param name="resetLink">The full URL link to reset password</param>
     /// <returns>True if email was sent successfully</returns>
     Task<bool> SendPasswordResetEmailAsync(string email, string resetLink);
+
+    Task<bool> SendReturnNotificationEmailAsync(
+        string customerEmail,
+        string customerName,
+        string returnNumber,
+        string subject,
+        string message);
+
+    /// <summary>
+    /// Sends a customer care follow-up email (ví dụ: hỏi thăm sau review tiêu cực)
+    /// </summary>
+    Task<bool> SendFollowUpEmailAsync(
+        string customerEmail,
+        string customerName,
+        string subject,
+        string message);
 }

@@ -24,6 +24,7 @@ public class DashboardService : IDashboardService
         var inventory = await GetInventoryStatisticsAsync(lowStockThreshold);
         var growthChart = await GetGrowthChartDataAsync(chartPeriod);
         var recentOrders = await GetRecentOrdersAsync(5);
+        var sentiment = await GetSentimentStatisticsAsync();
 
         return new DashboardViewModel
         {
@@ -31,8 +32,49 @@ public class DashboardService : IDashboardService
             Orders = orders,
             Inventory = inventory,
             GrowthChart = growthChart,
-            RecentOrders = recentOrders
+            RecentOrders = recentOrders,
+            Sentiment = sentiment
         };
+    }
+
+    // Thống kê cảm xúc review cho widget dashboard
+    public async Task<DashboardSentimentStatistics> GetSentimentStatisticsAsync()
+    {
+        try
+        {
+            var since = DateTime.UtcNow.AddDays(-7);
+
+            var rows = await (
+                from r in _unitOfWork.Reviews.Query()
+                join s in _unitOfWork.ReviewSentiments.Query() on r.Id equals s.ReviewId
+                where !r.IsDeleted && r.CreatedAt >= since
+                select new { s.Sentiment, s.NeedsManualReview, s.AlertStatus }).ToListAsync();
+
+            var eligible = rows
+                .Where(x => !x.NeedsManualReview && x.Sentiment != Fruitables.Models.SentimentLabel.Failed)
+                .ToList();
+
+            var data = new DashboardSentimentStatistics
+            {
+                Negative7d = eligible.Count(x => x.Sentiment == Fruitables.Models.SentimentLabel.Negative),
+                Total7d = eligible.Count,
+                PendingAlerts = rows.Count(x => x.AlertStatus == Fruitables.Models.SentimentAlertStatus.Pending),
+                PendingReviews = rows.Count(x => x.NeedsManualReview)
+            };
+
+            if (data.Total7d == 0)
+            {
+                // Chưa có review nào phân tích — đếm số review 7 ngày chưa phân tích để gợi ý chạy backfill
+                data.Total7d = await _unitOfWork.Reviews.Query().CountAsync(r => !r.IsDeleted && r.CreatedAt >= since);
+            }
+
+            return data;
+        }
+        catch (Exception)
+        {
+            // Widget cảm xúc là phụ — lỗi không được làm sập dashboard
+            return new DashboardSentimentStatistics();
+        }
     }
 
     public async Task<List<RecentOrderItem>> GetRecentOrdersAsync(int count = 5)

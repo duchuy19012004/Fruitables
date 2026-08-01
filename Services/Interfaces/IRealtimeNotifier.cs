@@ -11,5 +11,6 @@ namespace Fruitables.Services.Interfaces
         Task NotifyStockChangedAsync(int productId, int newStock);
         Task NotifyStockChangedAsync(int productId, int newStock, int? variantId);
         Task NotifyPriceChangedAsync(int productId, int? variantId = null);
+        Task NotifySevereReviewAlertAsync(int reviewId, string productName, string commentSnippet);
     }
 }

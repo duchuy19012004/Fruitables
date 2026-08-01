@@ -6,10 +6,10 @@ public class ChatOptions
     public const string SectionName = "Chat";
 
     // Tên endpoint AI (hiển thị / ghi log)
-    public string Provider { get; set; } = "Xiaomi MiMo";
+    public string Provider { get; set; } = "DeepSeek";
 
     // Tên model AI chat
-    public string Model { get; set; } = "mimo-v2.5";
+    public string Model { get; set; } = "deepseek-v4-flash";
 
     // API key (để trống nếu endpoint không yêu cầu)
     public string ApiKey { get; set; } = string.Empty;
@@ -26,7 +26,11 @@ public class ChatOptions
     public int EmbeddingDimensions { get; set; } = 256;
 
     // Địa chỉ API AI theo chuẩn OpenAI-compatible
-    public string BaseUrl { get; set; } = "https://token-plan-sgp.xiaomimimo.com/v1";
+    public string BaseUrl { get; set; } = "https://api.deepseek.com";
+
+    // Số token tối đa cho câu trả lời structured (JSON mode) — tránh JSON bị cắt giữa chừng.
+    // Batch sentiment gom 15 review + aspects có thể cần ~5-7k token, nên mặc định đủ rộng.
+    public int MaxTokens { get; set; } = 8192;
 
     // Mỗi câu hỏi lấy tối đa bao nhiêu đoạn tri thức liên quan
     public int TopK { get; set; } = 5;

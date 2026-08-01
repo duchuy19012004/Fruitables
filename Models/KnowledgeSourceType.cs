@@ -16,5 +16,8 @@ public enum KnowledgeSourceType
     Setting = 2,
 
     // Tóm tắt catalog do server tạo (top bán chạy, nổi bật) — template sạch, không copy mô tả user
-    Catalog = 3
+    Catalog = 3,
+
+    // Tóm tắt cảm xúc đánh giá sản phẩm (số liệu + khía cạnh bị chê + snippet đã sanitize) — server tạo
+    ReviewSummary = 4
 }

@@ -29,6 +29,37 @@ public class DashboardViewModel
     /// Danh sách đơn hàng gần đây
     /// </summary>
     public List<RecentOrderItem> RecentOrders { get; set; } = new();
+
+    /// <summary>
+    /// Thống kê cảm xúc review (module phân tích cảm xúc)
+    /// </summary>
+    public DashboardSentimentStatistics Sentiment { get; set; } = new();
+}
+
+/// <summary>
+/// Thống kê cảm xúc review hiển thị trên Dashboard admin
+/// </summary>
+public class DashboardSentimentStatistics
+{
+    /// <summary>
+    /// Số review tiêu cực 7 ngày gần nhất (đã phân tích)
+    /// </summary>
+    public int Negative7d { get; set; }
+
+    /// <summary>
+    /// Tổng review phân tích 7 ngày gần nhất
+    /// </summary>
+    public int Total7d { get; set; }
+
+    /// <summary>
+    /// Số cảnh báo tiêu cực nghiêm trọng chưa xử lý
+    /// </summary>
+    public int PendingAlerts { get; set; }
+
+    /// <summary>
+    /// Số review đang chờ admin duyệt do conflict hoặc rủi ro.
+    /// </summary>
+    public int PendingReviews { get; set; }
 }
 
 /// <summary>

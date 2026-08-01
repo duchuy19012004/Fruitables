@@ -149,6 +149,23 @@
                 </a>
             </li>
         }
+        @if (userId > 0 && await RbacService.HasPermissionAsync(userId, "reviews.analyze"))
+        {
+            <li class="sidebar-nav-item">
+                <a asp-action="Index" asp-controller="Sentiment" asp-area="Admin"
+                   class="sidebar-nav-link @(controller == "Sentiment" ? "active" : "")">
+                    <i class="fas fa-smile"></i>
+                    <span>Phân tích cảm xúc</span>
+                </a>
+            </li>
+            <li class="sidebar-nav-item">
+                <a asp-action="Index" asp-controller="TestimonialAdmin" asp-area="Admin"
+                   class="sidebar-nav-link @(controller == "TestimonialAdmin" ? "active" : "")">
+                    <i class="fas fa-quote-right"></i>
+                    <span>Testimonial</span>
+                </a>
+            </li>
+        }
         <li class="sidebar-nav-item">
             <a href="#" class="sidebar-nav-link">
                 <i class="fas fa-envelope"></i>

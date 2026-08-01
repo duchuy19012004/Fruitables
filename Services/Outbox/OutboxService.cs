@@ -88,6 +88,19 @@ public sealed class OutboxService : IOutboxService
         return messages;
     }
 
+    public async Task<int> ExtendLocksAsync(IReadOnlyList<Guid> messageIds, string lockToken, TimeSpan duration, CancellationToken cancellationToken = default)
+    {
+        if (messageIds.Count == 0) return 0;
+        ArgumentException.ThrowIfNullOrWhiteSpace(lockToken);
+        var lockedUntil = _clock.GetUtcNow().UtcDateTime.Add(duration);
+        var messages = await _db.OutboxMessages
+            .Where(x => messageIds.Contains(x.Id) && x.LockToken == lockToken && x.ProcessedAtUtc == null)
+            .ToListAsync(cancellationToken);
+        foreach (var message in messages) message.LockedUntilUtc = lockedUntil;
+        await _db.SaveChangesAsync(cancellationToken);
+        return messages.Count;
+    }
+
     public async Task<bool> CompleteAsync(Guid messageId, string lockToken, CancellationToken cancellationToken = default)
     {
         var message = await _db.OutboxMessages.SingleOrDefaultAsync(x => x.Id == messageId && x.LockToken == lockToken && x.ProcessedAtUtc == null, cancellationToken);

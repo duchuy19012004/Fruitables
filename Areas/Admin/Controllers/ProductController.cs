@@ -37,6 +37,9 @@ public class ProductController : Controller
         var result = await _productAdminService.GetProductsAsync(request);
         var categories = await _unitOfWork.Categories.GetAllAsync();
 
+        // Badge cảm xúc: tóm tắt review theo cảm xúc cho từng sản phẩm trong trang
+        ViewBag.Sentiments = await _productAdminService.GetSentimentSummariesAsync(result.Products.Select(p => p.Id).ToList());
+
         var viewModel = new ProductListViewModel
         {
             Products = result.Products,

@@ -14,6 +14,8 @@ public interface IUnitOfWork : IDisposable
     IReviewRepository ReviewRepository { get; }
     IReviewReportRepository ReviewReports { get; }
     IRepository<ReviewHelpful> ReviewHelpfuls { get; }
+    IRepository<ReviewSentiment> ReviewSentiments { get; }
+    IRepository<ReviewSentimentAspect> ReviewSentimentAspects { get; }
     IRepository<ContactMessage> Contacts { get; }
     IRepository<Testimonial> Testimonials { get; }
     IRepository<User> Users { get; }
