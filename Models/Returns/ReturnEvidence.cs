@@ -21,4 +21,5 @@ public class ReturnEvidence
     public ReturnRequest ReturnRequest { get; set; } = null!;
     public ReturnRequestItem? ReturnRequestItem { get; set; }
     public User UploadedByUser { get; set; } = null!;
+    public ICollection<ReturnEvidenceLink> ItemLinks { get; set; } = new List<ReturnEvidenceLink>();
 }

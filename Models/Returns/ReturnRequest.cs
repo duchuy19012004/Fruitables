@@ -16,7 +16,12 @@ public class ReturnRequest
     public DateTime SubmittedAtUtc { get; set; }
     public DateTime ClaimDeadlineAtUtc { get; set; }
     public DateTime ReviewDueAtUtc { get; set; }
+    public int ReviewSlaHoursSnapshot { get; set; } = 24;
     public DateTime? EvidenceDueAtUtc { get; set; }
+    public DateTime? ManagerApprovalDueAtUtc { get; set; }
+    public DateTime? DecisionProposedAtUtc { get; set; }
+    public int DecisionPackageVersion { get; set; }
+    public int? AssignedReviewerId { get; set; }
     public DateTime? ReviewedAtUtc { get; set; }
     public DateTime? ResolvedAtUtc { get; set; }
     public int? ReviewerId { get; set; }
@@ -30,8 +35,10 @@ public class ReturnRequest
     public Order Order { get; set; } = null!;
     public User User { get; set; } = null!;
     public User? Reviewer { get; set; }
+    public User? AssignedReviewer { get; set; }
     public ICollection<ReturnRequestItem> Items { get; set; } = new List<ReturnRequestItem>();
     public ICollection<ReturnEvidence> Evidences { get; set; } = new List<ReturnEvidence>();
     public ICollection<ReturnEvent> Events { get; set; } = new List<ReturnEvent>();
     public ICollection<Refund> Refunds { get; set; } = new List<Refund>();
+    public ICollection<ReturnDecisionProposal> DecisionProposals { get; set; } = new List<ReturnDecisionProposal>();
 }

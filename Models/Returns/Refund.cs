@@ -11,8 +11,12 @@ public class Refund
     public int? ReturnRequestItemId { get; set; }
     public int OrderId { get; set; }
     [Column(TypeName = "decimal(12,2)")] public decimal Amount { get; set; }
+    [Column(TypeName = "decimal(12,2)")] public decimal ShippingFeeAmount { get; set; }
     public RefundMethod Method { get; set; }
     public RefundStatus Status { get; set; } = RefundStatus.Pending;
+    public RefundFailureKind FailureKind { get; set; }
+    public int FailureAttemptCount { get; set; }
+    [Column(TypeName = "decimal(12,2)")] public decimal FinancialSeparationThresholdSnapshot { get; set; }
     [Required, MaxLength(64)] public string IdempotencyKey { get; set; } = string.Empty;
     [MaxLength(128)] public string? TransactionReference { get; set; }
     [MaxLength(128)] public string? TransferEvidenceStorageKey { get; set; }

@@ -7,6 +7,8 @@ public class ReturnEvent
 {
     public long Id { get; set; }
     public int ReturnRequestId { get; set; }
+    public int? ReturnRequestItemId { get; set; }
+    public int? ReturnDecisionProposalId { get; set; }
     public ReturnEventType Type { get; set; }
     public ReturnRequestStatus? FromStatus { get; set; }
     public ReturnRequestStatus? ToStatus { get; set; }
@@ -16,5 +18,7 @@ public class ReturnEvent
     public DateTime CreatedAtUtc { get; set; }
 
     public ReturnRequest ReturnRequest { get; set; } = null!;
+    public ReturnRequestItem? ReturnRequestItem { get; set; }
+    public ReturnDecisionProposal? ReturnDecisionProposal { get; set; }
     public User? ActorUser { get; set; }
 }
