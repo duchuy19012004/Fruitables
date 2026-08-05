@@ -35,6 +35,62 @@ public class CartServiceTests
             .Options;
     }
 
+    [Fact]
+    public async Task FractionalQuantityPersistence_round_trips_decimal_values()
+    {
+        var options = TestDbContextFactory.CreateSqliteOptions();
+        await using var context = new ApplicationDbContext(options);
+
+        var category = new Category { Id = 1, Name = "Fruit", Slug = "fruit" };
+        var product = new Product
+        {
+            Id = 1,
+            CategoryId = category.Id,
+            Name = "Apple",
+            Slug = "fractional-apple",
+            Unit = "kg",
+            Price = 100_000m,
+            StockQuantity = 2.5m,
+            MinOrderQuantity = 0.1m,
+            IsActive = true
+        };
+        var cart = new Cart { Id = 1, SessionId = "fractional-session" };
+        var order = new Order
+        {
+            Id = 1,
+            OrderNumber = "ORD-FRACTIONAL",
+            Status = OrderStatus.Delivered,
+            PaymentStatus = PaymentStatus.Paid,
+            Items =
+            [
+                new OrderItem
+                {
+                    Product = product,
+                    ProductName = product.Name,
+                    Quantity = 0.5m,
+                    Price = product.Price,
+                    BasePrice = product.Price,
+                    Total = 50_000m
+                }
+            ]
+        };
+
+        context.AddRange(category, product, cart, order);
+        context.CartItems.Add(new CartItem
+        {
+            Cart = cart,
+            Product = product,
+            Quantity = 0.5m,
+            Price = product.Price
+        });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        Assert.Equal(2.5m, (await context.Products.FindAsync(product.Id))!.StockQuantity);
+        Assert.Equal(0.5m, (await context.CartItems.SingleAsync())!.Quantity);
+        Assert.Equal(0.5m, (await context.OrderItems.SingleAsync())!.Quantity);
+    }
+
     [Theory]
     [InlineData(1, 1000, 20, 15, 10)]
     [InlineData(3, 3000, 30, 20, 15)]

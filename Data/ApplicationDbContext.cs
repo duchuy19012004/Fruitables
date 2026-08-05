@@ -83,6 +83,8 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(e => e.Slug).IsUnique();
             entity.Property(product => product.PriceRevision)
                   .HasDefaultValue(1);
+            entity.Property(product => product.StockQuantity).HasPrecision(10, 2);
+            entity.Property(product => product.MinOrderQuantity).HasPrecision(10, 2);
             entity.HasOne(p => p.Category)
                   .WithMany(c => c.Products)
                   .HasForeignKey(p => p.CategoryId)
@@ -147,6 +149,7 @@ public class ApplicationDbContext : DbContext
         // Coupon
         modelBuilder.Entity<Coupon>(entity =>
         {
+            entity.Property(coupon => coupon.MinQuantity).HasPrecision(10, 2);
             entity.HasIndex(e => e.Code).IsUnique();
         });
 
@@ -162,6 +165,7 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(e => e.SKU).IsUnique();
             entity.Property(variant => variant.PriceRevision)
                   .HasDefaultValue(1);
+            entity.Property(variant => variant.StockQuantity).HasPrecision(10, 2);
             entity.HasOne(v => v.Product)
                   .WithMany(p => p.Variants)
                   .HasForeignKey(v => v.ProductId)
@@ -170,6 +174,7 @@ public class ApplicationDbContext : DbContext
 
         modelBuilder.Entity<CartItem>(entity =>
         {
+            entity.Property(item => item.Quantity).HasPrecision(10, 2);
             entity.HasIndex(e => new { e.CartId, e.ProductId, e.ProductVariantId })
                   .IsUnique()
                   .HasFilter("[CartGroupId] IS NULL AND [ProductVariantId] IS NOT NULL");
@@ -199,6 +204,7 @@ public class ApplicationDbContext : DbContext
 
         modelBuilder.Entity<OrderItem>(entity =>
         {
+            entity.Property(item => item.Quantity).HasPrecision(10, 2);
             entity.HasOne(e => e.ProductVariant).WithMany().HasForeignKey(e => e.ProductVariantId).OnDelete(DeleteBehavior.Restrict);
 
             entity.Property(e => e.PriceScheduleId).IsRequired(false);
@@ -228,6 +234,7 @@ public class ApplicationDbContext : DbContext
         // ComboItem
         modelBuilder.Entity<ComboItem>(entity =>
         {
+            entity.Property(item => item.Quantity).HasPrecision(10, 2);
             entity.HasIndex(e => new { e.ComboId, e.SortOrder });
             entity.HasIndex(e => new { e.ComboId, e.ProductId, e.ProductVariantId })
                   .IsUnique()
