@@ -439,6 +439,7 @@ skills-lock.json
 .superpowers/
 
 # Local agent and repository-analysis artifacts
+/docs/
 repomix-output*
 pi-session-*.html
 
