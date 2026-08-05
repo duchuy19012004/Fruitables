@@ -10,29 +10,37 @@ namespace Fruitables.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AlterColumn<byte[]>(
-                name: "RowVersion",
+            migrationBuilder.AddColumn<byte[]>(
+                name: "RowVersionNew",
                 table: "ReturnRequests",
                 type: "varbinary(16)",
-                nullable: true,
-                oldClrType: typeof(byte[]),
-                oldType: "rowversion",
-                oldRowVersion: true,
-                oldNullable: true);
+                nullable: true);
+
+            migrationBuilder.Sql("UPDATE [ReturnRequests] SET [RowVersionNew] = CONVERT(varbinary(16), [RowVersion]);");
+
+            migrationBuilder.DropColumn(
+                name: "RowVersion",
+                table: "ReturnRequests");
+
+            migrationBuilder.RenameColumn(
+                name: "RowVersionNew",
+                table: "ReturnRequests",
+                newName: "RowVersion");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AlterColumn<byte[]>(
+            migrationBuilder.DropColumn(
+                name: "RowVersion",
+                table: "ReturnRequests");
+
+            migrationBuilder.AddColumn<byte[]>(
                 name: "RowVersion",
                 table: "ReturnRequests",
                 type: "rowversion",
                 rowVersion: true,
-                nullable: true,
-                oldClrType: typeof(byte[]),
-                oldType: "varbinary(16)",
-                oldNullable: true);
+                nullable: true);
         }
     }
 }
