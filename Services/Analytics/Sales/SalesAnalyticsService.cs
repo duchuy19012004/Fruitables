@@ -1,5 +1,6 @@
 using ClosedXML.Excel;
 using Fruitables.Models;
+using Fruitables.Models.Returns;
 using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Analytics.Common;
 using Fruitables.Services.Communications;
@@ -45,7 +46,11 @@ public class SalesAnalyticsService : ISalesAnalyticsService
                     o.Subtotal,
                     o.PaymentStatus,
                     o.Status,
-                    o.CancelReason))
+                    o.CancelReason,
+                    o.ReturnRequest != null && o.ReturnRequest.Refund != null &&
+                    o.ReturnRequest.Refund.Status == RefundStatus.Succeeded
+                        ? o.ReturnRequest.Refund.Amount
+                        : 0m))
                 .ToListAsync();
 
             var cur = rows
@@ -341,7 +346,7 @@ public class SalesAnalyticsService : ISalesAnalyticsService
     }
 
     private static OrderAnalyticsSnapshot ToSnapshot(OrderRow o) =>
-        new(o.Total, o.PaymentStatus, o.Status, o.Discount, o.ShippingFee, o.Subtotal);
+        new(o.Total, o.PaymentStatus, o.Status, o.Discount, o.ShippingFee, o.Subtotal, o.SuccessfulRefundAmount);
 
     private async Task<SalesOverviewVm> BuildOverviewAsync(
         AnalyticsPeriodPair pair,
@@ -456,22 +461,43 @@ public class SalesAnalyticsService : ISalesAnalyticsService
 
     private async Task<List<LineItemRow>> LoadDeliveredLineItemsAsync(DateTime min, DateTime max)
     {
-        return await _uow.OrderItems.Query().AsNoTracking()
+        var rows = await _uow.OrderItems.Query().AsNoTracking()
             .Where(i =>
                 i.Order.CreatedAt >= min &&
                 i.Order.CreatedAt < max &&
                 i.Order.PaymentStatus == PaymentStatus.Paid &&
                 i.Order.Status == OrderStatus.Delivered)
             .Select(i => new LineItemRow(
+                i.Id,
                 i.OrderId,
                 i.Order.CreatedAt,
                 i.ProductId,
                 i.ProductName,
                 i.Quantity,
                 i.Price,
+                0m,
                 i.Product.CategoryId,
                 i.Product.Category.Name))
             .ToListAsync();
+        if (rows.Count == 0)
+            return rows;
+
+        var orderItemIds = rows.Select(row => row.OrderItemId).ToArray();
+        var refundRows = await _uow.OrderItems.Query().AsNoTracking()
+            .Where(item => orderItemIds.Contains(item.Id))
+            .SelectMany(item => item.ReturnRequestItems)
+            .Where(item => item.ReturnRequest.Refund != null &&
+                item.ReturnRequest.Refund.Status == RefundStatus.Succeeded)
+            .Select(item => new { item.OrderItemId, item.ApprovedAmount })
+            .ToListAsync();
+        var refundsByItem = refundRows
+            .GroupBy(item => item.OrderItemId)
+            .ToDictionary(group => group.Key, group => group.Sum(item => item.ApprovedAmount));
+
+        return rows.Select(row => row with
+        {
+            RefundedAmount = refundsByItem.GetValueOrDefault(row.OrderItemId)
+        }).ToList();
     }
 
     private async Task<List<LineItemRow>> LoadCancelledLineItemsAsync(DateTime min, DateTime max)
@@ -482,12 +508,14 @@ public class SalesAnalyticsService : ISalesAnalyticsService
                 i.Order.CreatedAt < max &&
                 i.Order.Status == OrderStatus.Cancelled)
             .Select(i => new LineItemRow(
+                i.Id,
                 i.OrderId,
                 i.Order.CreatedAt,
                 i.ProductId,
                 i.ProductName,
                 i.Quantity,
                 i.Price,
+                0m,
                 i.Product.CategoryId,
                 i.Product.Category.Name))
             .ToListAsync();
@@ -964,18 +992,21 @@ public class SalesAnalyticsService : ISalesAnalyticsService
         decimal Subtotal,
         PaymentStatus PaymentStatus,
         OrderStatus Status,
-        string? CancelReason);
+        string? CancelReason,
+        decimal SuccessfulRefundAmount);
 
     private sealed record LineItemRow(
+        int OrderItemId,
         int OrderId,
         DateTime OrderCreatedAt,
         int ProductId,
         string ProductName,
         decimal Quantity,
         decimal Price,
+        decimal RefundedAmount,
         int CategoryId,
         string CategoryName)
     {
-        public decimal LineNet => Price * Quantity;
+        public decimal LineNet => Price * Quantity - RefundedAmount;
     }
 }

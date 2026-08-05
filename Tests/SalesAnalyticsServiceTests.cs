@@ -1,5 +1,6 @@
 using Fruitables.Data;
 using Fruitables.Models;
+using Fruitables.Models.Returns;
 using Fruitables.Repositories;
 using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
@@ -1000,6 +1001,128 @@ public class SalesAnalyticsServiceTests
         var doiYIdx = reasons.Labels.IndexOf("Khách hàng đổi ý");
         Assert.Equal(3m, reasons.Datasets[0].Data[unknownIdx]); // null + empty + whitespace
         Assert.Equal(2m, reasons.Datasets[0].Data[doiYIdx]);
+    }
+
+    [Fact]
+    public async Task GetHubAsync_Overview_subtracts_successful_partial_refund()
+    {
+        var options = TestDbContextFactory.CreateSqliteOptions();
+        await using var ctx = new ApplicationDbContext(options);
+        await SeedRefundScenarioAsync(ctx, RefundStatus.Succeeded);
+
+        var hub = await new SalesAnalyticsService(new UnitOfWork(ctx)).GetHubAsync(CreateOverviewFilter());
+
+        Assert.Equal(180m, hub.Overview!.Net.Value);
+    }
+
+    [Fact]
+    public async Task GetHubAsync_Merch_subtracts_approved_item_refund()
+    {
+        var options = TestDbContextFactory.CreateSqliteOptions();
+        await using var ctx = new ApplicationDbContext(options);
+        await SeedRefundScenarioAsync(ctx, RefundStatus.Succeeded);
+
+        var filter = CreateOverviewFilter();
+        filter.Tab = SalesAnalyticsTab.Merch;
+        filter.Dimension = MerchDimension.Product;
+        var hub = await new SalesAnalyticsService(new UnitOfWork(ctx)).GetHubAsync(filter);
+
+        Assert.Equal(180m, hub.Merch!.Rows.Single().NetRevenue);
+    }
+
+    [Fact]
+    public async Task GetHubAsync_does_not_subtract_failed_refund()
+    {
+        var options = TestDbContextFactory.CreateSqliteOptions();
+        await using var ctx = new ApplicationDbContext(options);
+        await SeedRefundScenarioAsync(ctx, RefundStatus.Failed);
+
+        var hub = await new SalesAnalyticsService(new UnitOfWork(ctx)).GetHubAsync(CreateOverviewFilter());
+
+        Assert.Equal(200m, hub.Overview!.Net.Value);
+    }
+
+    private static SalesAnalyticsFilterVm CreateOverviewFilter() => new()
+    {
+        Preset = DateRangePreset.Custom,
+        From = new DateTime(2026, 7, 1),
+        To = new DateTime(2026, 7, 16),
+        Tab = SalesAnalyticsTab.Overview,
+        Dimension = MerchDimension.Product,
+        Take = 50
+    };
+
+    private static async Task SeedRefundScenarioAsync(ApplicationDbContext ctx, RefundStatus refundStatus)
+    {
+        ctx.Categories.Add(new Category { Id = 100, Name = "Fruit", Slug = $"fruit-{Guid.NewGuid():N}" });
+        ctx.Products.Add(new Product
+        {
+            Id = 100,
+            CategoryId = 100,
+            Name = "Apple",
+            Slug = $"apple-{Guid.NewGuid():N}",
+            Unit = "kg",
+            Price = 100m,
+            StockQuantity = 10m
+        });
+        ctx.Orders.Add(new Order
+        {
+            Id = 100,
+            OrderNumber = $"ORD-REFUND-{Guid.NewGuid():N}"[..24],
+            CreatedAt = new DateTime(2026, 7, 5, 12, 0, 0),
+            Total = 200m,
+            Subtotal = 200m,
+            PaymentStatus = PaymentStatus.Paid,
+            Status = OrderStatus.Delivered
+        });
+        ctx.OrderItems.Add(new OrderItem
+        {
+            Id = 100,
+            OrderId = 100,
+            ProductId = 100,
+            ProductName = "Apple",
+            Quantity = 2m,
+            Price = 100m,
+            Total = 200m
+        });
+        ctx.ReturnRequests.Add(new ReturnRequest
+        {
+            Id = 100,
+            ReturnNumber = $"RET-REFUND-{Guid.NewGuid():N}"[..24],
+            OrderId = 100,
+            UserId = 1,
+            Status = refundStatus == RefundStatus.Succeeded
+                ? ReturnRequestStatus.Refunded
+                : ReturnRequestStatus.AwaitingRefund,
+            SubmittedAtUtc = new DateTime(2026, 7, 5, 13, 0, 0),
+            ClaimDeadlineAtUtc = new DateTime(2026, 7, 6),
+            RequestedAmount = 20m,
+            ApprovedAmount = 20m,
+            Items =
+            [
+                new ReturnRequestItem
+                {
+                    Id = 100,
+                    OrderItemId = 100,
+                    RequestedQuantity = 0.2m,
+                    ApprovedQuantity = 0.2m,
+                    Reason = ReturnReasonCode.Damaged,
+                    Description = "Dập",
+                    RequestedAmount = 20m,
+                    ApprovedAmount = 20m
+                }
+            ],
+            Refund = new Refund
+            {
+                Id = 100,
+                OrderId = 100,
+                Amount = 20m,
+                Status = refundStatus,
+                CreatedByUserId = 1,
+                CreatedAtUtc = new DateTime(2026, 7, 5, 14, 0, 0)
+            }
+        });
+        await ctx.SaveChangesAsync();
     }
 }
 

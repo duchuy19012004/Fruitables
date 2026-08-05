@@ -36,6 +36,20 @@ public class SalesMetricEngineTests
     }
 
     [Fact]
+    public void Net_subtracts_successful_partial_refunds_from_paid_orders()
+    {
+        var orders = new[]
+        {
+            new OrderAnalyticsSnapshot(100m, PaymentStatus.Paid, OrderStatus.Delivered, 0m, 0m, 100m)
+            {
+                SuccessfulRefundAmount = 15m
+            }
+        };
+
+        Assert.Equal(85m, SalesMetricEngine.Net(orders));
+    }
+
+    [Fact]
     public void CancelRate_UsesAllOrdersDenominator()
     {
         var orders = new[]

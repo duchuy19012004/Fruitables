@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Fruitables.Models;
+using Fruitables.Models.Returns;
 using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Communications;
 using Fruitables.Services.Pricing.Combos;
@@ -453,6 +454,10 @@ public class ComboService : IComboService
             .Where(order => order.CreatedAt >= normalizedFrom && order.CreatedAt < exclusiveTo &&
                 order.Items.Any(item => item.SourceComboId.HasValue))
             .Include(order => order.Items)
+            .Include(order => order.ReturnRequest)
+                .ThenInclude(request => request!.Items)
+            .Include(order => order.ReturnRequest)
+                .ThenInclude(request => request!.Refund)
             .ToListAsync();
 
         var orderGroups = orders.SelectMany(order => order.Items
@@ -467,7 +472,14 @@ public class ComboService : IComboService
                 Name = group.Key.ComboNameSnapshot ?? $"Combo #{group.Key.ComboId}",
                 Quantity = group.Max(item => item.ComboQuantity ?? 1),
                 Discount = group.Sum(item => item.ComboDiscount),
-                Revenue = group.Sum(item => item.Total)
+                Revenue = group.Sum(item => item.Total),
+                RefundedRevenue = order.PaymentStatus == PaymentStatus.Refunded
+                    ? group.Sum(item => item.Total)
+                    : order.ReturnRequest?.Refund?.Status == RefundStatus.Succeeded
+                        ? order.ReturnRequest.Items
+                            .Where(returnItem => group.Any(item => item.Id == returnItem.OrderItemId))
+                            .Sum(returnItem => returnItem.ApprovedAmount)
+                        : 0m
             })).ToList();
 
         var rows = orderGroups
@@ -480,7 +492,7 @@ public class ComboService : IComboService
                 OrderCount = group.Select(item => item.Id).Distinct().Count(),
                 ComboDiscount = group.Sum(item => item.Discount),
                 DeliveredRevenue = group.Where(item => item.Status == OrderStatus.Delivered).Sum(item => item.Revenue),
-                RefundedRevenue = group.Where(item => item.PaymentStatus == PaymentStatus.Refunded).Sum(item => item.Revenue)
+                RefundedRevenue = group.Sum(item => item.RefundedRevenue)
             })
             .OrderByDescending(row => row.NetRevenue)
             .ThenBy(row => row.ComboName)

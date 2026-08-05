@@ -8,4 +8,5 @@ public readonly record struct OrderAnalyticsSnapshot(
     OrderStatus Status,
     decimal Discount,
     decimal ShippingFee,
-    decimal Subtotal);
+    decimal Subtotal,
+    decimal SuccessfulRefundAmount = 0m);

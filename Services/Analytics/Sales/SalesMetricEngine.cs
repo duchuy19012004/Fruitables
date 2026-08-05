@@ -14,7 +14,9 @@ public static class SalesMetricEngine
         orders.Where(IsPaid).Sum(o => o.Total);
 
     public static decimal Net(IEnumerable<OrderAnalyticsSnapshot> orders) =>
-        orders.Where(IsDelivered).Sum(o => o.Total) - orders.Where(IsRefund).Sum(o => o.Total);
+        orders.Where(IsDelivered).Sum(o => o.Total) -
+        orders.Where(IsRefund).Sum(o => o.Total) -
+        orders.Where(IsDelivered).Sum(o => o.SuccessfulRefundAmount);
 
     public static int CountPaid(IEnumerable<OrderAnalyticsSnapshot> orders) => orders.Count(IsPaid);
     public static int CountDelivered(IEnumerable<OrderAnalyticsSnapshot> orders) => orders.Count(IsDelivered);

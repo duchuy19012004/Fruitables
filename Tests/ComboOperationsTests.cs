@@ -1,5 +1,6 @@
 using Fruitables.Data;
 using Fruitables.Models;
+using Fruitables.Models.Returns;
 using Fruitables.Repositories;
 using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
@@ -166,6 +167,39 @@ public class ComboOperationsTests
         };
         context.Orders.AddRange(delivered, refunded);
         await context.SaveChangesAsync();
+        context.ReturnRequests.Add(new ReturnRequest
+        {
+            Id = 3,
+            ReturnNumber = "RET-COMBO-PARTIAL",
+            OrderId = delivered.Id,
+            UserId = 1,
+            Status = ReturnRequestStatus.Refunded,
+            SubmittedAtUtc = new DateTime(2026, 7, 20),
+            ClaimDeadlineAtUtc = new DateTime(2026, 7, 21),
+            ApprovedAmount = 20m,
+            Items =
+            [
+                new ReturnRequestItem
+                {
+                    OrderItemId = delivered.Items.First().Id,
+                    RequestedQuantity = 0.2m,
+                    ApprovedQuantity = 0.2m,
+                    Reason = ReturnReasonCode.Damaged,
+                    Description = "Dập",
+                    RequestedAmount = 20m,
+                    ApprovedAmount = 20m
+                }
+            ],
+            Refund = new Refund
+            {
+                Id = 3,
+                OrderId = delivered.Id,
+                Amount = 20m,
+                Status = RefundStatus.Succeeded,
+                CreatedByUserId = 1
+            }
+        });
+        await context.SaveChangesAsync();
         var service = new ComboService(new UnitOfWork(context), Pricing().Object);
 
         var report = await service.GetReportAsync(new DateTime(2026, 7, 1), new DateTime(2026, 7, 31));
@@ -175,8 +209,8 @@ public class ComboOperationsTests
         Assert.Equal(2, row.OrderCount);
         Assert.Equal(60m, row.ComboDiscount);
         Assert.Equal(300m, row.DeliveredRevenue);
-        Assert.Equal(150m, row.RefundedRevenue);
-        Assert.Equal(150m, row.NetRevenue);
+        Assert.Equal(170m, row.RefundedRevenue);
+        Assert.Equal(130m, row.NetRevenue);
     }
 
     [Fact]
