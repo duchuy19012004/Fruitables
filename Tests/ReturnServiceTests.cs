@@ -179,6 +179,25 @@ public sealed class ReturnServiceTests
     }
 
     [Fact]
+    public async Task DecideAsync_rejects_request_waiting_for_customer_info()
+    {
+        await using var fixture = await SeedReturnFixtureAsync(
+            OrderStatus.Delivered, DateTime.UtcNow);
+        var created = await fixture.Service.CreateAsync(
+            CreateValidCommand(fixture.Order.Id, fixture.Item.Id, 0.5m, true),
+            fixture.Customer.Id);
+        var requested = await fixture.Service.RequestCustomerInfoAsync(
+            new RequestCustomerInfoCommand(created.ReturnRequestId!.Value, "Cần thêm ảnh.", created.RowVersion!),
+            fixture.Admin.Id);
+
+        var result = await fixture.Service.DecideAsync(
+            CreateDecisionCommand(requested, fixture.Item.Id, 0.5m, true, "Duyệt."),
+            fixture.Admin.Id);
+
+        Assert.False(result.Success);
+    }
+
+    [Fact]
     public async Task DecideAsync_calculates_partial_refund_from_paid_snapshot()
     {
         await using var fixture = await SeedReturnFixtureAsync(

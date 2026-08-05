@@ -295,7 +295,7 @@ public sealed class ReturnService : IReturnService
             return Fail("Không tìm thấy yêu cầu.");
         if (!HasMatchingRowVersion(request, command.RowVersion))
             return Fail("Yêu cầu đã được cập nhật. Vui lòng tải lại dữ liệu.");
-        if (request.Status is ReturnRequestStatus.AwaitingRefund or ReturnRequestStatus.Refunded or ReturnRequestStatus.Rejected or ReturnRequestStatus.Cancelled)
+        if (request.Status is ReturnRequestStatus.AwaitingCustomerInfo or ReturnRequestStatus.AwaitingRefund or ReturnRequestStatus.Refunded or ReturnRequestStatus.Rejected or ReturnRequestStatus.Cancelled)
             return Fail("Yêu cầu không còn chờ quyết định.");
         if (command.Items.Count != request.Items.Count ||
             command.Items.Select(item => item.OrderItemId).Distinct().Count() != command.Items.Count)
