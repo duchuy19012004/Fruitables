@@ -159,19 +159,19 @@
                 <form asp-controller="Cart" asp-action="AddToCart" method="post" class="d-inline" id="addToCartForm">
                     <input type="hidden" name="productId" value="@Model.Id" />
                     <input type="hidden" name="variantId" class="selectedVariantId" />
-                    <input type="hidden" name="quantity" id="hiddenQuantity" value="@Model.MinOrderQuantity" />
+                    <input type="hidden" name="quantity" id="hiddenQuantity" value="@Model.MinOrderQuantity.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)" />
                 </form>
                 <form asp-controller="Checkout" asp-action="BuyNow" method="post" class="d-inline" id="buyNowForm">
                     <input type="hidden" name="productId" value="@Model.Id" />
                     <input type="hidden" name="variantId" class="selectedVariantId" />
-                    <input type="hidden" name="quantity" id="hiddenQuantityBuyNow" value="@Model.MinOrderQuantity" />
+                    <input type="hidden" name="quantity" id="hiddenQuantityBuyNow" value="@Model.MinOrderQuantity.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)" />
                 </form>
 
                 <div class="pd-desktop-cta">
                     <div class="pd-action-row">
                         <div class="pd-qty">
                             <button type="button" onclick="decreaseQty()"><i class="fa fa-minus"></i></button>
-                            <input type="text" id="quantity" value="@Model.MinOrderQuantity" min="@Model.MinOrderQuantity" readonly>
+                            <input type="text" id="quantity" value="@Model.MinOrderQuantity.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)" min="@Model.MinOrderQuantity.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)" readonly>
                             <button type="button" onclick="increaseQty()"><i class="fa fa-plus"></i></button>
                         </div>
                         <button type="submit" form="addToCartForm" class="pd-btn-cart" id="btnAddToCart" @(Model.StockQuantity <= 0 || activeVariants.Any() ? "disabled" : "")>
@@ -308,8 +308,9 @@
 @section Scripts {
     <script src="~/js/review.js" asp-append-version="true"></script>
     <script>
-        const minQty = @Model.MinOrderQuantity;
-        let maxQty = @Model.StockQuantity;
+        const quantityStep = @(Model.Unit.Equals("kg", StringComparison.OrdinalIgnoreCase) ? "0.1" : "1");
+        const minQty = Number('@Model.MinOrderQuantity.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)');
+        let maxQty = Number('@Model.StockQuantity.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)');
 
         function updateQuantity(newVal) {
             document.getElementById('quantity').value = newVal;
@@ -317,19 +318,24 @@
             document.getElementById('hiddenQuantityBuyNow').value = newVal;
         }
 
+        function roundQuantity(value) {
+            const decimals = quantityStep < 1 ? 1 : 0;
+            return Number(value.toFixed(decimals));
+        }
+
         function increaseQty() {
             var qty = document.getElementById('quantity');
-            var currentVal = parseInt(qty.value);
-            if (currentVal < maxQty) {
-                updateQuantity(currentVal + 1);
+            var currentVal = Number(qty.value);
+            if (currentVal + quantityStep <= maxQty) {
+                updateQuantity(roundQuantity(currentVal + quantityStep));
             }
         }
 
         function decreaseQty() {
             var qty = document.getElementById('quantity');
-            var currentVal = parseInt(qty.value);
-            if (currentVal > minQty) {
-                updateQuantity(currentVal - 1);
+            var currentVal = Number(qty.value);
+            if (currentVal - quantityStep >= minQty) {
+                updateQuantity(roundQuantity(currentVal - quantityStep));
             }
         }
 
@@ -368,7 +374,7 @@
                 if (data.productId === currentProductId && (!data.variantId || data.variantId === selectedVariant)) {
                     maxQty = data.stock;
                     var qtyInput = document.getElementById('quantity');
-                    var currentVal = parseInt(qtyInput.value);
+                    var currentVal = Number(qtyInput.value);
                     if (currentVal > maxQty && maxQty > 0) {
                         updateQuantity(maxQty);
                     }

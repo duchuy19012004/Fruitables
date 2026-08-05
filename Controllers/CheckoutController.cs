@@ -138,7 +138,7 @@ public class CheckoutController : Controller
     // POST: Mua ngay — thêm sản phẩm vào giỏ rồi redirect thẳng tới checkout
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> BuyNow(int productId, int quantity = 1, int? variantId = null)
+    public async Task<IActionResult> BuyNow(int productId, decimal quantity = 1m, int? variantId = null)
     {
         var sessionId = GetSessionId();
         

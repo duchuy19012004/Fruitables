@@ -14,8 +14,8 @@ public class ComboItemFormModel
 
     public int? ProductVariantId { get; set; }
 
-    [Range(1, int.MaxValue, ErrorMessage = "Số lượng phải lớn hơn hoặc bằng 1")]
-    public int Quantity { get; set; } = 1;
+    [Range(typeof(decimal), "0.1", "1000000", ErrorMessage = "Số lượng phải lớn hơn 0")]
+    public decimal Quantity { get; set; } = 1;
 
     public int SortOrder { get; set; } = 0;
 }
@@ -82,7 +82,8 @@ public class ComboProductOptionViewModel
 {
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
-    public int StockQuantity { get; set; }
+    public string Unit { get; set; } = "kg";
+    public decimal StockQuantity { get; set; }
     public List<ComboVariantOptionViewModel> Variants { get; set; } = new();
 }
 
@@ -91,7 +92,7 @@ public class ComboVariantOptionViewModel
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string SKU { get; set; } = string.Empty;
-    public int StockQuantity { get; set; }
+    public decimal StockQuantity { get; set; }
 }
 
 // ========== Admin list models ==========
@@ -180,7 +181,7 @@ public class ComboCardItemViewModel
     public string ProductName { get; set; } = string.Empty;
     public string? ProductImage { get; set; }
     public string? VariantName { get; set; }
-    public int Quantity { get; set; }
+    public decimal Quantity { get; set; }
     public decimal UnitPrice { get; set; }
     public bool IsAvailable { get; set; }
     public string UnavailableReason { get; set; } = string.Empty;

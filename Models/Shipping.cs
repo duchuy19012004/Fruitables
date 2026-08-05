@@ -111,10 +111,10 @@ namespace Fruitables.Models
 
     public sealed record ShippingPackage(int Weight, int Length, int Width, int Height)
     {
-        public static ShippingPackage FromTotalKg(int totalKg)
+        public static ShippingPackage FromTotalKg(decimal totalKg)
         {
-            var kg = Math.Max(0, totalKg);
-            var weight = kg * 1000;
+            var kg = Math.Max(0m, totalKg);
+            var weight = (int)(kg * 1000m);
 
             return kg switch
             {

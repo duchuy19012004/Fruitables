@@ -24,6 +24,6 @@ public class StockRestoreItem
     public int ProductId { get; set; }
     public int? ProductVariantId { get; set; }
     public string ProductName { get; set; } = string.Empty;
-    public int QuantityRestored { get; set; }
-    public int CurrentStock { get; set; }
+    public decimal QuantityRestored { get; set; }
+    public decimal CurrentStock { get; set; }
 }

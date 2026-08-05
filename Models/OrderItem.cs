@@ -21,7 +21,8 @@ public class OrderItem
     [Required, MaxLength(255)]
     public string ProductName { get; set; } = string.Empty;
 
-    public int Quantity { get; set; }
+    [Column(TypeName = "decimal(10,2)")]
+    public decimal Quantity { get; set; }
 
     [Column(TypeName = "decimal(10,2)")]
     public decimal BasePrice { get; set; }

@@ -6,6 +6,7 @@
     {
         product.Id,
         product.Name,
+        product.Unit,
         product.StockQuantity,
         Variants = product.Variants.Select(variant => new
         {
@@ -214,8 +215,11 @@
                 firstInvalid ??= variantSelect;
             }
 
-            if (!Number.isInteger(quantity) || quantity < 1) {
-                errors.push(`Dòng ${index + 1}: số lượng phải lớn hơn hoặc bằng 1.`);
+            const step = product.unit?.toLowerCase() === 'kg' ? 0.1 : 1;
+            const validStep = Number.isFinite(quantity) && quantity > 0 &&
+                Math.abs(quantity / step - Math.round(quantity / step)) < 1e-9;
+            if (!validStep) {
+                errors.push(`Dòng ${index + 1}: số lượng phải theo bước ${step}.`);
                 quantityInput.classList.add('is-invalid');
                 firstInvalid ??= quantityInput;
             }
@@ -271,7 +275,7 @@
             </div>
             <div class="col-md-2">
                 <label class="form-label">Số lượng <span class="text-danger">*</span></label>
-                <input class="form-control quantity-input" type="number" min="1" value="1" required />
+                <input class="form-control quantity-input" type="number" min="0.1" step="0.1" value="1" required />
             </div>
             <div class="col-md-2">
                 <button type="button" class="btn btn-outline-danger remove-item w-100" aria-label="Xóa sản phẩm khỏi combo">

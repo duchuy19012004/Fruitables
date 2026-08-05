@@ -166,7 +166,7 @@ public class InventoryStatistics
     /// <summary>
     /// Tổng số lượng tồn kho
     /// </summary>
-    public int TotalStockQuantity { get; set; }
+    public decimal TotalStockQuantity { get; set; }
 }
 
 /// <summary>

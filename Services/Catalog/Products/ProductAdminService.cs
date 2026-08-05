@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Fruitables.Services.Chat.Knowledge;
+using Fruitables.Services.Orders;
 
 namespace Fruitables.Services.Catalog.Products;
 
@@ -156,6 +157,9 @@ public class ProductAdminService : IProductAdminService
 
         if (request.Price <= 0)
             return ProductResult.Fail(ProductErrorType.ValidationError, "Giá phải lớn hơn 0");
+        if (!IsValidStock(request.Unit, request.StockQuantity) ||
+            !QuantityRules.IsValid(request.Unit, request.MinOrderQuantity, MinimumStep(request.Unit)))
+            return ProductResult.Fail(ProductErrorType.ValidationError, "Số lượng sản phẩm không hợp lệ");
 
         // Generate slug if not provided
         var slug = string.IsNullOrWhiteSpace(request.Slug) 
@@ -214,6 +218,10 @@ public class ProductAdminService : IProductAdminService
         // Validation
         if (string.IsNullOrWhiteSpace(request.Name))
             return ProductResult.Fail(ProductErrorType.ValidationError, "Tên sản phẩm không được để trống");
+
+        if (!IsValidStock(request.Unit, request.StockQuantity) ||
+            !QuantityRules.IsValid(request.Unit, request.MinOrderQuantity, MinimumStep(request.Unit)))
+            return ProductResult.Fail(ProductErrorType.ValidationError, "Số lượng sản phẩm không hợp lệ");
 
         // Generate slug if not provided
         var slug = string.IsNullOrWhiteSpace(request.Slug) 
@@ -626,8 +634,8 @@ public class ProductAdminService : IProductAdminService
         if (request.Price <= 0)
             return ProductResult.Fail(ProductErrorType.ValidationError, "Giá phải lớn hơn 0");
 
-        if (request.StockQuantity < 0)
-            return ProductResult.Fail(ProductErrorType.ValidationError, "Số lượng tồn kho không được âm");
+        if (!IsValidStock(product.Unit, request.StockQuantity))
+            return ProductResult.Fail(ProductErrorType.ValidationError, "Số lượng tồn kho không hợp lệ");
 
         // Check duplicate SKU
         var existingVariants = await _unitOfWork.ProductVariants
@@ -672,8 +680,9 @@ public class ProductAdminService : IProductAdminService
             return ProductResult.Fail(ProductErrorType.ValidationError, "Hãy hủy các lịch giá cấp sản phẩm đang chạy hoặc sắp tới trước khi kích hoạt biến thể.");
 
         // Validation
-        if (request.StockQuantity < 0)
-            return ProductResult.Fail(ProductErrorType.ValidationError, "Số lượng tồn kho không được âm");
+        var product = await _unitOfWork.Products.GetByIdAsync(variant.ProductId);
+        if (product == null || !IsValidStock(product.Unit, request.StockQuantity))
+            return ProductResult.Fail(ProductErrorType.ValidationError, "Số lượng tồn kho không hợp lệ");
 
         // Check duplicate SKU (excluding current variant)
         var existingVariants = await _unitOfWork.ProductVariants
@@ -701,17 +710,17 @@ public class ProductAdminService : IProductAdminService
         // Get product for result
         var products = await _unitOfWork.Products
             .FindAsync(p => p.Id == variant.ProductId);
-        var product = products.FirstOrDefault();
+        var refreshedProduct = products.FirstOrDefault();
         if (transaction != null) await transaction.CommitAsync();
-        if (_notifier != null && product != null && (oldStock != variant.StockQuantity || wasActive != variant.IsActive))
+        if (_notifier != null && refreshedProduct != null && (oldStock != variant.StockQuantity || wasActive != variant.IsActive))
         {
-            await _notifier.NotifyStockChangedAsync(product.Id, variant.StockQuantity, variant.Id);
-            if (wasActive != variant.IsActive) await _notifier.NotifyPriceChangedAsync(product.Id, variant.Id);
+            await _notifier.NotifyStockChangedAsync(refreshedProduct.Id, variant.StockQuantity, variant.Id);
+            if (wasActive != variant.IsActive) await _notifier.NotifyPriceChangedAsync(refreshedProduct.Id, variant.Id);
         }
-        if (product != null) await TryIndexProductAsync(product.Id);
+        if (refreshedProduct != null) await TryIndexProductAsync(refreshedProduct.Id);
 
-        return product != null 
-            ? ProductResult.Ok(product) 
+        return refreshedProduct != null
+            ? ProductResult.Ok(refreshedProduct)
             : ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy sản phẩm với ID {variant.ProductId}");
     }
 
@@ -761,6 +770,12 @@ public class ProductAdminService : IProductAdminService
     }
 
     #endregion
+
+    private static decimal MinimumStep(string? unit) =>
+        string.Equals(unit?.Trim(), "kg", StringComparison.OrdinalIgnoreCase) ? 0.1m : 1m;
+
+    private static bool IsValidStock(string? unit, decimal quantity) =>
+        quantity >= 0 && (quantity == 0 || QuantityRules.IsValid(unit, quantity, MinimumStep(unit)));
 
     private Task<bool> CanEnableVariantAsync(int productId)
     {

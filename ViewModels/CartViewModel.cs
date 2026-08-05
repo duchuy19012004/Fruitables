@@ -35,11 +35,13 @@ public class CartItemViewModel
     public string? VariantName { get; set; }
     public string? VariantSKU { get; set; }
     public string ProductName { get; set; } = string.Empty;
+    public string Unit { get; set; } = "kg";
+    public decimal MinOrderQuantity { get; set; } = 1;
     public string ProductSlug { get; set; } = string.Empty;
     public string ProductImage { get; set; } = string.Empty;
     public decimal Price { get; set; }
-    public int Quantity { get; set; }
-    public int StockQuantity { get; set; } = int.MaxValue;
+    public decimal Quantity { get; set; }
+    public decimal StockQuantity { get; set; } = decimal.MaxValue;
     public bool IsAvailable { get; set; } = true;
     public decimal Total => Price * Quantity - ComboDiscount;
 }
@@ -61,7 +63,7 @@ public class CartGroupViewModel
 
 public sealed record CartAddItemRequest(
     int ProductId,
-    int Quantity,
+    decimal Quantity,
     int? ProductVariantId = null);
 
 public sealed record CartMutationResult(

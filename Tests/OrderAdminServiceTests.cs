@@ -177,7 +177,7 @@ namespace Fruitables.Tests
             Assert.Equal(2, (await context.Products.FindAsync(product.Id))!.StockQuantity);
             Assert.Empty(context.OrderStatusHistories);
             notifierMock.Verify(n => n.NotifyOrderUpdatedAsync(It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<string>()), Times.Never);
-            notifierMock.Verify(n => n.NotifyStockChangedAsync(It.IsAny<int>(), It.IsAny<int>()), Times.Never);
+            notifierMock.Verify(n => n.NotifyStockChangedAsync(It.IsAny<int>(), It.IsAny<decimal>()), Times.Never);
         }
 
         [Fact]

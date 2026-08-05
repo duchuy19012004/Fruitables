@@ -34,11 +34,11 @@ public class ProductFormRequest
     [StringLength(50, ErrorMessage = "Chất lượng không được vượt quá 50 ký tự")]
     public string? Quality { get; set; }
 
-    [Range(0, int.MaxValue, ErrorMessage = "Số lượng tồn kho phải lớn hơn hoặc bằng 0")]
-    public int StockQuantity { get; set; } = 0;
+    [Range(typeof(decimal), "0", "1000000000", ErrorMessage = "Số lượng tồn kho phải lớn hơn hoặc bằng 0")]
+    public decimal StockQuantity { get; set; } = 0;
 
-    [Range(1, int.MaxValue, ErrorMessage = "Số lượng đặt hàng tối thiểu phải lớn hơn 0")]
-    public int MinOrderQuantity { get; set; } = 1;
+    [Range(typeof(decimal), "0.1", "1000000000", ErrorMessage = "Số lượng đặt hàng tối thiểu phải lớn hơn 0")]
+    public decimal MinOrderQuantity { get; set; } = 1;
 
     public bool IsFeatured { get; set; } = false;
 
@@ -79,8 +79,8 @@ public class UpdateVariantRequest
     [StringLength(100, ErrorMessage = "Tên biến thể không được vượt quá 100 ký tự")]
     public string Name { get; set; } = string.Empty;
 
-    [Range(0, int.MaxValue, ErrorMessage = "Số lượng tồn kho phải lớn hơn hoặc bằng 0")]
-    public int StockQuantity { get; set; } = 0;
+    [Range(typeof(decimal), "0", "1000000000", ErrorMessage = "Số lượng tồn kho phải lớn hơn hoặc bằng 0")]
+    public decimal StockQuantity { get; set; } = 0;
 
     public bool IsActive { get; set; } = true;
 }

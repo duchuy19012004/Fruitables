@@ -146,7 +146,7 @@ namespace Fruitables.Tests
 
             Assert.True(order.Id > 0);
             Assert.Equal(1, await context.Orders.CountAsync());
-            Assert.Equal(3, await context.OrderItems.SumAsync(item => item.Quantity));
+            Assert.Equal(3m, (await context.OrderItems.Select(item => item.Quantity).ToListAsync()).Sum());
 
             context.ChangeTracker.Clear();
             Assert.Equal(7, (await context.Products.FindAsync(1))!.StockQuantity);
@@ -511,7 +511,7 @@ namespace Fruitables.Tests
             Assert.Equal(0, product.StockQuantity);
 
             notifierMock.Verify(n => n.NotifyOrderCreatedAsync(It.IsAny<int>(), It.IsAny<int?>()), Times.Never);
-            notifierMock.Verify(n => n.NotifyStockChangedAsync(It.IsAny<int>(), It.IsAny<int>()), Times.Never);
+            notifierMock.Verify(n => n.NotifyStockChangedAsync(It.IsAny<int>(), It.IsAny<decimal>()), Times.Never);
         }
 
         [Fact]

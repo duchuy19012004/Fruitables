@@ -49,9 +49,11 @@ public class Product
     [MaxLength(50)]
     public string? Quality { get; set; }
 
-    public int StockQuantity { get; set; } = 0;
+    [Column(TypeName = "decimal(10,2)")]
+    public decimal StockQuantity { get; set; } = 0;
 
-    public int MinOrderQuantity { get; set; } = 1;
+    [Column(TypeName = "decimal(10,2)")]
+    public decimal MinOrderQuantity { get; set; } = 1;
 
     public bool IsFeatured { get; set; } = false;
 

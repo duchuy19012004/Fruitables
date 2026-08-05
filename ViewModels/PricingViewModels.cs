@@ -84,7 +84,7 @@ public class PriceManagementRow
     public string? SKU { get; set; }
     public decimal BasePrice { get; set; }
     public decimal EffectivePrice { get; set; }
-    public int StockQuantity { get; set; }
+    public decimal StockQuantity { get; set; }
     public int PriceRevision { get; set; }
     public PriceSchedule? CurrentSchedule { get; set; }
     public PriceSchedule? UpcomingSchedule { get; set; }

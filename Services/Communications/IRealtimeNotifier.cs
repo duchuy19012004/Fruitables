@@ -8,8 +8,8 @@ namespace Fruitables.Services.Communications
         Task NotifyOrderUpdatedAsync(int orderId, int? userId, string newStatus);
         Task NotifyPaymentStatusChangedAsync(int orderId, int? userId, string newPaymentStatus);
         Task NotifyOrderNoteAddedAsync(int orderId, string noteSnippet);
-        Task NotifyStockChangedAsync(int productId, int newStock);
-        Task NotifyStockChangedAsync(int productId, int newStock, int? variantId);
+        Task NotifyStockChangedAsync(int productId, decimal newStock);
+        Task NotifyStockChangedAsync(int productId, decimal newStock, int? variantId);
         Task NotifyPriceChangedAsync(int productId, int? variantId = null);
         Task NotifySevereReviewAlertAsync(int reviewId, string productName, string commentSnippet);
     }

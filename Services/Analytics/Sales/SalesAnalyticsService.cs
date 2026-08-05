@@ -971,7 +971,7 @@ public class SalesAnalyticsService : ISalesAnalyticsService
         DateTime OrderCreatedAt,
         int ProductId,
         string ProductName,
-        int Quantity,
+        decimal Quantity,
         decimal Price,
         int CategoryId,
         string CategoryName)

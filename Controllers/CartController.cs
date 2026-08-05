@@ -39,7 +39,7 @@ public class CartController : Controller
     [Authorize]
     public async Task<IActionResult> AddToCart(
         int productId,
-        int quantity = 1,
+        decimal quantity = 1m,
         int? variantId = null)
     {
         var sessionId = GetSessionId();
@@ -57,7 +57,7 @@ public class CartController : Controller
 
     // POST: Cập nhật số lượng sản phẩm (form submit)
     [HttpPost]
-    public async Task<IActionResult> UpdateQuantity(int cartItemId, int quantity)
+    public async Task<IActionResult> UpdateQuantity(int cartItemId, decimal quantity)
     {
         var sessionId = GetSessionId();
         await _cartService.UpdateQuantityAsync(sessionId, cartItemId, quantity);
@@ -190,7 +190,7 @@ public class CartController : Controller
     public class UpdateQuantityRequest
     {
         public int CartItemId { get; set; }
-        public int Quantity { get; set; }
+        public decimal Quantity { get; set; }
     }
 
     // Request DTO cho xóa sản phẩm

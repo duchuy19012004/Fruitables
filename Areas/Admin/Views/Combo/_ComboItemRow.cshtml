@@ -41,7 +41,7 @@
     </div>
     <div class="col-md-2">
         <label class="form-label" for="combo-quantity-@index">Số lượng <span class="text-danger">*</span></label>
-        <input id="combo-quantity-@index" name="Items[@index].Quantity" class="form-control quantity-input" type="number" min="1" value="@Model.Quantity" required />
+        <input id="combo-quantity-@index" name="Items[@index].Quantity" class="form-control quantity-input" type="number" min="0.1" step="0.1" value="@Model.Quantity" required />
     </div>
     <div class="col-md-2">
         <button type="button" class="btn btn-outline-danger remove-item w-100" aria-label="Xóa sản phẩm khỏi combo">

@@ -6,6 +6,7 @@ using Fruitables.ViewModels;
 using Fruitables.Services.Pricing.Combos;
 using Fruitables.Services.Pricing.Coupons;
 using Fruitables.Services.Pricing.ProductPricing;
+using Fruitables.Services.Orders;
 using System.Security.Cryptography;
 using System.Text;
 using CartEntity = Fruitables.Models.Cart;
@@ -60,6 +61,8 @@ public class CartService : ICartService
                 VariantName = ci.ProductVariant?.Name,
                 VariantSKU = ci.ProductVariant?.SKU,
                 ProductName   = ci.Product.Name,
+                Unit          = ci.Product.Unit,
+                MinOrderQuantity = ci.Product.MinOrderQuantity,
                 ProductSlug   = ci.Product.Slug,
                 ProductImage  = ci.Product.Images.FirstOrDefault(i => i.IsPrimary)?.ImageUrl
                                 ?? ci.Product.Images.FirstOrDefault()?.ImageUrl ?? "",
@@ -134,7 +137,7 @@ public class CartService : ICartService
     public async Task<CartMutationResult> AddToCartAsync(
         string sessionId,
         int productId,
-        int quantity = 1,
+        decimal quantity = 1m,
         int? variantId = null)
     {
         if (quantity <= 0)
@@ -154,6 +157,11 @@ public class CartService : ICartService
         var activeVariants = product.Variants
             .Where(variant => variant.IsActive)
             .ToList();
+        var minimumStep = string.Equals(product.Unit?.Trim(), "kg", StringComparison.OrdinalIgnoreCase)
+            ? 0.1m
+            : 1m;
+        if (!QuantityRules.IsValid(product.Unit, quantity, minimumStep))
+            return CartMutationResult.Fail("Số lượng không hợp lệ.");
 
         ProductVariant? variant = null;
 
@@ -190,11 +198,14 @@ public class CartService : ICartService
                 item.ProductVariantId == variantId);
 
         var stock = variant?.StockQuantity ?? product.StockQuantity;
+        var desiredQuantity = (existingItem?.Quantity ?? 0m) + quantity;
+        if (!QuantityRules.IsValid(product.Unit, desiredQuantity, product.MinOrderQuantity))
+            return CartMutationResult.Fail("Số lượng tối thiểu hoặc bước số lượng không hợp lệ.");
 
         if (existingItem != null)
         {
             existingItem.Quantity = Math.Min(
-                existingItem.Quantity + quantity,
+                desiredQuantity,
                 stock);
 
             existingItem.Price = quote.EffectivePrice;
@@ -247,6 +258,12 @@ public class CartService : ICartService
         foreach (var request in groupedItems)
         {
             var product = products[request.ProductId];
+            var minimumStep = string.Equals(product.Unit?.Trim(), "kg", StringComparison.OrdinalIgnoreCase)
+                ? 0.1m
+                : 1m;
+            if (!QuantityRules.IsValid(product.Unit, request.Quantity, minimumStep))
+                return CartMutationResult.Fail($"Số lượng của '{product.Name}' không hợp lệ.");
+
             var activeVariants = product.Variants.Where(variant => variant.IsActive).ToList();
             var variant = request.ProductVariantId.HasValue
                 ? activeVariants.FirstOrDefault(item => item.Id == request.ProductVariantId.Value)
@@ -287,8 +304,10 @@ public class CartService : ICartService
                 item.ProductId == request.ProductId &&
                 item.ProductVariantId == request.ProductVariantId);
             var stock = variant?.StockQuantity ?? product.StockQuantity;
-
-            if ((existing?.Quantity ?? 0) + request.Quantity > stock)
+            var desiredQuantity = (existing?.Quantity ?? 0m) + request.Quantity;
+            if (!QuantityRules.IsValid(product.Unit, desiredQuantity, product.MinOrderQuantity))
+                return CartMutationResult.Fail($"Số lượng tối thiểu hoặc bước số lượng của '{product.Name}' không hợp lệ.");
+            if (desiredQuantity > stock)
                 return CartMutationResult.Fail($"'{product.Name}' không đủ tồn kho cho số lượng trong giỏ.");
         }
 
@@ -504,7 +523,7 @@ public class CartService : ICartService
         await _unitOfWork.SaveChangesAsync();
     }
 
-    public async Task UpdateQuantityAsync(string sessionId, int cartItemId, int quantity)
+    public async Task UpdateQuantityAsync(string sessionId, int cartItemId, decimal quantity)
     {
         var cart = await GetOrCreateCartAsync(sessionId);
         var item = await _unitOfWork.CartItems.Query()
@@ -519,7 +538,7 @@ public class CartService : ICartService
             var stock = item.ProductVariant?.StockQuantity ?? item.Product.StockQuantity;
             if (quantity <= 0 || isUnavailable || stock <= 0)
                 _unitOfWork.CartItems.Remove(item);
-            else
+            else if (QuantityRules.IsValid(item.Product.Unit, quantity, item.Product.MinOrderQuantity))
                 item.Quantity = Math.Min(quantity, stock);
 
             cart.UpdatedAt = DateTime.UtcNow;
@@ -556,7 +575,7 @@ public class CartService : ICartService
         }
     }
 
-    public async Task<int> GetCartCountAsync(string sessionId)
+    public async Task<decimal> GetCartCountAsync(string sessionId)
     {
         var cart = await _unitOfWork.Carts.Query()
             .FirstOrDefaultAsync(c => c.SessionId == sessionId);
@@ -574,7 +593,7 @@ public class CartService : ICartService
         var pricedCart = await GetCartAsync(sessionId);
         var eligibleItems = pricedCart.Items.Where(item => item.AllowCouponStacking).ToList();
         decimal subtotal = eligibleItems.Sum(item => item.Total);
-        int itemCount = eligibleItems.Sum(item => item.Quantity);
+        decimal itemCount = eligibleItems.Sum(item => item.Quantity);
 
         var result = await _couponService.ApplyCouponAsync(couponCode, subtotal, itemCount);
 

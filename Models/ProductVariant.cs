@@ -26,7 +26,8 @@ public class ProductVariant
     [NotMapped]
     public decimal DisplayPrice { get; set; }
 
-    public int StockQuantity { get; set; } = 0;
+    [Column(TypeName = "decimal(10,2)")]
+    public decimal StockQuantity { get; set; } = 0;
 
     public bool IsActive { get; set; } = true;
 

@@ -605,7 +605,7 @@ public sealed class PriceManagementService : IPriceManagementService
     }
 
     private static PriceManagementRow BuildRow(Product product, ProductVariant? variant, decimal basePrice,
-        int priceRevision, int stock, IEnumerable<PriceSchedule> schedules, DateTimeOffset now)
+        int priceRevision, decimal stock, IEnumerable<PriceSchedule> schedules, DateTimeOffset now)
     {
         var list = schedules.Where(s => !s.IsCancelled).ToList();
         var quote = PriceCalculator.CalculateQuote(basePrice, list, now);

@@ -89,12 +89,12 @@
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label asp-for="Product.StockQuantity" class="form-label">Số lượng tồn kho</label>
-                            <input asp-for="Product.StockQuantity" type="number" class="form-control" placeholder="0" />
+                            <input asp-for="Product.StockQuantity" type="number" min="0" step="0.1" class="form-control" placeholder="0" />
                             <span asp-validation-for="Product.StockQuantity" class="text-danger"></span>
                         </div>
                         <div class="col-md-6 mb-3">
                             <label asp-for="Product.MinOrderQuantity" class="form-label">Số lượng đặt tối thiểu</label>
-                            <input asp-for="Product.MinOrderQuantity" type="number" class="form-control" placeholder="1" />
+                            <input asp-for="Product.MinOrderQuantity" type="number" min="0.1" step="0.1" class="form-control" placeholder="1" />
                             <span asp-validation-for="Product.MinOrderQuantity" class="text-danger"></span>
                         </div>
                     </div>

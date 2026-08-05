@@ -84,9 +84,9 @@ namespace Fruitables.Services.Communications
             }
         }
 
-        public Task NotifyStockChangedAsync(int productId, int newStock) => NotifyStockChangedAsync(productId, newStock, null);
+        public Task NotifyStockChangedAsync(int productId, decimal newStock) => NotifyStockChangedAsync(productId, newStock, null);
 
-        public async Task NotifyStockChangedAsync(int productId, int newStock, int? variantId)
+        public async Task NotifyStockChangedAsync(int productId, decimal newStock, int? variantId)
         {
             try
             {

@@ -37,6 +37,8 @@ public class CouponService : ICouponService
 
         if (request.Type == CouponType.Percentage && request.Value > 100)
             return (false, "Phần trăm giảm giá không được vượt quá 100%");
+        if (request.MinQuantity <= 0)
+            return (false, "Số lượng tối thiểu phải lớn hơn 0");
 
         var coupon = new Coupon
         {
@@ -70,6 +72,8 @@ public class CouponService : ICouponService
 
         if (request.Type == CouponType.Percentage && request.Value > 100)
             return (false, "Phần trăm giảm giá không được vượt quá 100%");
+        if (request.MinQuantity <= 0)
+            return (false, "Số lượng tối thiểu phải lớn hơn 0");
 
         coupon.Code           = codeUpper;
         coupon.Type           = request.Type;
@@ -96,7 +100,7 @@ public class CouponService : ICouponService
         return (true, null);
     }
 
-    public async Task<CouponApplyResult> ApplyCouponAsync(string code, decimal subtotal, int itemCount)
+    public async Task<CouponApplyResult> ApplyCouponAsync(string code, decimal subtotal, decimal itemCount)
     {
         var codeUpper = code.Trim().ToUpper();
 
@@ -147,7 +151,7 @@ public class CouponService : ICouponService
     private static CouponApplyResult Fail(string message) =>
         new() { Success = false, ErrorMessage = message };
 
-    public async Task<List<CouponEligibilityResult>> GetAvailableCouponsAsync(decimal subtotal, int itemCount)
+    public async Task<List<CouponEligibilityResult>> GetAvailableCouponsAsync(decimal subtotal, decimal itemCount)
     {
         var now = DateTime.UtcNow.AddHours(7);
 

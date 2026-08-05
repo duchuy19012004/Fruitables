@@ -13,7 +13,8 @@ public class CartItem
     public int? ProductVariantId { get; set; }
     public int? CartGroupId { get; set; }
 
-    public int Quantity { get; set; } = 1;
+    [Column(TypeName = "decimal(10,2)")]
+    public decimal Quantity { get; set; } = 1;
 
     [Column(TypeName = "decimal(10,2)")]
     public decimal Price { get; set; }

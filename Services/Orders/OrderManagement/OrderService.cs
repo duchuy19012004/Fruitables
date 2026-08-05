@@ -38,7 +38,7 @@ public class OrderService : IOrderService
 
     private sealed record StockNotification(
         int ProductId,
-        int StockQuantity,
+        decimal StockQuantity,
         int? ProductVariantId);
 
     public async Task<Order> CreateOrderAsync(CheckoutViewModel model, string sessionId, int? userId = null)

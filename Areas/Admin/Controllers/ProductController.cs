@@ -144,7 +144,7 @@ public class ProductController : Controller
             TempData["Error"] = "Không tìm thấy sản phẩm";
             return RedirectToAction(nameof(Index));
         }
-        int oldStock = existingProduct.StockQuantity;
+        decimal oldStock = existingProduct.StockQuantity;
 
         if (!ModelState.IsValid)
         {

@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Fruitables.Models;
 
@@ -12,8 +13,9 @@ public class ComboItem
 
     public int? ProductVariantId { get; set; }
 
-    [Range(1, int.MaxValue)]
-    public int Quantity { get; set; } = 1;
+    [Range(typeof(decimal), "0.1", "1000000")]
+    [Column(TypeName = "decimal(10,2)")]
+    public decimal Quantity { get; set; } = 1;
 
     public int SortOrder { get; set; } = 0;
 

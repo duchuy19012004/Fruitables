@@ -7,6 +7,7 @@ using Fruitables.Services.Pricing.ProductPricing;
 using Fruitables.ViewModels;
 using Microsoft.EntityFrameworkCore;
 using Fruitables.Services.Orders.Cart;
+using Fruitables.Services.Orders;
 
 namespace Fruitables.Services.Catalog.Combos;
 
@@ -247,6 +248,7 @@ public class ComboService : IComboService
         {
             Id = p.Id,
             Name = p.Name,
+            Unit = p.Unit,
             StockQuantity = p.StockQuantity,
             Variants = p.Variants
                 .Where(v => v.IsActive)
@@ -541,6 +543,12 @@ public class ComboService : IComboService
             var product = products[item.ProductId];
             if (!product.IsActive || product.IsDeleted)
                 return $"Sản phẩm '{product.Name}' đã ngừng bán.";
+
+            var minimumStep = string.Equals(product.Unit?.Trim(), "kg", StringComparison.OrdinalIgnoreCase)
+                ? 0.1m
+                : 1m;
+            if (!QuantityRules.IsValid(product.Unit, item.Quantity, minimumStep))
+                return $"Số lượng của '{product.Name}' không hợp lệ.";
 
             var activeVariants = product.Variants.Where(variant => variant.IsActive).ToList();
             var selectedVariant = item.ProductVariantId.HasValue

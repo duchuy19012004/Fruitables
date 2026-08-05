@@ -27,8 +27,8 @@ public class InsufficientStockItem
 {
     public int ProductId { get; set; }
     public string ProductName { get; set; } = string.Empty;
-    public int RequestedQuantity { get; set; }
-    public int AvailableQuantity { get; set; }
+    public decimal RequestedQuantity { get; set; }
+    public decimal AvailableQuantity { get; set; }
 }
 
 public enum OrderErrorType

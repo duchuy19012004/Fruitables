@@ -95,7 +95,7 @@ public class CategoryRevenueItem
     public int CategoryId { get; set; }
     public string CategoryName { get; set; } = string.Empty;
     public decimal Revenue { get; set; }
-    public int QuantitySold { get; set; }
+    public decimal QuantitySold { get; set; }
     public decimal Percentage { get; set; }
     public int OrderCount { get; set; }
 }
@@ -119,7 +119,7 @@ public class TopProductItem
     public string ProductName { get; set; } = string.Empty;
     public string CategoryName { get; set; } = string.Empty;
     public decimal Revenue { get; set; }
-    public int QuantitySold { get; set; }
+    public decimal QuantitySold { get; set; }
     public decimal AveragePrice { get; set; }
 }
 

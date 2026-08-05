@@ -265,7 +265,7 @@
 
                         @foreach (var item in Model.Items.Where(item => item.CartGroupId == null))
                         {
-                            <div class="cart-item bg-white dark:bg-slate-900 p-4 rounded-3xl border shadow-sm border-slate-100 flex gap-6 items-center" data-cart-item-id="@item.CartItemId" data-product-id="@item.ProductId" data-variant-id="@item.ProductVariantId" data-stock="@item.StockQuantity">
+                            <div class="cart-item bg-white dark:bg-slate-900 p-4 rounded-3xl border shadow-sm border-slate-100 flex gap-6 items-center" data-cart-item-id="@item.CartItemId" data-product-id="@item.ProductId" data-variant-id="@item.ProductVariantId" data-stock="@item.StockQuantity" data-step="@(item.Unit.Equals("kg", StringComparison.OrdinalIgnoreCase) ? "0.1" : "1")" data-min="@item.MinOrderQuantity.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)">
                                 <div class="w-24 h-24 rounded-2xl overflow-hidden bg-slate-50 flex-shrink-0">
                                     <img alt="@item.ProductName" class="w-full h-full object-cover" src="@(string.IsNullOrEmpty(item.ProductImage) ? Url.Content("~/img/vegetable-item-3.png") : item.ProductImage)" />
                                 </div>
@@ -277,9 +277,9 @@
                                     </div>
                                     <div class="flex items-center gap-6">
                                         <div class="flex items-center border rounded-full h-9 w-24">
-                                            <button class="btn-minus w-7" onclick="updateQuantity(@item.CartItemId, @(item.Quantity - 1))">−</button>
-                                            <input type="text" class="item-quantity w-8 text-center border-0 p-0" value="@item.Quantity" readonly />
-                                            <button class="btn-plus w-7" onclick="updateQuantity(@item.CartItemId, @(item.Quantity + 1))" @(item.Quantity >= item.StockQuantity ? "disabled" : "")>+</button>
+                                            <button class="btn-minus w-7" onclick="changeQuantity(@item.CartItemId, -1)">−</button>
+                                            <input type="text" class="item-quantity w-8 text-center border-0 p-0" value="@item.Quantity.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)" readonly />
+                                            <button class="btn-plus w-7" onclick="changeQuantity(@item.CartItemId, 1)" @(item.Quantity >= item.StockQuantity ? "disabled" : "")>+</button>
                                         </div>
                                         <strong class="item-total w-24 text-right">@item.Total.ToString("N0")đ</strong>
                                         <button class="p-2 text-slate-300 hover:text-red-500" onclick="removeFromCart(@item.CartItemId)"><span class="material-icons-outlined">delete_outline</span></button>
@@ -521,14 +521,27 @@
             });
         }
 
+        function roundQuantity(value, step) {
+            const decimals = step < 1 ? 1 : 0;
+            return Number(value.toFixed(decimals));
+        }
+
+        function changeQuantity(productId, direction) {
+            const row = document.querySelector('.cart-item[data-cart-item-id="' + productId + '"]');
+            const step = Number(row?.dataset.step || 1);
+            const current = Number(row?.querySelector('.item-quantity')?.value || 0);
+            updateQuantity(productId, roundQuantity(current + direction * step, step));
+        }
+
         function updateQuantity(productId, quantity) {
-            if (quantity < 1) {
+            var row = document.querySelector('.cart-item[data-cart-item-id="' + productId + '"]');
+            var min = Number(row?.getAttribute('data-min') || row?.getAttribute('data-step') || 1);
+            if (quantity < min) {
                 removeFromCart(productId);
                 return;
             }
 
-            var row = document.querySelector('.cart-item[data-cart-item-id="' + productId + '"]');
-            var stock = parseInt(row.getAttribute('data-stock'));
+            var stock = Number(row.getAttribute('data-stock'));
             if (quantity > stock) {
                 showToast('Số lượng không thể vượt quá ' + stock + ' sản phẩm', 'warning');
                 return;
@@ -562,8 +575,8 @@
                             
                             var minusBtn = row.querySelector('.btn-minus');
                             var plusBtn = row.querySelector('.btn-plus');
-                            minusBtn.setAttribute('onclick', 'updateQuantity(' + productId + ', ' + (actualQty - 1) + ')');
-                            plusBtn.setAttribute('onclick', 'updateQuantity(' + productId + ', ' + (actualQty + 1) + ')');
+                            minusBtn.setAttribute('onclick', 'changeQuantity(' + productId + ', -1)');
+                            plusBtn.setAttribute('onclick', 'changeQuantity(' + productId + ', 1)');
                             
                             if (data.maxReached) {
                                 plusBtn.classList.add('opacity-50', 'cursor-not-allowed');
@@ -671,7 +684,7 @@
                     
                     const qtyInput = item.querySelector('.item-quantity');
                     if (qtyInput) {
-                        let currentQty = parseInt(qtyInput.value);
+                        let currentQty = Number(qtyInput.value);
                         if (currentQty > data.stock && data.stock > 0) {
                             showToast('Tồn kho của sản phẩm đã giảm. Đang điều chỉnh giỏ hàng...', 'warning');
                             updateQuantity(Number(item.dataset.cartItemId), data.stock);

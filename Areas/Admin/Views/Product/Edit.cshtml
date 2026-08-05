@@ -85,11 +85,11 @@
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label for="request_StockQuantity" class="form-label">Số lượng tồn kho</label>
-                            <input type="number" name="request.StockQuantity" id="request_StockQuantity" value="@Model.Product.StockQuantity" class="form-control" placeholder="0" />
+                            <input type="number" name="request.StockQuantity" id="request_StockQuantity" value="@Model.Product.StockQuantity" min="0" step="0.1" class="form-control" placeholder="0" />
                         </div>
                         <div class="col-md-6 mb-3">
                             <label for="request_MinOrderQuantity" class="form-label">Số lượng đặt tối thiểu</label>
-                            <input type="number" name="request.MinOrderQuantity" id="request_MinOrderQuantity" value="@Model.Product.MinOrderQuantity" class="form-control" placeholder="1" />
+                            <input type="number" name="request.MinOrderQuantity" id="request_MinOrderQuantity" value="@Model.Product.MinOrderQuantity" min="0.1" step="0.1" class="form-control" placeholder="1" />
                         </div>
                     </div>
                 </div>
@@ -354,7 +354,7 @@
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Số lượng tồn kho</label>
-                    <input type="number" id="variantStock" class="form-control" placeholder="0" />
+                    <input type="number" id="variantStock" min="0" step="0.1" class="form-control" placeholder="0" />
                 </div>
                 <div class="mb-3">
                     <div class="form-check form-switch">
@@ -480,7 +480,7 @@
                 sku: document.getElementById('variantSKU').value,
                 name: document.getElementById('variantName').value,
                 price: parseFloat(document.getElementById('variantPrice').value),
-                stockQuantity: parseInt(document.getElementById('variantStock').value) || 0,
+                stockQuantity: Number(document.getElementById('variantStock').value) || 0,
                 isActive: document.getElementById('variantIsActive').checked
             };
 

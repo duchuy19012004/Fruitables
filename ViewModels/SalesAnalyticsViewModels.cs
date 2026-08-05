@@ -110,7 +110,7 @@ public class MerchRankRowVm
     public int? CategoryId { get; set; }
     public string Name { get; set; } = "";
     public string? CategoryName { get; set; }
-    public int Units { get; set; }
+    public decimal Units { get; set; }
     public decimal NetRevenue { get; set; }
     public decimal SharePercent { get; set; }
     public int OrderCount { get; set; }

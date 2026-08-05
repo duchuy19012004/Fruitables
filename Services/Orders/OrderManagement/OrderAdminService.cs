@@ -152,7 +152,7 @@ public class OrderAdminService : IOrderAdminService
 
             // Stock is deducted when the order is placed. Only cancellation before
             // dispatch restores sellable stock; Cancelled is terminal and cannot reopen.
-            Dictionary<(int ProductId, int? VariantId), int>? changedStocks = null;
+            Dictionary<(int ProductId, int? VariantId), decimal>? changedStocks = null;
             if (request.NewStatus == OrderStatus.Cancelled)
             {
                 changedStocks = await RestoreStockForOrder(order);
@@ -218,7 +218,7 @@ public class OrderAdminService : IOrderAdminService
 
     private async Task NotifyStockForItemsAsync(
         IEnumerable<OrderItem> items,
-        IReadOnlyDictionary<(int ProductId, int? VariantId), int>? knownStockLevels = null)
+        IReadOnlyDictionary<(int ProductId, int? VariantId), decimal>? knownStockLevels = null)
     {
         var targets = items.GroupBy(item => new { item.ProductId, item.ProductVariantId })
             .Select(group => group.Key).ToList();
@@ -254,7 +254,7 @@ public class OrderAdminService : IOrderAdminService
         }
     }
 
-    private async Task<Dictionary<(int ProductId, int? VariantId), int>> RestoreStockForOrder(Order order)
+    private async Task<Dictionary<(int ProductId, int? VariantId), decimal>> RestoreStockForOrder(Order order)
     {
         var productIds = order.Items.Select(item => item.ProductId).Distinct().ToList();
         var products = await _context.Products
@@ -266,7 +266,7 @@ public class OrderAdminService : IOrderAdminService
         var isInMemory = (_context.Database.ProviderName ?? string.Empty).Contains("InMemory");
         var groups = order.Items.GroupBy(item => new { item.ProductId, item.ProductVariantId })
             .Select(group => new { group.Key.ProductId, group.Key.ProductVariantId, Quantity = group.Sum(item => item.Quantity) });
-        var stockLevels = new Dictionary<(int ProductId, int? VariantId), int>();
+        var stockLevels = new Dictionary<(int ProductId, int? VariantId), decimal>();
         foreach (var group in groups)
         {
             if (group.ProductVariantId.HasValue && variants.TryGetValue(group.ProductVariantId.Value, out var variant))
@@ -295,7 +295,7 @@ public class OrderAdminService : IOrderAdminService
         return stockLevels;
     }
 
-    private void SynchronizeStock(Product product, int stock)
+    private void SynchronizeStock(Product product, decimal stock)
     {
         product.StockQuantity = stock;
         var property = _context.Entry(product).Property(p => p.StockQuantity);
@@ -303,7 +303,7 @@ public class OrderAdminService : IOrderAdminService
         property.IsModified = false;
     }
 
-    private void SynchronizeStock(ProductVariant variant, int stock)
+    private void SynchronizeStock(ProductVariant variant, decimal stock)
     {
         variant.StockQuantity = stock;
         var property = _context.Entry(variant).Property(v => v.StockQuantity);
@@ -523,7 +523,7 @@ public class OrderAdminService : IOrderAdminService
             }
 
             // Only pre-dispatch cancellation restores sellable stock.
-            Dictionary<(int ProductId, int? VariantId), int>? changedStocks = null;
+            Dictionary<(int ProductId, int? VariantId), decimal>? changedStocks = null;
             if (request.NewOrderStatus == OrderStatus.Cancelled &&
                 oldOrderStatus != OrderStatus.Cancelled)
             {
