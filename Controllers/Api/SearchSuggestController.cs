@@ -1,6 +1,6 @@
 // Controllers/Api/SearchSuggestController.cs
 using Fruitables.Options;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
 using Fruitables.Services.Search;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;

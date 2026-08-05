@@ -1,5 +1,5 @@
 using Fruitables.Options;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
 using Microsoft.Extensions.Options;
 
 namespace Fruitables.Services.Outbox;

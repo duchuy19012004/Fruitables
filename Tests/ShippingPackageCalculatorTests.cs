@@ -1,6 +1,7 @@
 using Fruitables.Models;
-using Fruitables.Services;
+using Fruitables.Services.Communications;
 using Xunit;
+using Fruitables.Services.Shipping.Delivery;
 
 namespace Fruitables.Tests;
 

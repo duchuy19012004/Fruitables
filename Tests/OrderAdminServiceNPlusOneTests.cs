@@ -3,9 +3,9 @@ using Moq;
 using Microsoft.EntityFrameworkCore;
 using Fruitables.Data;
 using Fruitables.Models;
-using Fruitables.Services;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
+using Fruitables.Services.Orders.OrderManagement;
 
 namespace Fruitables.Tests;
 

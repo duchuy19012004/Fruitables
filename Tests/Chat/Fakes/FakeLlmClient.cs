@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
+using Fruitables.Services.Chat.Providers;
 
 namespace Fruitables.Tests.Chat.Fakes;
 

@@ -1,11 +1,13 @@
 using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Options;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
 using Fruitables.Services.Outbox;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Fruitables.Services.Chat.Knowledge;
+using Fruitables.Services.Chat.Providers;
 
 namespace Fruitables.Services.Sentiment;
 
@@ -676,11 +678,10 @@ public sealed class SentimentAnalysisService : ISentimentAnalysisService
             .FirstOrDefaultAsync(r => r.Id == reviewId && !r.IsDeleted, ct);
         if (review is null) return null;
 
-        // Đơn hàng gần nhất (chưa hủy/trả) của khách chứa sản phẩm này
+        // Đơn hàng gần nhất chưa hủy của khách chứa sản phẩm này
         var order = await _db.Orders.AsNoTracking()
             .Where(o => o.UserId == review.UserId
                 && o.Status != OrderStatus.Cancelled
-                && o.Status != OrderStatus.Returned
                 && o.Items.Any(i => i.ProductId == review.ProductId))
             .OrderByDescending(o => o.CreatedAt)
             .FirstOrDefaultAsync(ct);

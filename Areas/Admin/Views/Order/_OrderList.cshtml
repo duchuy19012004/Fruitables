@@ -146,7 +146,6 @@
         OrderStatus.Shipped => "Đang giao",
         OrderStatus.Delivered => "Đã giao",
         OrderStatus.Cancelled => "Đã hủy",
-        OrderStatus.Returned => "Trả hàng",
         _ => orderStatus.ToString()
     };
 
@@ -165,7 +164,6 @@
         OrderStatus.Shipped => "bg-primary",
         OrderStatus.Delivered => "bg-success",
         OrderStatus.Cancelled => "bg-danger",
-        OrderStatus.Returned => "bg-secondary",
         _ => "bg-secondary"
     };
 

@@ -1,10 +1,11 @@
 using Fruitables.Areas.Admin.Controllers;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
 using Xunit;
+using Fruitables.Services.Pricing.ProductPricing;
 
 namespace Fruitables.Tests;
 

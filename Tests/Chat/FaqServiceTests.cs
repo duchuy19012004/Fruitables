@@ -1,7 +1,7 @@
 using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Options;
-using Fruitables.Services.Chat;
+using Fruitables.Services.Chat.Knowledge;
 using Fruitables.Tests.Chat.Fakes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -89,7 +89,7 @@ public class FaqServiceTests
         await using var db = CreateContext();
         var sut = CreateService(db);
 
-        var faq = await sut.CreateAsync("Đổi trả", "Trong 7 ngày", "policy", isActive: true);
+        var faq = await sut.CreateAsync("Hỗ trợ đơn hàng", "Liên hệ cửa hàng", "support", isActive: true);
 
         Assert.True(await db.KnowledgeChunks.AnyAsync(c =>
             c.SourceType == KnowledgeSourceType.Faq

@@ -3,10 +3,11 @@ using System.Text;
 using System.Text.Json;
 using Fruitables.Data;
 using Fruitables.Models;
-using Fruitables.Services;
+using Fruitables.Services.Communications;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Fruitables.Services.Infrastructure;
 
 namespace Fruitables.Controllers.Api;
 

@@ -389,7 +389,7 @@
                                 <p class="text-sm text-slate-700 dark:text-slate-300">@Model.Notes</p>
                             </div>
                         }
-                        @if (Model.PaymentStatus == PaymentStatus.Pending && Model.Status != OrderStatus.Cancelled && Model.Status != OrderStatus.Returned)
+                        @if (Model.PaymentStatus == PaymentStatus.Pending && Model.Status != OrderStatus.Cancelled)
                         {
                             <button type="button" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-all shadow-sm" onclick="openPaymentModal()">
                                 <span class="material-icons-outlined">check_circle</span>
@@ -434,25 +434,15 @@
                             <span class="material-icons-outlined">check_circle</span>
                             Xác nhận đã giao hàng
                         </button>
-                        <button type="button" class="w-full bg-amber-500 hover:bg-amber-600 text-white font-semibold py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-all"
-                                onclick="openReturnModal()">
-                            <span class="material-icons-outlined">undo</span>
-                            Giao thất bại / Hoàn hàng
-                        </button>
                     }
                     else if (Model.Status == OrderStatus.Delivered)
                     {
-                        <button type="button" class="w-full bg-amber-500 hover:bg-amber-600 text-white font-semibold py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-all"
-                                onclick="openReturnModal()">
-                            <span class="material-icons-outlined">undo</span>
-                            Xử lý trả hàng
-                        </button>
                         <div class="text-center text-slate-500 py-2 text-sm">
                             <span class="material-icons-outlined text-green-500">check_circle</span>
                             Đơn hàng đã hoàn thành
                         </div>
                     }
-                    else if (Model.Status == OrderStatus.Cancelled || Model.Status == OrderStatus.Returned)
+                    else if (Model.Status == OrderStatus.Cancelled)
                     {
                         <div class="text-center text-slate-500 py-4">
                             <span class="material-icons-outlined text-4xl mb-2 block">lock</span>
@@ -518,34 +508,6 @@
     </div>
 </div>
 
-<!-- Return Modal -->
-<div class="modal fade" id="returnModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content border-warning">
-            <div class="modal-header bg-warning text-dark">
-                <h5 class="modal-title">Xử lý Hoàn hàng / Trả hàng</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <p class="text-muted">Sau khi xác nhận, trạng thái thanh toán sẽ chuyển sang <strong>Đã hoàn tiền</strong>.</p>
-                <form id="returnForm" method="post" asp-area="Admin" asp-controller="Order" asp-action="UpdateStatus">
-                    @Html.AntiForgeryToken()
-                    <input type="hidden" name="orderId" value="@Model.Id">
-                    <input type="hidden" name="newStatus" value="@((int)OrderStatus.Returned)">
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Lý do hoàn hàng <span class="text-danger">*</span></label>
-                        <textarea name="notes" class="form-control" rows="3" required placeholder="Nhập lý do hoàn hàng..."></textarea>
-                    </div>
-                    <div class="d-flex gap-2 justify-content-end">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy bỏ</button>
-                        <button type="submit" class="btn btn-warning text-dark">Xác nhận hoàn hàng</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-</div>
-
 <!-- Payment Modal -->
 <div class="modal fade" id="paymentModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -582,7 +544,6 @@
         OrderStatus.Shipped => "Đang giao",
         OrderStatus.Delivered => "Đã giao",
         OrderStatus.Cancelled => "Đã hủy",
-        OrderStatus.Returned => "Trả hàng",
         _ => status.ToString()
     };
 
@@ -601,7 +562,6 @@
         OrderStatus.Shipped => "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400",
         OrderStatus.Delivered => "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
         OrderStatus.Cancelled => "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
-        OrderStatus.Returned => "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400",
         _ => "bg-gray-100 text-gray-800"
     };
 
@@ -647,10 +607,6 @@
 
     function openCancelModal() {
         new bootstrap.Modal(document.getElementById('cancelModal')).show();
-    }
-
-    function openReturnModal() {
-        new bootstrap.Modal(document.getElementById('returnModal')).show();
     }
 
     function openPaymentModal() {

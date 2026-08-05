@@ -2,10 +2,10 @@ using Xunit;
 using Moq;
 using Fruitables.Data;
 using Fruitables.Models;
-using Fruitables.Services;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 using System.Reflection;
+using Fruitables.Services.Orders.OrderManagement;
 
 namespace Fruitables.Tests
 {
@@ -172,7 +172,7 @@ namespace Fruitables.Tests
 
             Assert.False(result.Success);
             Assert.Equal(OrderErrorType.InvalidStatusTransition, result.ErrorType);
-            Assert.Contains("Khiếu nại", result.ErrorMessage);
+            Assert.Contains("không thể chuyển", result.ErrorMessage);
             Assert.Equal(currentStatus, order.Status);
             Assert.Equal(2, (await context.Products.FindAsync(product.Id))!.StockQuantity);
             Assert.Empty(context.OrderStatusHistories);
@@ -181,47 +181,7 @@ namespace Fruitables.Tests
         }
 
         [Fact]
-        public async Task UpdateCombinedStatusAsync_DeliveredToReturned_IsRejectedWithoutRestoringProductStock()
-        {
-            var options = TestDbContextFactory.CreateSqliteOptions();
-            using var context = new ApplicationDbContext(options);
-            SeedAdminAndCategory(context);
-
-            var product = CreateProduct(stockQuantity: 3);
-            var order = CreateOrder(
-                id: 13,
-                orderNumber: "ORD-LEGACY-RETURN",
-                status: OrderStatus.Delivered,
-                paymentStatus: PaymentStatus.Paid,
-                productId: product.Id,
-                quantity: 2);
-
-            context.AddRange(product, order);
-            await context.SaveChangesAsync();
-
-            var adminService = new OrderAdminService(
-                context,
-                Mock.Of<IOrderLogService>(),
-                Mock.Of<IRealtimeNotifier>());
-
-            var result = await adminService.UpdateCombinedStatusAsync(new UpdateCombinedStatusRequest
-            {
-                OrderId = order.Id,
-                NewOrderStatus = OrderStatus.Returned,
-                NewPaymentStatus = PaymentStatus.Refunded,
-                Notes = "Legacy return must be blocked"
-            }, 100);
-
-            Assert.False(result.Success);
-            Assert.Equal(OrderErrorType.InvalidStatusTransition, result.ErrorType);
-            Assert.Contains("Khiếu nại", result.ErrorMessage);
-            Assert.Equal(OrderStatus.Delivered, order.Status);
-            Assert.Equal(PaymentStatus.Paid, order.PaymentStatus);
-            Assert.Equal(3, (await context.Products.FindAsync(product.Id))!.StockQuantity);
-        }
-
-        [Fact]
-        public async Task UpdatePaymentStatusAsync_PaidToRefunded_IsRejectedOutsideRefundModule()
+        public async Task UpdatePaymentStatusAsync_PaidToRefunded_IsRejectedOutsideFinancialWorkflow()
         {
             var options = TestDbContextFactory.CreateSqliteOptions();
             using var context = new ApplicationDbContext(options);

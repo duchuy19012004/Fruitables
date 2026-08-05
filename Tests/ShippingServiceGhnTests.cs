@@ -1,9 +1,11 @@
 using Fruitables.Models;
-using Fruitables.Services;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
+using Fruitables.Services.Infrastructure;
+using Fruitables.Services.Shipping.Delivery;
+using Fruitables.Services.Shipping.Providers;
 
 namespace Fruitables.Tests;
 

@@ -1,7 +1,8 @@
 using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Options;
-using Fruitables.Services.Chat;
+using Fruitables.Services.Chat.Knowledge;
+using Fruitables.Services.Chat.Providers;
 using Fruitables.Tests.Chat.Fakes;
 using Fruitables.ViewModels;
 using Microsoft.EntityFrameworkCore;

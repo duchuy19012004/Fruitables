@@ -1,9 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 using Fruitables.Models;
 using System.Security.Claims;
+using Fruitables.Services.Orders.OrderManagement;
 
 namespace Fruitables.Areas.Admin.Controllers;
 
@@ -214,7 +215,6 @@ public class OrderController : Controller
         OrderStatus.Shipped => "bg-primary",
         OrderStatus.Delivered => "bg-success",
         OrderStatus.Cancelled => "bg-danger",
-        OrderStatus.Returned => "bg-secondary",
         _ => "bg-secondary"
     };
 
@@ -253,7 +253,7 @@ public class OrderController : Controller
     }
 
     // AJAX: Get transition rules for JavaScript client
-    // Requirements: 6.6, 7.4 - Returns StateTransitionRule and StatusCombinationRule
+    // Returns state and payment transition rules for the JavaScript client.
     [HttpGet]
     public async Task<IActionResult> GetTransitionRules(int orderId)
     {
@@ -307,7 +307,7 @@ public class OrderController : Controller
     }
 
     // AJAX: Get combination rule for a specific order status and payment method
-    // Requirements: 7.4 - Returns StatusCombinationRule for JavaScript client
+    // Returns the payment combination rule for the JavaScript client.
     [HttpGet]
     public IActionResult GetCombinationRule(OrderStatus orderStatus, PaymentMethod paymentMethod)
     {
@@ -367,7 +367,6 @@ public class OrderController : Controller
         OrderStatus.Shipped => "Đang giao",
         OrderStatus.Delivered => "Đã giao",
         OrderStatus.Cancelled => "Đã hủy",
-        OrderStatus.Returned => "Trả hàng",
         _ => status.ToString()
     };
 

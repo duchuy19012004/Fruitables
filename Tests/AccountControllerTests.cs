@@ -1,10 +1,12 @@
 using Fruitables.Controllers;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
 using Xunit;
+using Fruitables.Services.Identity.Authentication;
+using Fruitables.Services.Identity.Users;
 
 namespace Fruitables.Tests;
 

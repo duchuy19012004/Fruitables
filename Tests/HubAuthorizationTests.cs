@@ -3,10 +3,11 @@ using Moq;
 using Microsoft.AspNetCore.SignalR;
 using System.Security.Claims;
 using Fruitables.Hubs;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
 using Fruitables.Data;
 using Fruitables.Models;
 using Microsoft.EntityFrameworkCore;
+using Fruitables.Services.Chat.Conversation;
 
 namespace Fruitables.Tests
 {

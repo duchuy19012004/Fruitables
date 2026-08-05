@@ -3,13 +3,14 @@ using System.Text;
 using Fruitables.Controllers.Api;
 using Fruitables.Data;
 using Fruitables.Models;
-using Fruitables.Services;
+using Fruitables.Services.Communications;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
+using Fruitables.Services.Infrastructure;
 
 namespace Fruitables.Tests;
 

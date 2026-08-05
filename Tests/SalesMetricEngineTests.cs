@@ -1,5 +1,5 @@
 using Fruitables.Models;
-using Fruitables.Services.Analytics;
+using Fruitables.Services.Analytics.Sales;
 using Xunit;
 
 namespace Fruitables.Tests;
@@ -17,7 +17,7 @@ public class SalesMetricEngineTests
             O(100, PaymentStatus.Paid, OrderStatus.Delivered),
             O(50, PaymentStatus.Paid, OrderStatus.Processing),
             O(80, PaymentStatus.Pending, OrderStatus.Pending),
-            O(20, PaymentStatus.Refunded, OrderStatus.Returned),
+            O(20, PaymentStatus.Refunded, OrderStatus.Cancelled),
         };
         Assert.Equal(150, SalesMetricEngine.Gross(orders));
     }
@@ -29,7 +29,7 @@ public class SalesMetricEngineTests
         {
             O(100, PaymentStatus.Paid, OrderStatus.Delivered),
             O(40, PaymentStatus.Paid, OrderStatus.Delivered),
-            O(30, PaymentStatus.Refunded, OrderStatus.Returned),
+            O(30, PaymentStatus.Refunded, OrderStatus.Cancelled),
             O(50, PaymentStatus.Paid, OrderStatus.Processing),
         };
         Assert.Equal(110, SalesMetricEngine.Net(orders)); // 140 - 30
@@ -55,7 +55,7 @@ public class SalesMetricEngineTests
         {
             O(1, PaymentStatus.Paid, OrderStatus.Delivered),
             O(1, PaymentStatus.Paid, OrderStatus.Delivered),
-            O(1, PaymentStatus.Refunded, OrderStatus.Returned),
+            O(1, PaymentStatus.Refunded, OrderStatus.Cancelled),
         };
         // refund count / paid count = 1/2 = 50
         Assert.Equal(50m, SalesMetricEngine.RefundRatePercent(orders));

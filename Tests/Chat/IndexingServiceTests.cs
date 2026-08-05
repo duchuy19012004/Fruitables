@@ -3,8 +3,9 @@ using System.Text;
 using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Options;
-using Fruitables.Services.Chat;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Chat.Knowledge;
+using Fruitables.Services.Chat.Providers;
+using Fruitables.Services.Communications;
 using Fruitables.Tests.Chat.Fakes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -87,9 +88,9 @@ public class IndexingServiceTests
         await using var db = CreateContext();
         var faq = new Faq
         {
-            Title = "Đổi trả",
-            Body = "Trong 7 ngày",
-            Category = "policy",
+            Title = "Hỗ trợ đơn hàng",
+            Body = "Liên hệ cửa hàng để được hỗ trợ",
+            Category = "support",
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow

@@ -1,7 +1,7 @@
 @using Fruitables.Models
 @{
     ViewData["Title"] = "Trang chủ";
-    ViewData["MetaDescription"] = "Mua rau củ, trái cây và combo nông sản tươi tại Fruitables. Đặt hàng nhanh, giao tận nơi và hỗ trợ đổi trả rõ ràng.";
+    ViewData["MetaDescription"] = "Mua rau củ, trái cây và combo nông sản tươi tại Fruitables. Đặt hàng nhanh, giao tận nơi và hỗ trợ khách hàng rõ ràng.";
 
     var products = ViewBag.AllProducts as List<Product> ?? new List<Product>();
     var categories = (ViewBag.Categories as List<Category> ?? new List<Category>())

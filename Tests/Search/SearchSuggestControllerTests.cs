@@ -1,7 +1,7 @@
 // Tests/Search/SearchSuggestControllerTests.cs
 using Fruitables.Controllers.Api;
 using Fruitables.Options;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
 using Fruitables.Services.Search;
 using Fruitables.ViewModels;
 using Microsoft.AspNetCore.Http;

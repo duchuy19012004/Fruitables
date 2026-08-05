@@ -1,9 +1,10 @@
 using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Repositories;
-using Fruitables.Services;
+using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 using Xunit;
+using Fruitables.Services.Analytics.Sales;
 
 namespace Fruitables.Tests;
 
@@ -45,7 +46,7 @@ public class SalesAnalyticsServiceTests
                 Total = 20m,
                 Subtotal = 20m,
                 PaymentStatus = PaymentStatus.Refunded,
-                Status = OrderStatus.Returned
+                Status = OrderStatus.Cancelled
             },
             new Order
             {

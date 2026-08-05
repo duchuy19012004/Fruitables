@@ -1,8 +1,8 @@
 using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Repositories;
-using Fruitables.Services;
-using Fruitables.Services.Pricing;
+using Fruitables.Services.Communications;
+using Fruitables.Services.Pricing.ProductPricing;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 

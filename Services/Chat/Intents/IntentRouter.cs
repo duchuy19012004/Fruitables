@@ -1,5 +1,5 @@
 using System.Text.RegularExpressions;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
 using Microsoft.Extensions.Logging;
 
 namespace Fruitables.Services.Chat.Intents;

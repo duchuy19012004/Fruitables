@@ -3,12 +3,11 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Fruitables.Data;
 using Fruitables.Repositories;
 using Fruitables.Repositories.Interfaces;
-using Fruitables.Services;
-using Fruitables.Services.Chat;
+using Fruitables.Services.Chat.Conversation;
 using Fruitables.Services.Chat.Intents;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Chat.Knowledge;
+using Fruitables.Services.Chat.Providers;
 using Fruitables.Services.Search;
-using Fruitables.Services.Returns;
 using Fruitables.Services.Outbox;
 using Fruitables.Services.Sentiment;
 using Fruitables.Options;
@@ -16,6 +15,26 @@ using Fruitables.Filters;
 using Microsoft.AspNetCore.DataProtection;
 using System.IO;
 using System.Net.Http.Headers;
+using Fruitables.Services.Analytics.Dashboard;
+using Fruitables.Services.Analytics.Sales;
+using Fruitables.Services.Catalog.Categories;
+using Fruitables.Services.Catalog.Combos;
+using Fruitables.Services.Catalog.Products;
+using Fruitables.Services.Communications;
+using Fruitables.Services.Identity.Authentication;
+using Fruitables.Services.Identity.Profiles;
+using Fruitables.Services.Identity.Rbac;
+using Fruitables.Services.Identity.Users;
+using Fruitables.Services.Infrastructure;
+using Fruitables.Services.Orders.Cart;
+using Fruitables.Services.Orders.OrderManagement;
+using Fruitables.Services.Pricing.Combos;
+using Fruitables.Services.Pricing.Coupons;
+using Fruitables.Services.Pricing.ProductPricing;
+using Fruitables.Services.Reviews;
+using Fruitables.Services.Shipping.Address;
+using Fruitables.Services.Shipping.Delivery;
+using Fruitables.Services.Shipping.Providers;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -72,18 +91,9 @@ builder.Services.AddScoped<IUserAuthService, UserAuthService>();
 builder.Services.AddScoped<IGoogleAuthService, GoogleAuthService>();
 builder.Services.AddScoped<IProfileService, ProfileService>();
 builder.Services.AddScoped<IOrderHistoryService, OrderHistoryService>();
-builder.Services.AddScoped<IReturnPolicyService, ReturnPolicyService>();
-builder.Services.AddScoped<IReturnEligibilityService, ReturnEligibilityService>();
-builder.Services.AddScoped<IRefundAmountCalculator, RefundAmountCalculator>();
-builder.Services.AddScoped<IReturnService, ReturnService>();
-builder.Services.AddScoped<IReturnEvidenceService, ReturnEvidenceService>();
-builder.Services.AddScoped<IRefundService, RefundService>();
-builder.Services.AddScoped<IReturnDispositionService, ReturnDispositionService>();
-builder.Services.AddScoped<ReturnPolicyVersionCommand>();
-builder.Services.Configure<OutboxOptions>(builder.Configuration.GetSection(OutboxOptions.SectionName));
-builder.Services.AddScoped<IOutboxService, OutboxService>();
-builder.Services.AddScoped<IOutboxMessageHandler, ReturnDomainEventOutboxHandler>();
-builder.Services.AddScoped<IOutboxMessageHandler, SentimentAnalysisOutboxHandler>();
+ builder.Services.Configure<OutboxOptions>(builder.Configuration.GetSection(OutboxOptions.SectionName));
+ builder.Services.AddScoped<IOutboxService, OutboxService>();
+ builder.Services.AddScoped<IOutboxMessageHandler, SentimentAnalysisOutboxHandler>();
 builder.Services.AddHostedService<OutboxDispatcherWorker>();
 
 // ----- Phân tích cảm xúc review (dùng chung LLM cấu hình "Chat") -----
@@ -212,18 +222,6 @@ builder.Services.AddDataProtection()
     .SetApplicationName("FruitablesApp");
 
 var app = builder.Build();
-
-var returnPolicyArgument = args.FirstOrDefault(argument =>
-    argument.StartsWith("--create-return-policy-version=", StringComparison.OrdinalIgnoreCase));
-if (returnPolicyArgument != null)
-{
-    var policyPath = returnPolicyArgument.Split('=', 2)[1].Trim('"');
-    using var policyScope = app.Services.CreateScope();
-    var command = policyScope.ServiceProvider.GetRequiredService<ReturnPolicyVersionCommand>();
-    var policy = await command.CreateFromFileAsync(policyPath);
-    app.Logger.LogInformation("Created return policy {PolicyId} version {Version}", policy.Id, policy.Version);
-    return;
-}
 
 var rollbackArgument = args.FirstOrDefault(argument =>
     argument.StartsWith("--rollback-product-images=", StringComparison.OrdinalIgnoreCase));

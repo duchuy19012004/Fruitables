@@ -1,7 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
 using Fruitables.Constants;
 using Fruitables.ViewModels;
+using Fruitables.Services.Infrastructure;
 
 namespace Fruitables.ViewComponents;
 

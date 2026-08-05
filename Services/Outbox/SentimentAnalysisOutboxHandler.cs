@@ -1,7 +1,8 @@
 using System.Text.Json;
 using Fruitables.Models;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
 using Microsoft.Extensions.Logging;
+using Fruitables.Services.Sentiment;
 
 namespace Fruitables.Services.Outbox;
 

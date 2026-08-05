@@ -1,14 +1,15 @@
 using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Repositories;
-using Fruitables.Services;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
+using Fruitables.Services.Pricing.ProductPricing;
+using Fruitables.Services.Catalog.Combos;
 
 namespace Fruitables.Tests;
 
@@ -155,7 +156,7 @@ public class ComboOperationsTests
         {
             Id = 2,
             OrderNumber = "R1",
-            Status = OrderStatus.Returned,
+            Status = OrderStatus.Cancelled,
             PaymentStatus = PaymentStatus.Refunded,
             CreatedAt = new DateTime(2026, 7, 21),
             Items =

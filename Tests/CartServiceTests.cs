@@ -1,12 +1,14 @@
 using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Repositories;
-using Fruitables.Services;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 using Microsoft.EntityFrameworkCore;
 using Moq;
 using Xunit;
+using Fruitables.Services.Pricing.Coupons;
+using Fruitables.Services.Pricing.ProductPricing;
+using Fruitables.Services.Orders.Cart;
 
 namespace Fruitables.Tests;
 

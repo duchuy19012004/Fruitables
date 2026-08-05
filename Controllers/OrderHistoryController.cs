@@ -4,8 +4,9 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 using Fruitables.Models;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
+using Fruitables.Services.Orders.OrderManagement;
 
 namespace Fruitables.Controllers;
 
@@ -16,18 +17,16 @@ public class OrderHistoryController : Controller
 {
     private readonly IOrderHistoryService _orderHistoryService;
     private readonly IMemoryCache _cache;
-    private readonly IReturnEligibilityService? _returnEligibility;
     // Cache key cho dropdown trạng thái đơn hàng
     private const string OrderStatusesCacheKey = "OrderHistory_Statuses";
     private const int MaxPageSize = 50;
     private const int MaxSearchTermLength = 50;
 
     // Inject service lịch sử đơn hàng + memory cache (cho dropdown status)
-    public OrderHistoryController(IOrderHistoryService orderHistoryService, IMemoryCache cache, IReturnEligibilityService? returnEligibility = null)
+    public OrderHistoryController(IOrderHistoryService orderHistoryService, IMemoryCache cache)
     {
         _orderHistoryService = orderHistoryService;
         _cache = cache;
-        _returnEligibility = returnEligibility;
     }
 
     // GET: /OrderHistory — danh sách đơn hàng + phân trang + lọc
@@ -102,10 +101,6 @@ public class OrderHistoryController : Controller
             return RedirectToAction(nameof(Index));
         }
 
-        if (_returnEligibility != null && orderDetail.Status == OrderStatus.Delivered)
-        {
-            ViewBag.ReturnEligibility = await _returnEligibility.CheckOrderAsync(id, userId.Value);
-        }
         return View(orderDetail);
     }
 

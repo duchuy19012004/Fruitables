@@ -4,8 +4,8 @@ using Microsoft.EntityFrameworkCore;
 using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Repositories;
-using Fruitables.Services;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
+using Fruitables.Services.Catalog.Categories;
 
 namespace Fruitables.Tests;
 

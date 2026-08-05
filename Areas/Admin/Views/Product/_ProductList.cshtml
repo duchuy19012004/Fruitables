@@ -70,7 +70,7 @@
                             <td class="text-center">
                                 @if (ViewBag.Sentiments != null)
                                 {
-                                    var sent = (System.Collections.Generic.Dictionary<int, Fruitables.Services.ProductSentimentSummary>)ViewBag.Sentiments;
+                                    var sent = (System.Collections.Generic.Dictionary<int, Fruitables.Services.Catalog.Products.ProductSentimentSummary>)ViewBag.Sentiments;
                                     if (sent.TryGetValue(product.Id, out var s) && s.TotalCount > 0)
                                     {
                                         <a asp-area="Admin" asp-controller="Sentiment" asp-action="Reviews" asp-route-productId="@product.Id"

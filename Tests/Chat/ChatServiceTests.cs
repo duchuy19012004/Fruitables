@@ -1,15 +1,17 @@
 using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Options;
-using Fruitables.Services.Chat;
+using Fruitables.Services.Chat.Conversation;
 using Fruitables.Services.Chat.Intents;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Chat.Knowledge;
+using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
+using Fruitables.Services.Catalog.Products;
 
 namespace Fruitables.Tests.Chat;
 

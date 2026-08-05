@@ -1,7 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
+using Fruitables.Services.Orders.Cart;
+using Fruitables.Services.Pricing.Coupons;
+using Fruitables.Services.Shipping.Delivery;
 
 namespace Fruitables.Controllers;
 

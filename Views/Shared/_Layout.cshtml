@@ -1,4 +1,4 @@
-@inject Fruitables.Services.Interfaces.ISettingsService SettingsService
+@inject Fruitables.Services.Infrastructure.ISettingsService SettingsService
 @{
     var siteName = await SettingsService.GetSettingAsync(Fruitables.Constants.SettingKeys.SiteName, "Fruitables");
     var metaTitle = await SettingsService.GetSettingAsync(Fruitables.Constants.SettingKeys.MetaTitle);

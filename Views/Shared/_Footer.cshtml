@@ -1,4 +1,4 @@
-@inject Fruitables.Services.Interfaces.ISettingsService SettingsService
+@inject Fruitables.Services.Infrastructure.ISettingsService SettingsService
 @{
     var siteName = await SettingsService.GetSettingAsync(Fruitables.Constants.SettingKeys.SiteName, "Fruitables");
     var contactAddress = await SettingsService.GetSettingAsync(Fruitables.Constants.SettingKeys.ContactAddress, "Địa chỉ cửa hàng");
@@ -103,7 +103,7 @@
                         <a asp-controller="Chat" asp-action="Index">Hỗ trợ chat</a>
                         <a asp-controller="Home" asp-action="Privacy">Chính sách bảo mật</a>
                         <a asp-controller="Home" asp-action="Policies" asp-fragment="terms">Điều khoản sử dụng</a>
-                        <a asp-controller="Home" asp-action="Policies" asp-fragment="returns">Chính sách đổi trả</a>
+                        <a asp-controller="Home" asp-action="Policies" asp-fragment="support">Hỗ trợ đơn hàng</a>
                         <a asp-controller="Home" asp-action="Policies" asp-fragment="faq">Câu hỏi thường gặp</a>
                     </nav>
                 </div>

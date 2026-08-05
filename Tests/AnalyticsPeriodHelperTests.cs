@@ -1,4 +1,4 @@
-using Fruitables.Services.Analytics;
+using Fruitables.Services.Analytics.Common;
 using Fruitables.ViewModels;
 using Xunit;
 

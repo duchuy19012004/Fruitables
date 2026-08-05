@@ -2,7 +2,10 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Fruitables.Models;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
+using Fruitables.Services.Identity.Profiles;
+using Fruitables.Services.Shipping.Address;
+using Fruitables.Services.Shipping.Providers;
 
 namespace Fruitables.Controllers;
 

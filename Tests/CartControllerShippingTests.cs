@@ -1,11 +1,14 @@
 using Fruitables.Controllers;
 using Fruitables.Models;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
 using Xunit;
+using Fruitables.Services.Orders.Cart;
+using Fruitables.Services.Pricing.Coupons;
+using Fruitables.Services.Shipping.Delivery;
 
 namespace Fruitables.Tests;
 

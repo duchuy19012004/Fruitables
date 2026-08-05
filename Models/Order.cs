@@ -9,11 +9,7 @@ public enum OrderStatus
     Processing,
     Shipped,
     Delivered,
-    Cancelled,
-
-    // Legacy read-only status. New post-delivery issues use ReturnRequest and must
-    // not transition an Order to Returned or restore sellable stock.
-    Returned = 5
+    Cancelled
 }
 
 public enum PaymentMethod
@@ -28,8 +24,7 @@ public enum PaymentStatus
 {
     Pending,
     Paid,
-    Refunded,
-    PartiallyRefunded
+    Refunded
 }
 
 public enum ShippingMethod
@@ -95,5 +90,4 @@ public class Order
     public virtual ICollection<OrderItem> Items { get; set; } = new List<OrderItem>();
     public virtual ICollection<OrderStatusHistory> StatusHistory { get; set; } = new List<OrderStatusHistory>();
     public virtual ICollection<OrderNote> OrderNotes { get; set; } = new List<OrderNote>();
-    public virtual ICollection<Returns.ReturnRequest> ReturnRequests { get; set; } = new List<Returns.ReturnRequest>();
 }

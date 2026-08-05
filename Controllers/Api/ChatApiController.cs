@@ -1,7 +1,7 @@
 using System.Security.Claims;
 using System.Text.Json;
-using Fruitables.Services.Chat;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Chat.Conversation;
+using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;

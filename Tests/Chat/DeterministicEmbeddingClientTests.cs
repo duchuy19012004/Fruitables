@@ -1,4 +1,5 @@
-using Fruitables.Services.Chat;
+using Fruitables.Services.Chat.Providers;
+using Fruitables.Services.Chat.Knowledge;
 using Fruitables.Tests.Chat.Fakes;
 using Xunit;
 
@@ -26,8 +27,8 @@ public class DeterministicEmbeddingClientTests
     {
         var client = new DeterministicEmbeddingClient(dimensions: 32);
 
-        var query = await client.EmbedAsync("chính sách đổi trả hàng");
-        var related = await client.EmbedAsync("đổi trả hàng trong 7 ngày");
+        var query = await client.EmbedAsync("chính sách hỗ trợ đơn hàng");
+        var related = await client.EmbedAsync("hỗ trợ đơn hàng trong 7 ngày");
         var unrelated = await client.EmbedAsync("cách nấu canh bí đỏ");
 
         var simRelated = EmbeddingMath.CosineSimilarity(query, related);

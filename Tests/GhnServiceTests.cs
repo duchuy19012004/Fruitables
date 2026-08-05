@@ -1,10 +1,10 @@
 using System.Net;
 using System.Text;
-using Fruitables.Services;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
+using Fruitables.Services.Shipping.Providers;
 
 namespace Fruitables.Tests;
 

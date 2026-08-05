@@ -14,8 +14,8 @@ public class OutboxServiceTests
         await using var db = new ApplicationDbContext(options);
         var clock = new MutableTimeProvider(Utc(2026, 7, 27));
         var service = new OutboxService(db, clock);
-        var first = await service.EnqueueAsync("returns.test", new { returnRequestId = 12 }, "return:12:test");
-        var duplicate = await service.EnqueueAsync("returns.test", new { returnRequestId = 12 }, "return:12:test");
+        var first = await service.EnqueueAsync("support.test", new { correlationId = 12 }, "support:12:test");
+        var duplicate = await service.EnqueueAsync("support.test", new { correlationId = 12 }, "support:12:test");
         Assert.Same(first, duplicate);
         await using (var beforeSave = new ApplicationDbContext(options)) Assert.Empty(await beforeSave.OutboxMessages.ToListAsync());
         await db.SaveChangesAsync();
@@ -111,13 +111,13 @@ public class OutboxServiceTests
     {
         await using var db = new ApplicationDbContext(options);
         var service = new OutboxService(db, clock);
-        await service.EnqueueAsync("returns.test", new { key }, key);
+        await service.EnqueueAsync("support.test", new { key }, key);
         await db.SaveChangesAsync();
     }
 
     private static Fruitables.Models.OutboxMessage Message(string key, DateTime occurred, DateTime? processed = null, DateTime? deadLettered = null) => new()
     {
-        Type = "returns.test", Payload = "{}", IdempotencyKey = key, OccurredAtUtc = occurred,
+            Type = "support.test", Payload = "{}", IdempotencyKey = key, OccurredAtUtc = occurred,
         NextAttemptAtUtc = occurred, ProcessedAtUtc = processed, DeadLetteredAtUtc = deadLettered
     };
     private static DateTime Utc(int year, int month, int day) => new(year, month, day, 0, 0, 0, DateTimeKind.Utc);

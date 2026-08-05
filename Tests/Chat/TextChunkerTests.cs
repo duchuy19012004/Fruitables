@@ -1,4 +1,4 @@
-using Fruitables.Services.Chat;
+using Fruitables.Services.Chat.Knowledge;
 using Xunit;
 
 namespace Fruitables.Tests.Chat;

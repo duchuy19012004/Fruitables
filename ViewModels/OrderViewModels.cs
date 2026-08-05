@@ -1,5 +1,4 @@
 using Fruitables.Models;
-using Microsoft.AspNetCore.Http;
 
 namespace Fruitables.ViewModels;
 
@@ -43,7 +42,7 @@ public class UpdatePaymentStatusRequest
 
 /// <summary>
 /// Request model for combined order status and payment status update
-/// Supports file attachments for Cancelled/Returned orders (Requirements 1.1, 10.1)
+/// Supports combined order and payment status updates.
 /// </summary>
 public class UpdateCombinedStatusRequest
 {
@@ -51,7 +50,6 @@ public class UpdateCombinedStatusRequest
     public OrderStatus NewOrderStatus { get; set; }
     public PaymentStatus NewPaymentStatus { get; set; }
     public string? Notes { get; set; }
-    public List<IFormFile>? Attachments { get; set; }
     
     /// <summary>
     /// Admin ID performing the update. Will be moved to method parameter in future refactoring.
@@ -93,9 +91,8 @@ public static class StateTransitionRules
     /// - Pending: Can transition to Processing or Cancelled
     /// - Processing: Can transition to Shipped or Cancelled
     /// - Shipped: Can transition only to Delivered
-    /// - Delivered: Terminal for the order lifecycle; post-delivery issues use ReturnRequest
+    /// - Delivered: Terminal for the order lifecycle
     /// - Cancelled: Terminal state - no transitions allowed
-    /// - Returned: Legacy terminal state kept only for historical records
     /// </summary>
     public static readonly Dictionary<OrderStatus, StateTransitionRule> Rules = new()
     {
@@ -121,19 +118,13 @@ public static class StateTransitionRules
         {
             CurrentStatus = OrderStatus.Delivered,
             AllowedTransitions = Array.Empty<OrderStatus>(),
-            DisabledTransitions = new[] { OrderStatus.Pending, OrderStatus.Processing, OrderStatus.Shipped, OrderStatus.Cancelled, OrderStatus.Returned }
+            DisabledTransitions = new[] { OrderStatus.Pending, OrderStatus.Processing, OrderStatus.Shipped, OrderStatus.Cancelled }
         },
         [OrderStatus.Cancelled] = new StateTransitionRule
         {
             CurrentStatus = OrderStatus.Cancelled,
             AllowedTransitions = Array.Empty<OrderStatus>(),
-            DisabledTransitions = new[] { OrderStatus.Pending, OrderStatus.Processing, OrderStatus.Shipped, OrderStatus.Delivered, OrderStatus.Returned }
-        },
-        [OrderStatus.Returned] = new StateTransitionRule
-        {
-            CurrentStatus = OrderStatus.Returned,
-            AllowedTransitions = Array.Empty<OrderStatus>(),
-            DisabledTransitions = new[] { OrderStatus.Pending, OrderStatus.Processing, OrderStatus.Shipped, OrderStatus.Delivered, OrderStatus.Cancelled }
+            DisabledTransitions = new[] { OrderStatus.Pending, OrderStatus.Processing, OrderStatus.Shipped, OrderStatus.Delivered }
         }
     };
 
@@ -188,14 +179,13 @@ public static class StateTransitionRules
 
     /// <summary>
     /// Checks if a status is terminal in the order lifecycle.
-    /// Delivered issues are handled by ReturnRequest instead of reopening the order.
     /// Requirements: 6.2, 6.3
     /// </summary>
     /// <param name="status">The order status to check</param>
     /// <returns>True if the status is terminal</returns>
     public static bool IsTerminalState(OrderStatus status)
     {
-        return status is OrderStatus.Delivered or OrderStatus.Cancelled or OrderStatus.Returned;
+        return status is OrderStatus.Delivered or OrderStatus.Cancelled;
     }
 }
 
@@ -243,18 +233,11 @@ public static class StatusCombinationRules
         [OrderStatus.Cancelled] = new StatusCombinationRule
         {
             OrderStatus = OrderStatus.Cancelled,
-            // A paid cancellation stays Paid until RefundService confirms money movement.
+            // A paid cancellation stays Paid until the financial workflow confirms money movement.
             AllowedPaymentStatuses = new[] { PaymentStatus.Pending, PaymentStatus.Paid, PaymentStatus.Refunded },
             AutoSetPaymentStatus = null,
             IsPaymentLocked = false
         },
-        [OrderStatus.Returned] = new StatusCombinationRule
-        {
-            OrderStatus = OrderStatus.Returned,
-            AllowedPaymentStatuses = new[] { PaymentStatus.Refunded },
-            AutoSetPaymentStatus = PaymentStatus.Refunded,
-            IsPaymentLocked = true
-        }
     };
 
     /// <summary>
@@ -294,18 +277,11 @@ public static class StatusCombinationRules
         [OrderStatus.Cancelled] = new StatusCombinationRule
         {
             OrderStatus = OrderStatus.Cancelled,
-            // A paid cancellation stays Paid until RefundService confirms money movement.
+            // A paid cancellation stays Paid until the financial workflow confirms money movement.
             AllowedPaymentStatuses = new[] { PaymentStatus.Pending, PaymentStatus.Paid, PaymentStatus.Refunded },
             AutoSetPaymentStatus = null,
             IsPaymentLocked = false
         },
-        [OrderStatus.Returned] = new StatusCombinationRule
-        {
-            OrderStatus = OrderStatus.Returned,
-            AllowedPaymentStatuses = new[] { PaymentStatus.Refunded },
-            AutoSetPaymentStatus = PaymentStatus.Refunded,
-            IsPaymentLocked = true
-        }
     };
 
     /// <summary>

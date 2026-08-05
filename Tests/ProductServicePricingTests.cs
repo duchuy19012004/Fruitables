@@ -1,9 +1,11 @@
 using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Repositories;
-using Fruitables.Services;
+using Fruitables.Services.Communications;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
+using Fruitables.Services.Catalog.Products;
+using Fruitables.Services.Pricing.ProductPricing;
 
 namespace Fruitables.Tests;
 

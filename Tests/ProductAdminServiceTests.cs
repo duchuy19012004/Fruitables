@@ -4,12 +4,13 @@ using Microsoft.EntityFrameworkCore;
 using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Repositories;
-using Fruitables.Services;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Fruitables.Services.Catalog.Products;
+using Fruitables.Services.Chat.Knowledge;
 
 namespace Fruitables.Tests
 {

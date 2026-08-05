@@ -1,9 +1,10 @@
 using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Repositories;
-using Fruitables.Services;
+using Fruitables.Services.Communications;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
+using Fruitables.Services.Identity.Rbac;
 
 namespace Fruitables.Tests;
 

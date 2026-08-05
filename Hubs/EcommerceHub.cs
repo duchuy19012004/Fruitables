@@ -2,7 +2,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
+using Fruitables.Services.Chat.Conversation;
 
 namespace Fruitables.Hubs
 {
@@ -95,7 +96,7 @@ namespace Fruitables.Hubs
             try
             {
                 // Tạo session nếu chưa có (dùng ChatState để track)
-                var state = Services.Chat.ChatState.GetOrAdd(Context);
+                var state = Services.Chat.Conversation.ChatState.GetOrAdd(Context);
                 if (!state.SessionId.HasValue)
                 {
                     state.SessionId = await _chatService.CreateSessionAsync(userId, "signalr");

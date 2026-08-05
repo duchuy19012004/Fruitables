@@ -6,11 +6,12 @@ using Microsoft.Extensions.Logging;
 using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Repositories;
-using Fruitables.Services;
+using Fruitables.Services.Communications;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Fruitables.Services.Identity.Rbac;
 
 namespace Fruitables.Tests
 {

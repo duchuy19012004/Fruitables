@@ -2,9 +2,9 @@ using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Options;
 using Fruitables.Repositories;
-using Fruitables.Services;
-using Fruitables.Services.Chat;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
+using Fruitables.Services.Chat.Knowledge;
+using Fruitables.Services.Chat.Providers;
 using Fruitables.Services.Outbox;
 using Fruitables.Services.Sentiment;
 using Fruitables.Tests.Chat.Fakes;
@@ -16,6 +16,9 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
+using Fruitables.Services.Analytics.Dashboard;
+using Fruitables.Services.Reviews;
+using Fruitables.Services.Infrastructure;
 
 namespace Fruitables.Tests;
 
@@ -681,7 +684,7 @@ public class SentimentModuleTests
 
         var service = new ReviewService(
             new Fruitables.Repositories.UnitOfWork(db),
-            Mock.Of<Fruitables.Services.IWordMaskingService>(),
+            Mock.Of<Fruitables.Services.Reviews.IWordMaskingService>(),
             new MemoryCache(new MemoryCacheOptions()),
             NullLogger<ReviewService>.Instance,
             new OutboxService(db, TimeProvider.System),
@@ -724,7 +727,7 @@ public class SentimentModuleTests
         {
             var service = new ReviewService(
                 new UnitOfWork(db),
-                Mock.Of<Fruitables.Services.IWordMaskingService>(),
+                Mock.Of<Fruitables.Services.Reviews.IWordMaskingService>(),
                 new MemoryCache(new MemoryCacheOptions()),
                 NullLogger<ReviewService>.Instance,
                 failingOutbox.Object,

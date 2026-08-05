@@ -1,10 +1,12 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
+using Fruitables.Services.Catalog.Combos;
+using Fruitables.Services.Catalog.Products;
 
 namespace Fruitables.Areas.Admin.Controllers;
 

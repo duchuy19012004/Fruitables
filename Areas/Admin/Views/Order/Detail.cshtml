@@ -387,7 +387,7 @@
                                 <p class="text-sm text-slate-700">@Model.Notes</p>
                             </div>
                         }
-                        @if (Model.PaymentStatus == PaymentStatus.Pending && Model.Status != OrderStatus.Cancelled && Model.Status != OrderStatus.Returned)
+                        @if (Model.PaymentStatus == PaymentStatus.Pending && Model.Status != OrderStatus.Cancelled)
                         {
                             <button type="button" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-all shadow-sm" onclick="openPaymentModal()">
                                 <span class="material-icons-outlined">check_circle</span>
@@ -433,17 +433,17 @@
                             Xác nhận đã giao hàng
                         </button>
                         <div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                            Hàng đã xuất kho. Giao thất bại hoặc hoàn hàng phải được xử lý qua module Khiếu nại &amp; đổi trả.
+                            Hàng đã xuất kho. Không thể hủy hoặc mở lại đơn hàng ở giai đoạn này.
                         </div>
                     }
                     else if (Model.Status == OrderStatus.Delivered)
                     {
                         <div class="rounded-lg border border-green-200 bg-green-50 p-3 text-center text-sm text-green-800">
                             <span class="material-icons-outlined text-green-500 align-middle">check_circle</span>
-                            Đơn hàng đã hoàn thành. Yêu cầu sau giao hàng phải được xử lý qua module Khiếu nại &amp; đổi trả.
+                            Đơn hàng đã hoàn thành. Vui lòng liên hệ CSKH nếu cần hỗ trợ.
                         </div>
                     }
-                    else if (Model.Status == OrderStatus.Cancelled || Model.Status == OrderStatus.Returned)
+                    else if (Model.Status == OrderStatus.Cancelled)
                     {
                         <div class="text-center text-slate-500 py-4">
                             <span class="material-icons-outlined text-4xl mb-2 block">lock</span>
@@ -545,7 +545,6 @@
         OrderStatus.Shipped => "Đang giao",
         OrderStatus.Delivered => "Đã giao",
         OrderStatus.Cancelled => "Đã hủy",
-        OrderStatus.Returned => "Trả hàng",
         _ => status.ToString()
     };
 
@@ -564,7 +563,6 @@
         OrderStatus.Shipped => "bg-purple-100 text-purple-800",
         OrderStatus.Delivered => "bg-green-100 text-green-800",
         OrderStatus.Cancelled => "bg-red-100 text-red-800",
-        OrderStatus.Returned => "bg-gray-100 text-gray-800",
         _ => "bg-gray-100 text-gray-800"
     };
 

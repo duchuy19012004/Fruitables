@@ -1,9 +1,0 @@
-@using Fruitables.Helpers
-@using Fruitables.Models.Returns
-@model IReadOnlyList<ReturnRequest>
-@{ ViewData["Title"] = "Yêu cầu hỗ trợ"; }
-<div class="container py-5 mt-5">
-    <div class="d-flex justify-content-between align-items-center mb-4"><h1>Yêu cầu hỗ trợ</h1><a asp-controller="OrderHistory" asp-action="Index" class="btn btn-outline-primary">Xem đơn hàng</a></div>
-    @if (Model.Count == 0) { <div class="alert alert-light border">Bạn chưa có yêu cầu nào.</div> }
-    else { <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Mã</th><th>Đơn hàng</th><th>Ngày gửi</th><th>Trạng thái</th><th></th></tr></thead><tbody>@foreach (var item in Model) { <tr><td><strong>@item.ReturnNumber</strong></td><td>@item.Order.OrderNumber</td><td>@item.SubmittedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td><td><span class="badge bg-secondary">@ReturnDisplay.CustomerProgress(item.Status)</span></td><td><a asp-action="Details" asp-route-id="@item.Id">Chi tiết</a></td></tr> }</tbody></table></div> }
-</div>

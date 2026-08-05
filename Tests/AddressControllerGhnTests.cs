@@ -1,12 +1,15 @@
 using System.Security.Claims;
 using Fruitables.Controllers;
 using Fruitables.Models;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using Moq;
 using Xunit;
+using Fruitables.Services.Identity.Profiles;
+using Fruitables.Services.Shipping.Address;
+using Fruitables.Services.Shipping.Providers;
 
 namespace Fruitables.Tests;
 

@@ -1,10 +1,11 @@
 // Services/Search/SearchSuggestService.cs
 using Fruitables.Data;
 using Fruitables.Options;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Fruitables.Services.Pricing.ProductPricing;
 
 namespace Fruitables.Services.Search;
 

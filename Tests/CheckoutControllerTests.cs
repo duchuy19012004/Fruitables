@@ -4,8 +4,7 @@ using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Repositories;
 using Fruitables.Repositories.Interfaces;
-using Fruitables.Services;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.Http;
@@ -14,6 +13,10 @@ using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using Microsoft.EntityFrameworkCore;
 using Moq;
 using Xunit;
+using Fruitables.Services.Orders.Cart;
+using Fruitables.Services.Orders.OrderManagement;
+using Fruitables.Services.Shipping.Address;
+using Fruitables.Services.Shipping.Delivery;
 
 namespace Fruitables.Tests;
 

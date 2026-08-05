@@ -2,7 +2,7 @@ using System.Data;
 using System.Text.Json;
 using Fruitables.Data;
 using Fruitables.Models;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
 using Microsoft.EntityFrameworkCore;
 
 namespace Fruitables.Services.Outbox;

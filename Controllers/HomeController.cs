@@ -1,5 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
+using Fruitables.Services.Catalog.Categories;
+using Fruitables.Services.Catalog.Products;
+using Fruitables.Services.Orders.Cart;
+using Fruitables.Services.Reviews;
 
 namespace Fruitables.Controllers;
 
@@ -41,7 +45,7 @@ public class HomeController : Controller
         return View();
     }
 
-    // GET: Điều khoản, đổi trả và câu hỏi thường gặp
+    // GET: Điều khoản, hỗ trợ mua hàng và câu hỏi thường gặp
     public IActionResult Policies()
     {
         return View();

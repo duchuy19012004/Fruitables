@@ -7,8 +7,9 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Repositories;
-using Fruitables.Services;
-using Fruitables.Services.Interfaces;
+using Fruitables.Services.Communications;
+using Fruitables.Services.Chat.Knowledge;
+using Fruitables.Services.Infrastructure;
 
 namespace Fruitables.Tests;
 

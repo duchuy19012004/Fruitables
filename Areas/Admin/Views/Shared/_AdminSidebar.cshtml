@@ -1,10 +1,8 @@
 @using System.Security.Claims
-@inject Fruitables.Services.Interfaces.IRbacService RbacService
+@inject Fruitables.Services.Identity.Rbac.IRbacService RbacService
 @{
     var controller = ViewContext.RouteData.Values["controller"]?.ToString();
     var action = ViewContext.RouteData.Values["action"]?.ToString();
-    var returnActive = controller == "Return" && (action == "Index" || action == "Detail");
-    var refundActive = controller == "Refund" && (action == "Index" || action == "Detail");
     
     // Get current user ID for permission checking
     var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -87,26 +85,6 @@
                 <span>Đơn hàng</span>
             </a>
         </li>
-        @if (userId > 0 && await RbacService.HasPermissionAsync(userId, "returns.view"))
-        {
-            <li class="sidebar-nav-item">
-                <a asp-action="Index" asp-controller="Return" asp-area="Admin"
-                   class="sidebar-nav-link @(returnActive ? "active" : "")">
-                    <i class="fas fa-undo-alt"></i>
-                    <span>Khiếu nại & đổi trả</span>
-                </a>
-            </li>
-        }
-        @if (userId > 0 && await RbacService.HasPermissionAsync(userId, "returns.refund"))
-        {
-            <li class="sidebar-nav-item">
-                <a asp-action="Index" asp-controller="Refund" asp-area="Admin"
-                   class="sidebar-nav-link @(refundActive ? "active" : "")">
-                    <i class="fas fa-hand-holding-usd"></i>
-                    <span>Hoàn tiền</span>
-                </a>
-            </li>
-        }
         <li class="sidebar-nav-item">
             <a asp-action="Index" asp-controller="Coupon" asp-area="Admin"
                class="sidebar-nav-link @(controller == "Coupon" ? "active" : "")">
