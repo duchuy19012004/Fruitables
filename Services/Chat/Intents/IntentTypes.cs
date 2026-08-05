@@ -8,6 +8,7 @@ public enum ChatIntentKind
     OrderStatus,      // tra cứu đơn hàng
     CouponCheck,      // kiểm tra mã giảm giá
     ShippingQuote,    // hỏi phí ship
+    SmallTalk,        // chào hỏi / xã giao
     OutOfScope        // ngoài phạm vi / prompt injection
 }
 

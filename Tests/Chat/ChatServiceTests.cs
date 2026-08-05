@@ -19,11 +19,16 @@ public class ChatServiceTests
 {
     private static IIntentRouter CreateGeneralIntentRouter()
     {
+        return CreateIntentRouter(ChatIntent.Of(ChatIntentKind.GeneralInquiry, 0.5f));
+    }
+
+    private static IIntentRouter CreateIntentRouter(ChatIntent intent)
+    {
         var router = new Mock<IIntentRouter>();
         router.Setup(service => service.ClassifyAsync(
                 It.IsAny<string>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(ChatIntent.Of(ChatIntentKind.GeneralInquiry, 0.5f));
+            .ReturnsAsync(intent);
         return router.Object;
     }
 
@@ -95,6 +100,35 @@ public class ChatServiceTests
     }
 
     [Fact]
+    public async Task SendAsync_small_talk_returns_fixed_reply_without_rag()
+    {
+        await using var db = CreateContext();
+        var rag = new Mock<IRagService>(MockBehavior.Strict);
+        var sut = new ChatService(
+            db,
+            rag.Object,
+            CreateIntentRouter(new ChatIntent
+            {
+                Kind = ChatIntentKind.SmallTalk,
+                Confidence = 0.95f,
+                Slots = new Dictionary<string, string> { ["category"] = "greeting" }
+            }),
+            Mock.Of<IProductService>(),
+            new MemoryCache(new MemoryCacheOptions()),
+            Microsoft.Extensions.Options.Options.Create(new ChatOptions()),
+            NullLogger<ChatService>.Instance);
+
+        var response = await sut.SendAsync(
+            await sut.CreateSessionAsync(null, "widget"), "chào", null, "127.0.0.1");
+
+        Assert.Equal(
+            "Chào bạn! Mình có thể hỗ trợ về sản phẩm, đơn hàng và chính sách của Fruitables.",
+            response.AssistantMessage.Content);
+        Assert.False(response.AssistantMessage.Refused);
+        rag.Verify(r => r.AnswerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task SendAsync_rejects_empty_or_too_long()
     {
         await using var db = CreateContext();
@@ -137,6 +171,35 @@ public class ChatServiceTests
 
         // Only two user + two assistant messages persisted (third/fourth blocked before save)
         Assert.Equal(4, await db.ChatMessages.CountAsync());
+    }
+
+    [Fact]
+    public async Task SendStreamingAsync_small_talk_returns_fixed_reply_without_rag()
+    {
+        await using var db = CreateContext();
+        var rag = new Mock<IRagService>(MockBehavior.Strict);
+        var sut = new ChatService(
+            db,
+            rag.Object,
+            CreateIntentRouter(new ChatIntent
+            {
+                Kind = ChatIntentKind.SmallTalk,
+                Confidence = 0.95f,
+                Slots = new Dictionary<string, string> { ["category"] = "thanks" }
+            }),
+            Mock.Of<IProductService>(),
+            new MemoryCache(new MemoryCacheOptions()),
+            Microsoft.Extensions.Options.Options.Create(new ChatOptions()),
+            NullLogger<ChatService>.Instance);
+
+        var events = new List<ChatStreamEvent>();
+        await foreach (var evt in sut.SendStreamingAsync(
+            await sut.CreateSessionAsync(null, "widget"), "cảm ơn", null, "127.0.0.1"))
+            events.Add(evt);
+
+        Assert.Contains(events, e => e.Type == "token" && e.Text == "Không có gì! Mình luôn sẵn sàng hỗ trợ bạn.");
+        Assert.False(Assert.Single(events, e => e.Type == "done").Refused);
+        rag.Verify(r => r.AnswerStreamingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

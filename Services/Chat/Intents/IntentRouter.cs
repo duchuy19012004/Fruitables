@@ -40,6 +40,16 @@ public sealed class IntentRouter : IIntentRouter
         }
     };
 
+    private static readonly Dictionary<string, string[]> SmallTalkPatterns = new()
+    {
+        ["greeting"] = ["chào", "xin chào", "hello", "hi"],
+        ["thanks"] = ["cảm ơn", "cám ơn"],
+        ["apology"] = ["xin lỗi"],
+        ["goodbye"] = ["tạm biệt", "hẹn gặp lại"],
+        ["acknowledgement"] = ["ok", "được", "ừ", "vâng", "rồi"],
+        ["capability"] = ["bạn có thể giúp gì", "bạn làm được gì", "bạn hỗ trợ gì", "hỗ trợ gì"]
+    };
+
     // OutOfScope patterns
     private static readonly string[] OutOfScopePatterns = new[]
     {
@@ -91,9 +101,37 @@ public sealed class IntentRouter : IIntentRouter
             });
         }
 
+        if (TryClassifySmallTalk(message, out var category))
+        {
+            _logger.LogInformation("Intent: SmallTalk ({Category})", category);
+            return Task.FromResult(new ChatIntent
+            {
+                Kind = ChatIntentKind.SmallTalk,
+                Confidence = 0.95f,
+                Slots = new Dictionary<string, string> { ["category"] = category }
+            });
+        }
+
         // Default: GeneralInquiry
         _logger.LogInformation("Intent: GeneralInquiry (no keyword match)");
         return Task.FromResult(ChatIntent.Of(ChatIntentKind.GeneralInquiry, 0.5f));
+    }
+
+    private static bool TryClassifySmallTalk(string message, out string category)
+    {
+        var normalized = Regex.Replace(message, @"[^\p{L}\p{N}]+", " ").Trim();
+        foreach (var (name, patterns) in SmallTalkPatterns)
+        {
+            if (patterns.Any(pattern => normalized == pattern
+                || normalized.StartsWith(pattern + " ", StringComparison.Ordinal)))
+            {
+                category = name;
+                return true;
+            }
+        }
+
+        category = string.Empty;
+        return false;
     }
 
     private static float CalculateScore(string message, string[] keywords)

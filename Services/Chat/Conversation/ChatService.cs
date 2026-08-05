@@ -181,6 +181,9 @@ public sealed class ChatService : IChatService
             case ChatIntentKind.OutOfScope:
                 return ("Xin lỗi, mình chỉ hỗ trợ các câu hỏi về sản phẩm, đơn hàng và chính sách cửa hàng.", null);
 
+            case ChatIntentKind.SmallTalk:
+                return (HandleSmallTalk(intent), null);
+
             default: // GeneralInquiry → RAG
                 var answer = await _ragService.AnswerAsync(message, ct);
                 return (answer.Content, null);
@@ -228,6 +231,13 @@ public sealed class ChatService : IChatService
                 yield return ChatStreamEvent.Done(session.Id, oosContent, false, oosMsg.Id);
                 yield break;
 
+            case ChatIntentKind.SmallTalk:
+                var smallTalkContent = HandleSmallTalk(intent);
+                var smallTalkMsg = await SaveUserAndAssistantAsync(session, message, smallTalkContent, null, ct);
+                yield return ChatStreamEvent.Token(smallTalkContent);
+                yield return ChatStreamEvent.Done(session.Id, smallTalkContent, false, smallTalkMsg.Id);
+                yield break;
+
             default: // GeneralInquiry → RAG streaming
                 string fullContent = string.Empty;
                 var refused = false;
@@ -269,6 +279,20 @@ public sealed class ChatService : IChatService
     }
 
     // --- Intent handlers ---
+
+    private static string HandleSmallTalk(ChatIntent intent)
+    {
+        var category = intent.Slots.TryGetValue("category", out var value) ? value : "greeting";
+        return category switch
+        {
+            "thanks" => "Không có gì! Mình luôn sẵn sàng hỗ trợ bạn.",
+            "apology" => "Không sao nhé! Mình vẫn sẵn sàng hỗ trợ bạn.",
+            "goodbye" => "Tạm biệt bạn! Chúc bạn một ngày vui vẻ.",
+            "acknowledgement" => "Được nhé! Bạn cần mình hỗ trợ gì thêm không?",
+            "capability" => "Mình có thể hỗ trợ về sản phẩm, đơn hàng, phí vận chuyển, mã giảm giá và chính sách cửa hàng.",
+            _ => "Chào bạn! Mình có thể hỗ trợ về sản phẩm, đơn hàng và chính sách của Fruitables."
+        };
+    }
 
     private (string Content, string? Action) HandleOrderStatus(ChatIntent intent, int? userId)
     {
