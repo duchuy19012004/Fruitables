@@ -4,6 +4,7 @@ using Fruitables.Models;
 using Fruitables.Models.Returns;
 using Fruitables.Services.Catalog.Products;
 using Fruitables.Services.Orders;
+using Fruitables.ViewModels;
 using Fruitables.ViewModels.Returns;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -67,7 +68,8 @@ public sealed class ReturnService : IReturnService
 
     public async Task<ReturnOperationResult> CreateAsync(CreateReturnCommand command, int userId)
     {
-        if (command.Items.Count == 0)
+        var submittedItems = command.Items.Where(item => item.RequestedQuantity != 0).ToList();
+        if (submittedItems.Count == 0)
             return Fail("Vui lòng chọn ít nhất một sản phẩm.");
 
         var order = await _context.Orders
@@ -87,10 +89,10 @@ public sealed class ReturnService : IReturnService
             return Fail("Đã quá thời hạn 24 giờ để gửi khiếu nại.");
         if (await _context.ReturnRequests.AnyAsync(item => item.OrderId == order.Id))
             return Fail("Đơn hàng này đã có yêu cầu khiếu nại.");
-        if (command.Items.Select(item => item.OrderItemId).Distinct().Count() != command.Items.Count)
+        if (submittedItems.Select(item => item.OrderItemId).Distinct().Count() != submittedItems.Count)
             return Fail("Mỗi sản phẩm chỉ được xuất hiện một lần trong yêu cầu.");
 
-        var orderItems = command.Items.ToDictionary(item => item.OrderItemId);
+        var orderItems = submittedItems.ToDictionary(item => item.OrderItemId);
         var requestItems = new List<ReturnRequestItem>();
         foreach (var orderItem in order.Items)
         {
@@ -113,7 +115,7 @@ public sealed class ReturnService : IReturnService
             });
         }
 
-        if (requestItems.Count != command.Items.Count)
+        if (requestItems.Count != submittedItems.Count)
             return Fail("Một số sản phẩm không thuộc đơn hàng.");
 
         var request = new ReturnRequest
@@ -136,9 +138,8 @@ public sealed class ReturnService : IReturnService
         try
         {
             transaction = await BeginTransactionAsync();
-            for (var index = 0; index < command.Items.Count; index++)
+            foreach (var commandItem in submittedItems)
             {
-                var commandItem = command.Items[index];
                 var requestItem = requestItems.Single(item => item.OrderItemId == commandItem.OrderItemId);
                 foreach (var file in commandItem.Evidence)
                 {
@@ -227,6 +228,62 @@ public sealed class ReturnService : IReturnService
         request.AdminNote = command.Note.Trim();
         AddEvent(request, ReturnEventType.CustomerInfoRequested, oldStatus, request.Status, adminId, request.AdminNote);
         return await SaveStatusChangeAsync(request);
+    }
+
+    public async Task<PagedResult<ReturnQueueRowViewModel>> GetAdminQueueAsync(ReturnQueueFilter filter)
+    {
+        var page = Math.Max(1, filter.Page);
+        var pageSize = Math.Clamp(filter.PageSize, 1, 100);
+        var query = _context.ReturnRequests
+            .AsNoTracking()
+            .Include(request => request.Order)
+            .Include(request => request.User)
+            .AsQueryable();
+        if (filter.Status.HasValue)
+            query = query.Where(request => request.Status == filter.Status.Value);
+        if (!string.IsNullOrWhiteSpace(filter.Search))
+        {
+            var search = filter.Search.Trim();
+            query = query.Where(request => request.ReturnNumber.Contains(search) ||
+                request.Order.OrderNumber.Contains(search) ||
+                request.User.Name.Contains(search));
+        }
+        if (filter.FromDateUtc.HasValue)
+            query = query.Where(request => request.SubmittedAtUtc >= filter.FromDateUtc.Value);
+        if (filter.ToDateUtc.HasValue)
+            query = query.Where(request => request.SubmittedAtUtc < filter.ToDateUtc.Value.AddDays(1));
+
+        var totalCount = await query.CountAsync();
+        var rows = await query
+            .OrderByDescending(request => request.SubmittedAtUtc)
+            .ThenByDescending(request => request.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(request => new ReturnQueueRowViewModel
+            {
+                Id = request.Id,
+                ReturnNumber = request.ReturnNumber,
+                OrderNumber = request.Order.OrderNumber,
+                CustomerName = request.User.Name,
+                RequestedAmount = request.RequestedAmount,
+                Status = request.Status,
+                SubmittedAtUtc = request.SubmittedAtUtc
+            })
+            .ToListAsync();
+
+        return new PagedResult<ReturnQueueRowViewModel>
+        {
+            Items = rows,
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize
+        };
+    }
+
+    public async Task<ReturnDetailViewModel?> GetAdminDetailAsync(int returnRequestId)
+    {
+        var request = await LoadRequestAsync(returnRequestId);
+        return request == null ? null : Map(request);
     }
 
     public async Task<ReturnOperationResult> DecideAsync(

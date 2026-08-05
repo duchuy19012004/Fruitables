@@ -1,0 +1,52 @@
+@model Fruitables.ViewModels.PagedResult<Fruitables.ViewModels.Returns.ReturnQueueRowViewModel>
+@using Fruitables.Models.Returns
+@{
+    ViewData["Title"] = "Khiếu nại hoàn tiền";
+    Layout = "~/Areas/Admin/Views/Shared/_AdminDashboardLayout.cshtml";
+    var filter = ViewBag.Filter as Fruitables.ViewModels.Returns.ReturnQueueFilter;
+}
+
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Khiếu nại hoàn tiền</h2>
+        <span class="text-muted">@Model.TotalCount yêu cầu</span>
+    </div>
+    <form method="get" class="row g-2 mb-4">
+        <div class="col-md-4"><input name="Search" value="@filter?.Search" class="form-control" placeholder="Mã yêu cầu, mã đơn, khách hàng" /></div>
+        <div class="col-md-3">
+            <select name="Status" class="form-select">
+                <option value="">Tất cả trạng thái</option>
+                @foreach (var status in Enum.GetValues<ReturnRequestStatus>())
+                {
+                    <option value="@status" selected="@(filter?.Status == status)">@status</option>
+                }
+            </select>
+        </div>
+        <div class="col-md-2"><button class="btn btn-primary w-100" type="submit">Lọc</button></div>
+    </form>
+    <div class="card">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead><tr><th>Yêu cầu</th><th>Đơn hàng</th><th>Khách hàng</th><th>Số tiền</th><th>Trạng thái</th><th>Gửi lúc</th><th></th></tr></thead>
+                <tbody>
+                @foreach (var row in Model.Items)
+                {
+                    <tr>
+                        <td>@row.ReturnNumber</td>
+                        <td>@row.OrderNumber</td>
+                        <td>@row.CustomerName</td>
+                        <td>@row.RequestedAmount.ToString("N0")₫</td>
+                        <td><span class="badge bg-light text-dark">@row.Status</span></td>
+                        <td>@row.SubmittedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                        <td><a asp-action="Detail" asp-route-id="@row.Id" class="btn btn-sm btn-outline-primary">Mở</a></td>
+                    </tr>
+                }
+                @if (!Model.Items.Any())
+                {
+                    <tr><td colspan="7" class="text-center text-muted py-5">Chưa có yêu cầu.</td></tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

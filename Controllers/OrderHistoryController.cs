@@ -7,6 +7,7 @@ using Fruitables.Models;
 using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 using Fruitables.Services.Orders.OrderManagement;
+using Fruitables.Services.Returns;
 
 namespace Fruitables.Controllers;
 
@@ -17,16 +18,21 @@ public class OrderHistoryController : Controller
 {
     private readonly IOrderHistoryService _orderHistoryService;
     private readonly IMemoryCache _cache;
+    private readonly IReturnService? _returnService;
     // Cache key cho dropdown trạng thái đơn hàng
     private const string OrderStatusesCacheKey = "OrderHistory_Statuses";
     private const int MaxPageSize = 50;
     private const int MaxSearchTermLength = 50;
 
     // Inject service lịch sử đơn hàng + memory cache (cho dropdown status)
-    public OrderHistoryController(IOrderHistoryService orderHistoryService, IMemoryCache cache)
+    public OrderHistoryController(
+        IOrderHistoryService orderHistoryService,
+        IMemoryCache cache,
+        IReturnService? returnService = null)
     {
         _orderHistoryService = orderHistoryService;
         _cache = cache;
+        _returnService = returnService;
     }
 
     // GET: /OrderHistory — danh sách đơn hàng + phân trang + lọc
@@ -100,6 +106,9 @@ public class OrderHistoryController : Controller
             TempData["ErrorMessage"] = "Không tìm thấy đơn hàng hoặc bạn không có quyền xem đơn hàng này.";
             return RedirectToAction(nameof(Index));
         }
+
+        if (_returnService != null)
+            orderDetail.ReturnEligibility = await _returnService.GetEligibilityAsync(id, userId.Value);
 
         return View(orderDetail);
     }

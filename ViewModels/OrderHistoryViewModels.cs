@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using Fruitables.Models;
+using Fruitables.ViewModels.Returns;
 
 namespace Fruitables.ViewModels;
 
@@ -115,6 +116,7 @@ public class OrderDetailViewModel
     /// Mã theo dõi vận chuyển (chỉ có khi Status = Shipped)
     /// </summary>
     public string? TrackingNumber { get; set; }
+    public ReturnEligibilityViewModel? ReturnEligibility { get; set; }
 }
 
 /// <summary>

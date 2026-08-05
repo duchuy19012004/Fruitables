@@ -1,4 +1,5 @@
 using Fruitables.Models.Returns;
+using Fruitables.ViewModels;
 
 namespace Fruitables.ViewModels.Returns;
 
@@ -21,6 +22,27 @@ public sealed class ReturnEligibleItemViewModel
     public string Unit { get; init; } = string.Empty;
     public decimal OrderedQuantity { get; init; }
     public decimal MaxClaimableQuantity { get; init; }
+}
+
+public sealed class ReturnQueueFilter
+{
+    public ReturnRequestStatus? Status { get; init; }
+    public string? Search { get; init; }
+    public DateTime? FromDateUtc { get; init; }
+    public DateTime? ToDateUtc { get; init; }
+    public int Page { get; init; } = 1;
+    public int PageSize { get; init; } = 20;
+}
+
+public sealed class ReturnQueueRowViewModel
+{
+    public int Id { get; init; }
+    public string ReturnNumber { get; init; } = string.Empty;
+    public string OrderNumber { get; init; } = string.Empty;
+    public string CustomerName { get; init; } = string.Empty;
+    public decimal RequestedAmount { get; init; }
+    public ReturnRequestStatus Status { get; init; }
+    public DateTime SubmittedAtUtc { get; init; }
 }
 
 public sealed class ReturnDetailViewModel

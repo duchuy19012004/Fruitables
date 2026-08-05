@@ -1,5 +1,6 @@
 @model Fruitables.ViewModels.OrderDetailViewModel
 @using Fruitables.Models
+@using Fruitables.Models.Returns
 @{
     ViewData["Title"] = $"Chi tiết đơn hàng {Model.OrderNumber}";
     
@@ -66,6 +67,21 @@
                             <div class="alert alert-danger mt-3 mb-0">
                                 <i class="fa fa-times-circle me-2"></i>
                                 <strong>Lý do hủy:</strong> @Model.CancelReason
+                            </div>
+                        }
+
+                        @if (Model.ReturnEligibility?.ExistingRequestId is int returnRequestId)
+                        {
+                            <div class="alert alert-info mt-3 mb-0 d-flex justify-content-between align-items-center">
+                                <span><i class="fa fa-clipboard-list me-2"></i>Đơn hàng đã có yêu cầu khiếu nại hoàn tiền.</span>
+                                <a asp-controller="Return" asp-action="Details" asp-route-id="@returnRequestId" class="btn btn-sm btn-outline-primary">Xem yêu cầu</a>
+                            </div>
+                        }
+                        else if (Model.ReturnEligibility?.CanCreate == true)
+                        {
+                            <div class="alert alert-warning mt-3 mb-0 d-flex justify-content-between align-items-center">
+                                <span><i class="fa fa-clock me-2"></i>Bạn có 24 giờ từ lúc giao hàng để gửi khiếu nại.</span>
+                                <a asp-controller="Return" asp-action="Create" asp-route-orderId="@Model.Id" class="btn btn-sm btn-warning">Gửi khiếu nại</a>
                             </div>
                         }
                     </div>

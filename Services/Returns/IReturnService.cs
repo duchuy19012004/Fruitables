@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using Fruitables.Models.Returns;
+using Fruitables.ViewModels;
 using Fruitables.ViewModels.Returns;
 
 namespace Fruitables.Services.Returns;
@@ -14,6 +15,8 @@ public interface IReturnService
     Task<ReturnOperationResult> RequestCustomerInfoAsync(RequestCustomerInfoCommand command, int adminId);
     Task<ReturnOperationResult> DecideAsync(DecideReturnCommand command, int adminId);
     Task<ReturnOperationResult> CompleteRefundAsync(CompleteRefundCommand command, int adminId);
+    Task<PagedResult<ReturnQueueRowViewModel>> GetAdminQueueAsync(ReturnQueueFilter filter);
+    Task<ReturnDetailViewModel?> GetAdminDetailAsync(int returnRequestId);
 }
 
 public sealed record CreateReturnItemCommand(

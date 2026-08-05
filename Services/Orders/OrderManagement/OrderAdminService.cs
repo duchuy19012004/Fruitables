@@ -117,6 +117,8 @@ public class OrderAdminService : IOrderAdminService
                     .ThenInclude(p => p.Images)
             .Include(o => o.User)
             .Include(o => o.Address)
+            .Include(o => o.ReturnRequest)
+                .ThenInclude(request => request!.Refund)
             .Include(o => o.StatusHistory)
                 .ThenInclude(h => h.Admin)
             .FirstOrDefaultAsync(o => o.Id == id);

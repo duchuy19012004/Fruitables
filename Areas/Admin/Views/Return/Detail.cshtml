@@ -1,0 +1,134 @@
+@model Fruitables.ViewModels.Returns.ReturnDetailViewModel
+@using Fruitables.Models.Returns
+@{
+    ViewData["Title"] = $"Xử lý {Model.ReturnNumber}";
+    Layout = "~/Areas/Admin/Views/Shared/_AdminDashboardLayout.cshtml";
+}
+
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">@Model.ReturnNumber</h2>
+            <p class="text-muted mb-0">Đơn #@Model.OrderId · Trạng thái: @Model.Status</p>
+        </div>
+        <a asp-action="Index" class="btn btn-outline-secondary">Quay lại danh sách</a>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-8">
+            @foreach (var item in Model.Items)
+            {
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <h5>@item.ProductName</h5>
+                            <span>@item.Reason · yêu cầu @item.RequestedQuantity @item.Unit</span>
+                        </div>
+                        <p class="text-muted">@item.Description</p>
+                        @if (item.Evidence.Any())
+                        {
+                            <div class="d-flex gap-2 mb-3">
+                                @foreach (var evidence in item.Evidence)
+                                {
+                                    <a href="@evidence.StorageKey" target="_blank" rel="noopener"><img src="@evidence.StorageKey" alt="Ảnh xác minh" style="width:96px;height:96px;object-fit:cover" class="rounded" /></a>
+                                }
+                            </div>
+                        }
+                        <div class="small text-muted">Đã duyệt: @item.ApprovedQuantity @item.Unit · @item.DecisionStatus</div>
+                    </div>
+                </div>
+            }
+
+            @if (Model.Status is ReturnRequestStatus.Submitted or ReturnRequestStatus.UnderReview)
+            {
+                <div class="card mb-3">
+                    <div class="card-header">Quyết định theo sản phẩm</div>
+                    <div class="card-body">
+                        <form asp-action="Decide" method="post">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="ReturnRequestId" value="@Model.Id" />
+                            <input type="hidden" name="RowVersion" value="@Model.RowVersion" />
+                            @for (var index = 0; index < Model.Items.Count; index++)
+                            {
+                                var item = Model.Items[index];
+                                <div class="row g-2 align-items-end border-bottom py-3">
+                                    <input type="hidden" name="Items[@index].OrderItemId" value="@item.OrderItemId" />
+                                    <div class="col-md-4"><strong>@item.ProductName</strong></div>
+                                    <div class="col-md-2"><label class="form-label">Duyệt @item.Unit</label><input name="Items[@index].ApprovedQuantity" type="number" min="0" max="@item.RequestedQuantity" step="@(item.Unit.Equals("kg", StringComparison.OrdinalIgnoreCase) ? "0.1" : "1")" value="0" class="form-control" /></div>
+                                    <div class="col-md-2 form-check mt-4"><input name="Items[@index].Approved" value="true" type="checkbox" class="form-check-input" /><label class="form-check-label">Duyệt</label></div>
+                                    <div class="col-md-4"><input name="Items[@index].DecisionReason" class="form-control" placeholder="Lý do nếu từ chối/giảm" /></div>
+                                </div>
+                            }
+                            <div class="form-check mt-3"><input name="RefundShippingFee" value="true" type="checkbox" class="form-check-input" id="refundShipping" /><label for="refundShipping" class="form-check-label">Xem xét hoàn phí ship nếu ảnh hưởng toàn bộ đơn</label></div>
+                            <textarea name="DecisionNote" class="form-control mt-3" rows="2" placeholder="Ghi chú quyết định"></textarea>
+                            <button class="btn btn-primary mt-3" type="submit">Lưu quyết định</button>
+                        </form>
+                    </div>
+                </div>
+            }
+
+            @if (Model.Status == ReturnRequestStatus.AwaitingCustomerInfo)
+            {
+                <div class="card border-warning mb-3">
+                    <div class="card-body">
+                        <h5>Đang chờ khách bổ sung</h5>
+                        <p class="text-muted">Hạn: @Model.SupplementDeadlineAtUtc?.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</p>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h5>Tóm tắt</h5>
+                    <p class="mb-1">Yêu cầu: @Model.RequestedAmount.ToString("N0")₫</p>
+                    <p class="mb-1">Được duyệt: @Model.ApprovedAmount.ToString("N0")₫</p>
+                    <p class="mb-0">Phí ship: @Model.ApprovedShippingFeeAmount.ToString("N0")₫</p>
+                </div>
+            </div>
+
+            @if (Model.Status is ReturnRequestStatus.Submitted or ReturnRequestStatus.UnderReview)
+            {
+                <form asp-action="RequestInfo" method="post" class="card mb-3">
+                    @Html.AntiForgeryToken()
+                    <div class="card-body">
+                        <h5>Yêu cầu bổ sung</h5>
+                        <input type="hidden" name="ReturnRequestId" value="@Model.Id" />
+                        <input type="hidden" name="RowVersion" value="@Model.RowVersion" />
+                        <textarea name="Note" class="form-control mb-2" rows="3" required placeholder="Cần khách bổ sung gì?"></textarea>
+                        <button class="btn btn-warning w-100" type="submit">Yêu cầu bổ sung</button>
+                    </div>
+                </form>
+            }
+
+            @if (Model.Status == ReturnRequestStatus.AwaitingRefund && Model.Refund != null)
+            {
+                <form asp-action="CompleteRefund" method="post" class="card">
+                    @Html.AntiForgeryToken()
+                    <div class="card-body">
+                        <h5>Xác nhận hoàn thủ công</h5>
+                        <input type="hidden" name="ReturnRequestId" value="@Model.Id" />
+                        <input type="hidden" name="RowVersion" value="@Model.RowVersion" />
+                        <input name="TransactionReference" class="form-control mb-2" placeholder="Mã giao dịch" />
+                        <input name="FailureReason" class="form-control mb-2" placeholder="Lý do nếu chuyển tiền thất bại" />
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-success flex-grow-1" type="submit" name="Succeeded" value="true">Đã chuyển tiền</button>
+                            <button class="btn btn-outline-danger" type="submit" name="Succeeded" value="false">Thất bại</button>
+                        </div>
+                    </div>
+                </form>
+            }
+        </div>
+    </div>
+
+    <div class="card mt-4">
+        <div class="card-body">
+            <h5>Timeline</h5>
+            @foreach (var item in Model.Events)
+            {
+                <div class="border-bottom py-2"><strong>@item.EventType</strong> <span class="text-muted">@item.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</span><div>@item.Note</div></div>
+            }
+        </div>
+    </div>
+</div>

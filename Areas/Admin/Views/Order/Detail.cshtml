@@ -360,6 +360,23 @@
                     </div>
                 </div>
 
+                @if (Model.ReturnRequest != null)
+                {
+                    <div class="bg-white rounded-xl border border-amber-200 shadow-sm mb-4">
+                        <div class="px-6 py-4 border-b border-amber-100 flex items-center justify-between">
+                            <h2 class="font-semibold text-slate-800 text-base m-0">Khiếu nại hoàn tiền</h2>
+                            <span class="px-2 py-0.5 bg-amber-50 text-amber-700 text-[10px] font-bold rounded uppercase">
+                                @Model.ReturnRequest.Status
+                            </span>
+                        </div>
+                        <div class="p-6 flex items-center justify-between gap-4">
+                            <p class="text-sm text-slate-600 m-0">Yêu cầu @Model.ReturnRequest.ReturnNumber</p>
+                            <a asp-area="Admin" asp-controller="Return" asp-action="Detail" asp-route-id="@Model.ReturnRequest.Id"
+                               class="px-4 py-2 rounded-lg bg-amber-500 text-white text-sm font-semibold">Mở xử lý</a>
+                        </div>
+                    </div>
+                }
+
                 <!-- Payment Info -->
                 <div class="bg-white rounded-xl border border-slate-200 shadow-sm">
                     <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between">

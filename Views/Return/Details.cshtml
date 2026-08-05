@@ -1,0 +1,110 @@
+@model Fruitables.ViewModels.Returns.ReturnDetailViewModel
+@using Fruitables.Models.Returns
+@{
+    ViewData["Title"] = $"Khiếu nại {Model.ReturnNumber}";
+    var canCancel = Model.Items.All(item => item.DecisionStatus == ReturnItemDecisionStatus.Pending) &&
+                    Model.Status is ReturnRequestStatus.Submitted or ReturnRequestStatus.UnderReview or ReturnRequestStatus.AwaitingCustomerInfo;
+}
+
+<div class="container py-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">Khiếu nại @Model.ReturnNumber</h2>
+            <p class="text-muted mb-0">Trạng thái: <strong>@Model.Status</strong></p>
+        </div>
+        <a asp-controller="OrderHistory" asp-action="Details" asp-route-id="@Model.OrderId" class="btn btn-outline-secondary">Về đơn hàng</a>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-8">
+            @foreach (var item in Model.Items)
+            {
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <h5>@item.ProductName</h5>
+                            <span class="badge bg-light text-dark">@item.DecisionStatus</span>
+                        </div>
+                        <p class="mb-1">Yêu cầu: @item.RequestedQuantity @item.Unit · Duyệt: @item.ApprovedQuantity @item.Unit</p>
+                        <p class="mb-2"><strong>Lý do:</strong> @item.Reason</p>
+                        <p class="text-muted">@item.Description</p>
+                        @if (item.Evidence.Any())
+                        {
+                            <div class="d-flex gap-2 flex-wrap">
+                                @foreach (var evidence in item.Evidence)
+                                {
+                                    <a href="@evidence.StorageKey" target="_blank" rel="noopener">
+                                        <img src="@evidence.StorageKey" alt="Ảnh xác minh" class="rounded" style="width:96px;height:96px;object-fit:cover" />
+                                    </a>
+                                }
+                            </div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(item.DecisionReason))
+                        {
+                            <div class="alert alert-secondary mt-3 mb-0">@item.DecisionReason</div>
+                        }
+                    </div>
+                </div>
+            }
+
+            @if (Model.Status == ReturnRequestStatus.AwaitingCustomerInfo)
+            {
+                <div class="card border-warning mb-3">
+                    <div class="card-body">
+                        <h5>Bổ sung thông tin</h5>
+                        <p class="text-muted">Bạn có thể bổ sung một lần trước @Model.SupplementDeadlineAtUtc?.ToLocalTime().ToString("dd/MM/yyyy HH:mm").</p>
+                        <form asp-action="Supplement" asp-route-id="@Model.Id" method="post" enctype="multipart/form-data">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="RowVersion" value="@Model.RowVersion" />
+                            <textarea name="Description" class="form-control mb-2" rows="3" placeholder="Thông tin bổ sung"></textarea>
+                            <input name="Evidence" type="file" accept="image/*" multiple class="form-control mb-3" />
+                            <button class="btn btn-warning" type="submit">Gửi bổ sung</button>
+                        </form>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h5>Số tiền</h5>
+                    <p class="mb-1">Yêu cầu: <strong>@Model.RequestedAmount.ToString("N0")₫</strong></p>
+                    <p class="mb-1">Được duyệt: <strong>@Model.ApprovedAmount.ToString("N0")₫</strong></p>
+                    <p class="mb-0">Phí ship: <strong>@Model.ApprovedShippingFeeAmount.ToString("N0")₫</strong></p>
+                    @if (Model.Refund != null)
+                    {
+                        <hr />
+                        <p class="mb-1">Hoàn tiền: @Model.Refund.Status</p>
+                        @if (!string.IsNullOrWhiteSpace(Model.Refund.TransactionReference))
+                        {
+                            <p class="small text-muted mb-0">Mã giao dịch: @Model.Refund.TransactionReference</p>
+                        }
+                    }
+                </div>
+            </div>
+
+            @if (canCancel)
+            {
+                <form asp-action="Cancel" asp-route-id="@Model.Id" method="post">
+                    @Html.AntiForgeryToken()
+                    <button type="submit" class="btn btn-outline-danger w-100">Hủy yêu cầu</button>
+                </form>
+            }
+        </div>
+    </div>
+
+    <div class="card mt-4">
+        <div class="card-body">
+            <h5>Lịch sử xử lý</h5>
+            @foreach (var item in Model.Events)
+            {
+                <div class="border-bottom py-2">
+                    <strong>@item.EventType</strong>
+                    <span class="text-muted ms-2">@item.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</span>
+                    @if (!string.IsNullOrWhiteSpace(item.Note)) { <div class="text-muted">@item.Note</div> }
+                </div>
+            }
+        </div>
+    </div>
+</div>
