@@ -229,6 +229,206 @@ public sealed class ReturnService : IReturnService
         return await SaveStatusChangeAsync(request);
     }
 
+    public async Task<ReturnOperationResult> DecideAsync(
+        DecideReturnCommand command,
+        int adminId)
+    {
+        var request = await LoadRequestAsync(command.ReturnRequestId);
+        if (request == null)
+            return Fail("Không tìm thấy yêu cầu.");
+        if (!HasMatchingRowVersion(request, command.RowVersion))
+            return Fail("Yêu cầu đã được cập nhật. Vui lòng tải lại dữ liệu.");
+        if (request.Status is ReturnRequestStatus.AwaitingRefund or ReturnRequestStatus.Refunded or ReturnRequestStatus.Rejected or ReturnRequestStatus.Cancelled)
+            return Fail("Yêu cầu không còn chờ quyết định.");
+        if (command.Items.Count != request.Items.Count ||
+            command.Items.Select(item => item.OrderItemId).Distinct().Count() != command.Items.Count)
+            return Fail("Cần quyết định cho từng sản phẩm trong yêu cầu.");
+
+        var decisions = command.Items.ToDictionary(item => item.OrderItemId);
+        foreach (var requestItem in request.Items)
+        {
+            if (!decisions.TryGetValue(requestItem.OrderItemId, out var decision))
+                return Fail("Cần quyết định cho từng sản phẩm trong yêu cầu.");
+
+            var isReduced = decision.Approved && decision.ApprovedQuantity < requestItem.RequestedQuantity;
+            if ((!decision.Approved || isReduced) && string.IsNullOrWhiteSpace(decision.DecisionReason))
+                return Fail("Phải ghi lý do khi từ chối hoặc duyệt ít hơn số lượng yêu cầu.");
+            if (decision.Approved)
+            {
+                var unit = requestItem.OrderItem.Product?.Unit;
+                var step = string.Equals(unit?.Trim(), "kg", StringComparison.OrdinalIgnoreCase) ? 0.1m : 1m;
+                if (decision.ApprovedQuantity <= 0 ||
+                    decision.ApprovedQuantity > requestItem.RequestedQuantity ||
+                    !QuantityRules.IsValid(unit, decision.ApprovedQuantity, step))
+                    return Fail("Số lượng được duyệt không hợp lệ.");
+            }
+        }
+
+        var order = request.Order;
+        foreach (var requestItem in request.Items)
+        {
+            var decision = decisions[requestItem.OrderItemId];
+            var approved = decision.Approved;
+            var approvedQuantity = approved ? decision.ApprovedQuantity : 0m;
+            requestItem.DecisionStatus = approved
+                ? ReturnItemDecisionStatus.Approved
+                : ReturnItemDecisionStatus.Rejected;
+            requestItem.ApprovedQuantity = approvedQuantity;
+            requestItem.ApprovedAmount = approved
+                ? CalculatePaidLineAmount(order, requestItem.OrderItem, approvedQuantity)
+                : 0m;
+            requestItem.DecisionReason = string.IsNullOrWhiteSpace(decision.DecisionReason)
+                ? null
+                : decision.DecisionReason.Trim();
+            AddEvent(
+                request,
+                approved ? ReturnEventType.Approved : ReturnEventType.Rejected,
+                request.Status,
+                request.Status,
+                adminId,
+                requestItem.DecisionReason);
+        }
+
+        var approvedItems = request.Items.Where(item => item.DecisionStatus == ReturnItemDecisionStatus.Approved).ToList();
+        request.ApprovedAmount = decimal.Round(approvedItems.Sum(item => item.ApprovedAmount), 2);
+        var fullOrderFault = command.RefundShippingFee &&
+            order.Items.Count > 0 &&
+            order.Items.All(orderItem => request.Items.Any(requestItem =>
+                requestItem.OrderItemId == orderItem.Id &&
+                requestItem.DecisionStatus == ReturnItemDecisionStatus.Approved &&
+                requestItem.ApprovedQuantity == orderItem.Quantity));
+        request.ApprovedShippingFeeAmount = fullOrderFault ? order.ShippingFee : 0m;
+        request.AdminNote = command.DecisionNote.Trim();
+
+        IDbContextTransaction? transaction = null;
+        try
+        {
+            transaction = await BeginTransactionAsync();
+            if (approvedItems.Count == 0)
+            {
+                var oldStatus = request.Status;
+                request.Status = ReturnRequestStatus.Rejected;
+                AddEvent(request, ReturnEventType.Rejected, oldStatus, request.Status, adminId, request.AdminNote);
+            }
+            else
+            {
+                request.Status = ReturnRequestStatus.AwaitingRefund;
+                if (request.Refund != null)
+                    return Fail("Yêu cầu đã có khoản hoàn.");
+                request.Refund = new Refund
+                {
+                    ReturnRequest = request,
+                    Order = order,
+                    OrderId = order.Id,
+                    Amount = request.ApprovedAmount + request.ApprovedShippingFeeAmount,
+                    ShippingFeeAmount = request.ApprovedShippingFeeAmount,
+                    Status = RefundStatus.Pending,
+                    CreatedByUserId = adminId,
+                    CreatedAtUtc = _timeProvider.GetUtcNow().UtcDateTime
+                };
+                AddEvent(request, ReturnEventType.RefundCreated, ReturnRequestStatus.UnderReview, request.Status, adminId, command.DecisionNote.Trim());
+            }
+
+            TouchRowVersion(request);
+            await _context.SaveChangesAsync();
+            if (transaction != null)
+                await transaction.CommitAsync();
+            return Success(request);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            if (transaction != null)
+                await transaction.RollbackAsync();
+            return Fail("Yêu cầu đã được cập nhật. Vui lòng tải lại dữ liệu.");
+        }
+        catch (DbUpdateException exception)
+        {
+            if (transaction != null)
+                await transaction.RollbackAsync();
+            return Fail($"Không thể lưu quyết định: {exception.InnerException?.Message ?? exception.Message}");
+        }
+        finally
+        {
+            if (transaction != null)
+                await transaction.DisposeAsync();
+        }
+    }
+
+    public async Task<ReturnOperationResult> CompleteRefundAsync(
+        CompleteRefundCommand command,
+        int adminId)
+    {
+        var request = await LoadRequestAsync(command.ReturnRequestId);
+        if (request?.Refund == null)
+            return Fail("Không tìm thấy khoản hoàn.");
+        if (request.Status != ReturnRequestStatus.AwaitingRefund)
+            return Fail("Yêu cầu không còn chờ hoàn tiền.");
+        if (!HasMatchingRowVersion(request, command.RowVersion))
+            return Fail("Yêu cầu đã được cập nhật. Vui lòng tải lại dữ liệu.");
+
+        if (command.Succeeded && string.IsNullOrWhiteSpace(command.TransactionReference))
+            return Fail("Cần nhập mã giao dịch hoàn tiền.");
+        if (!command.Succeeded && string.IsNullOrWhiteSpace(command.FailureReason))
+            return Fail("Cần ghi lý do chuyển tiền thất bại.");
+
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        IDbContextTransaction? transaction = null;
+        try
+        {
+            transaction = await BeginTransactionAsync();
+            if (request.Refund.Status == RefundStatus.Succeeded)
+                return Fail("Khoản hoàn đã được xác nhận trước đó.");
+
+            request.Refund.Status = command.Succeeded ? RefundStatus.Succeeded : RefundStatus.Failed;
+            request.Refund.TransactionReference = command.Succeeded ? command.TransactionReference!.Trim() : null;
+            request.Refund.FailureReason = command.Succeeded ? null : command.FailureReason!.Trim();
+            request.Refund.ProcessedByUserId = adminId;
+            request.Refund.ProcessedAtUtc = now;
+
+            if (command.Succeeded)
+            {
+                var oldStatus = request.Status;
+                request.Status = ReturnRequestStatus.Refunded;
+                AddEvent(request, ReturnEventType.RefundCompleted, oldStatus, request.Status, adminId, request.Refund.TransactionReference);
+                var successfulRefundTotal = request.Refund.Amount + (await _context.Refunds
+                    .Where(refund => refund.OrderId == request.OrderId &&
+                        refund.Id != request.Refund.Id &&
+                        refund.Status == RefundStatus.Succeeded)
+                    .ToListAsync())
+                    .Sum(refund => refund.Amount);
+                if (successfulRefundTotal + 0.005m >= request.Order.Total)
+                    request.Order.PaymentStatus = PaymentStatus.Refunded;
+            }
+            else
+            {
+                AddEvent(request, ReturnEventType.RefundFailed, request.Status, request.Status, adminId, request.Refund.FailureReason);
+            }
+
+            TouchRowVersion(request);
+            await _context.SaveChangesAsync();
+            if (transaction != null)
+                await transaction.CommitAsync();
+            return Success(request);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            if (transaction != null)
+                await transaction.RollbackAsync();
+            return Fail("Yêu cầu đã được cập nhật. Vui lòng tải lại dữ liệu.");
+        }
+        catch (DbUpdateException exception)
+        {
+            if (transaction != null)
+                await transaction.RollbackAsync();
+            return Fail($"Không thể xác nhận hoàn tiền: {exception.InnerException?.Message ?? exception.Message}");
+        }
+        finally
+        {
+            if (transaction != null)
+                await transaction.DisposeAsync();
+        }
+    }
+
     public async Task<ReturnOperationResult> AddCustomerInfoAsync(
         SupplementReturnCommand command,
         int userId)
@@ -316,6 +516,12 @@ public sealed class ReturnService : IReturnService
     private async Task<ReturnRequest?> LoadRequestAsync(int returnRequestId, int? userId = null)
     {
         var query = _context.ReturnRequests
+            .Include(request => request.Order)
+                .ThenInclude(order => order.Items)
+                    .ThenInclude(item => item.Product)
+            .Include(request => request.Order)
+                .ThenInclude(order => order.Items)
+                    .ThenInclude(item => item.ProductVariant)
             .Include(request => request.Items)
                 .ThenInclude(item => item.OrderItem)
                     .ThenInclude(item => item.Product)

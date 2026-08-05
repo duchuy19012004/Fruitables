@@ -178,6 +178,163 @@ public sealed class ReturnServiceTests
         Assert.False(second.Success);
     }
 
+    [Fact]
+    public async Task DecideAsync_calculates_partial_refund_from_paid_snapshot()
+    {
+        await using var fixture = await SeedReturnFixtureAsync(
+            OrderStatus.Delivered, DateTime.UtcNow);
+        var created = await fixture.Service.CreateAsync(
+            CreateValidCommand(fixture.Order.Id, fixture.Item.Id, 0.5m, true),
+            fixture.Customer.Id);
+
+        var result = await fixture.Service.DecideAsync(
+            CreateDecisionCommand(created, fixture.Item.Id, 0.5m, true, "Duyệt một phần."),
+            fixture.Admin.Id);
+        var refund = await fixture.Context.Refunds.SingleAsync();
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.Equal(45_000m, refund.Amount);
+    }
+
+    [Fact]
+    public async Task DecideAsync_refunds_shipping_only_for_full_merchant_or_carrier_fault()
+    {
+        await using var partial = await SeedReturnFixtureAsync(
+            OrderStatus.Delivered, DateTime.UtcNow);
+        var partialCreated = await partial.Service.CreateAsync(
+            CreateValidCommand(partial.Order.Id, partial.Item.Id, 0.5m, true),
+            partial.Customer.Id);
+        var partialResult = await partial.Service.DecideAsync(
+            CreateDecisionCommand(partialCreated, partial.Item.Id, 0.5m, true, "Dập một phần."),
+            partial.Admin.Id);
+
+        await using var full = await SeedReturnFixtureAsync(
+            OrderStatus.Delivered, DateTime.UtcNow);
+        var fullCreated = await full.Service.CreateAsync(
+            CreateValidCommand(full.Order.Id, full.Item.Id, 2m, true),
+            full.Customer.Id);
+        var fullResult = await full.Service.DecideAsync(
+            CreateDecisionCommand(fullCreated, full.Item.Id, 2m, true, "Toàn bộ hàng bị dập."),
+            full.Admin.Id);
+
+        Assert.Equal(0m, partialResult.ApprovedShippingFeeAmount);
+        Assert.Equal(full.Order.ShippingFee, fullResult.ApprovedShippingFeeAmount);
+    }
+
+    [Fact]
+    public async Task DecideAsync_requires_reason_for_rejection_or_reduced_quantity()
+    {
+        await using var fixture = await SeedReturnFixtureAsync(
+            OrderStatus.Delivered, DateTime.UtcNow);
+        var created = await fixture.Service.CreateAsync(
+            CreateValidCommand(fixture.Order.Id, fixture.Item.Id, 1m, true),
+            fixture.Customer.Id);
+
+        var result = await fixture.Service.DecideAsync(
+            CreateDecisionCommand(created, fixture.Item.Id, 0.5m, false, string.Empty),
+            fixture.Admin.Id);
+
+        Assert.False(result.Success);
+    }
+
+    [Fact]
+    public async Task DecideAsync_does_not_restore_stock()
+    {
+        await using var fixture = await SeedReturnFixtureAsync(
+            OrderStatus.Delivered, DateTime.UtcNow);
+        var stockBefore = fixture.Product.StockQuantity;
+        var created = await fixture.Service.CreateAsync(
+            CreateValidCommand(fixture.Order.Id, fixture.Item.Id, 0.5m, true),
+            fixture.Customer.Id);
+
+        await fixture.Service.DecideAsync(
+            CreateDecisionCommand(created, fixture.Item.Id, 0.5m, true, "Duyệt."),
+            fixture.Admin.Id);
+
+        Assert.Equal(stockBefore, (await fixture.Context.Products.FindAsync(fixture.Product.Id))!.StockQuantity);
+    }
+
+    [Fact]
+    public async Task CompleteRefundAsync_full_refund_sets_order_payment_status_refunded()
+    {
+        await using var fixture = await SeedReturnFixtureAsync(
+            OrderStatus.Delivered, DateTime.UtcNow);
+        var created = await fixture.Service.CreateAsync(
+            CreateValidCommand(fixture.Order.Id, fixture.Item.Id, 2m, true),
+            fixture.Customer.Id);
+        var decision = await fixture.Service.DecideAsync(
+            CreateDecisionCommand(created, fixture.Item.Id, 2m, true, "Toàn bộ hàng bị dập."),
+            fixture.Admin.Id);
+        var completed = await fixture.Service.CompleteRefundAsync(
+            CreateSuccessfulRefundCommand(decision), fixture.Admin.Id);
+
+        Assert.True(completed.Success, completed.ErrorMessage);
+        Assert.Equal(PaymentStatus.Refunded, fixture.Order.PaymentStatus);
+    }
+
+    [Fact]
+    public async Task CompleteRefundAsync_is_idempotent_and_updates_full_order_payment_status_only()
+    {
+        await using var partial = await SeedReturnFixtureAsync(
+            OrderStatus.Delivered, DateTime.UtcNow);
+        var partialCreated = await partial.Service.CreateAsync(
+            CreateValidCommand(partial.Order.Id, partial.Item.Id, 0.5m, true),
+            partial.Customer.Id);
+        var partialDecision = await partial.Service.DecideAsync(
+            CreateDecisionCommand(partialCreated, partial.Item.Id, 0.5m, true, "Duyệt."),
+            partial.Admin.Id);
+        var partialDone = await partial.Service.CompleteRefundAsync(
+            CreateSuccessfulRefundCommand(partialDecision), partial.Admin.Id);
+        var partialAgain = await partial.Service.CompleteRefundAsync(
+            CreateSuccessfulRefundCommand(partialDecision), partial.Admin.Id);
+
+        Assert.True(partialDone.Success, partialDone.ErrorMessage);
+        Assert.False(partialAgain.Success);
+        Assert.Equal(PaymentStatus.Paid, partial.Order.PaymentStatus);
+    }
+
+    [Fact]
+    public async Task DecideAsync_returns_concurrency_error_for_stale_row_version()
+    {
+        await using var fixture = await SeedReturnFixtureAsync(
+            OrderStatus.Delivered, DateTime.UtcNow);
+        var created = await fixture.Service.CreateAsync(
+            CreateValidCommand(fixture.Order.Id, fixture.Item.Id, 0.5m, true),
+            fixture.Customer.Id);
+        var first = await fixture.Service.DecideAsync(
+            CreateDecisionCommand(created, fixture.Item.Id, 0.5m, true, "Duyệt."),
+            fixture.Admin.Id);
+        var stale = await fixture.Service.DecideAsync(
+            CreateDecisionCommand(created, fixture.Item.Id, 0.5m, true, "Ghi đè."),
+            fixture.Admin.Id);
+
+        Assert.True(first.Success, first.ErrorMessage);
+        Assert.False(stale.Success);
+        Assert.Contains("cập nhật", stale.ErrorMessage!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static DecideReturnCommand CreateDecisionCommand(
+        ReturnOperationResult result,
+        int orderItemId,
+        decimal approvedQuantity,
+        bool approved,
+        string note) => new()
+        {
+            ReturnRequestId = result.ReturnRequestId!.Value,
+            Items = [new ReturnItemDecisionCommand(orderItemId, approvedQuantity, approved, note)],
+            RefundShippingFee = true,
+            DecisionNote = note,
+            RowVersion = result.RowVersion!
+        };
+
+    private static CompleteRefundCommand CreateSuccessfulRefundCommand(ReturnOperationResult result) => new()
+    {
+        ReturnRequestId = result.ReturnRequestId!.Value,
+        Succeeded = true,
+        TransactionReference = $"TX-{Guid.NewGuid():N}",
+        RowVersion = result.RowVersion!
+    };
+
     private static async Task<ReturnFixture> SeedReturnFixtureAsync(
         OrderStatus status,
         DateTime deliveredAtUtc,
@@ -237,7 +394,8 @@ public sealed class ReturnServiceTests
             ]
         };
         order.Subtotal = quantity * product.Price;
-        order.Total = order.Subtotal + order.ShippingFee;
+        order.Discount = 20_000m;
+        order.Total = order.Subtotal + order.ShippingFee - order.Discount;
 
         context.Categories.Add(category);
         context.Users.AddRange(customer, admin);

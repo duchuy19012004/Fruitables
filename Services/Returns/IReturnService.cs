@@ -12,6 +12,8 @@ public interface IReturnService
     Task<ReturnOperationResult> CancelAsync(int returnRequestId, int userId);
     Task<ReturnOperationResult> AddCustomerInfoAsync(SupplementReturnCommand command, int userId);
     Task<ReturnOperationResult> RequestCustomerInfoAsync(RequestCustomerInfoCommand command, int adminId);
+    Task<ReturnOperationResult> DecideAsync(DecideReturnCommand command, int adminId);
+    Task<ReturnOperationResult> CompleteRefundAsync(CompleteRefundCommand command, int adminId);
 }
 
 public sealed record CreateReturnItemCommand(
@@ -35,6 +37,30 @@ public sealed record RequestCustomerInfoCommand(
     int ReturnRequestId,
     string Note,
     string RowVersion);
+
+public sealed record ReturnItemDecisionCommand(
+    int OrderItemId,
+    decimal ApprovedQuantity,
+    bool Approved,
+    string DecisionReason);
+
+public sealed class DecideReturnCommand
+{
+    public int ReturnRequestId { get; init; }
+    public IReadOnlyList<ReturnItemDecisionCommand> Items { get; init; } = [];
+    public bool RefundShippingFee { get; init; }
+    public string DecisionNote { get; init; } = string.Empty;
+    public string RowVersion { get; init; } = string.Empty;
+}
+
+public sealed class CompleteRefundCommand
+{
+    public int ReturnRequestId { get; init; }
+    public bool Succeeded { get; init; }
+    public string? TransactionReference { get; init; }
+    public string? FailureReason { get; init; }
+    public string RowVersion { get; init; } = string.Empty;
+}
 
 public sealed class ReturnOperationResult
 {
