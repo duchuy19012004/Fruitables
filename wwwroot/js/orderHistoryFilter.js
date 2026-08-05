@@ -404,7 +404,7 @@ const OrderHistoryFilter = {
         setTimeout(function() {
             var toast = document.getElementById(toastId);
             if (toast) {
-                var bsToast = bootstrap.Toast.getOrCreateInstance(toast);
+                var bsToast = new bootstrap.Toast(toast);
                 bsToast.hide();
                 setTimeout(function() {
                     toast.remove();
