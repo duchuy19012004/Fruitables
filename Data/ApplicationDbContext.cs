@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Fruitables.Models;
+using Fruitables.Models.Returns;
 
 namespace Fruitables.Data;
 
@@ -29,6 +30,11 @@ public class ApplicationDbContext : DbContext
     public DbSet<CartItem> CartItems => Set<CartItem>();
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
+    public DbSet<ReturnRequest> ReturnRequests => Set<ReturnRequest>();
+    public DbSet<ReturnRequestItem> ReturnRequestItems => Set<ReturnRequestItem>();
+    public DbSet<ReturnEvidence> ReturnEvidence => Set<ReturnEvidence>();
+    public DbSet<ReturnEvent> ReturnEvents => Set<ReturnEvent>();
+    public DbSet<Refund> Refunds => Set<Refund>();
     public DbSet<SePayTransaction> SePayTransactions => Set<SePayTransaction>();
     public DbSet<Coupon> Coupons => Set<Coupon>();
     public DbSet<Wishlist> Wishlists => Set<Wishlist>();
@@ -208,6 +214,116 @@ public class ApplicationDbContext : DbContext
             entity.HasOne(e => e.ProductVariant).WithMany().HasForeignKey(e => e.ProductVariantId).OnDelete(DeleteBehavior.Restrict);
 
             entity.Property(e => e.PriceScheduleId).IsRequired(false);
+        });
+
+        modelBuilder.Entity<ReturnRequest>(entity =>
+        {
+            entity.HasIndex(request => request.OrderId).IsUnique();
+            entity.HasIndex(request => request.ReturnNumber).IsUnique();
+            entity.HasIndex(request => new { request.Status, request.ClaimDeadlineAtUtc });
+            entity.HasIndex(request => new { request.UserId, request.SubmittedAtUtc });
+            entity.Property(request => request.RequestedAmount).HasPrecision(12, 2);
+            entity.Property(request => request.ApprovedAmount).HasPrecision(12, 2);
+            entity.Property(request => request.ApprovedShippingFeeAmount).HasPrecision(12, 2);
+            entity.Property(request => request.RowVersion).IsRowVersion().IsConcurrencyToken();
+            entity.HasOne(request => request.Order)
+                .WithOne(order => order.ReturnRequest)
+                .HasForeignKey<ReturnRequest>(request => request.OrderId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(request => request.User)
+                .WithMany(user => user.ReturnRequests)
+                .HasForeignKey(request => request.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.ToTable(table => table.HasCheckConstraint(
+                "CK_ReturnRequests_AmountsNonNegative",
+                "[RequestedAmount] >= 0 AND [ApprovedAmount] >= 0 AND [ApprovedShippingFeeAmount] >= 0"));
+        });
+
+        modelBuilder.Entity<ReturnRequestItem>(entity =>
+        {
+            entity.HasIndex(item => new { item.ReturnRequestId, item.OrderItemId }).IsUnique();
+            entity.Property(item => item.RequestedQuantity).HasPrecision(10, 2);
+            entity.Property(item => item.ApprovedQuantity).HasPrecision(10, 2);
+            entity.Property(item => item.RequestedAmount).HasPrecision(12, 2);
+            entity.Property(item => item.ApprovedAmount).HasPrecision(12, 2);
+            entity.HasOne(item => item.ReturnRequest)
+                .WithMany(request => request.Items)
+                .HasForeignKey(item => item.ReturnRequestId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(item => item.OrderItem)
+                .WithMany(orderItem => orderItem.ReturnRequestItems)
+                .HasForeignKey(item => item.OrderItemId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.ToTable(table =>
+            {
+                table.HasCheckConstraint("CK_ReturnRequestItems_RequestedQuantityPositive", "[RequestedQuantity] > 0");
+                table.HasCheckConstraint("CK_ReturnRequestItems_ApprovedQuantityNonNegative", "[ApprovedQuantity] >= 0");
+                table.HasCheckConstraint("CK_ReturnRequestItems_ApprovedQuantityWithinRequested", "[ApprovedQuantity] <= [RequestedQuantity]");
+                table.HasCheckConstraint("CK_ReturnRequestItems_AmountsNonNegative", "[RequestedAmount] >= 0 AND [ApprovedAmount] >= 0");
+            });
+        });
+
+        modelBuilder.Entity<ReturnEvidence>(entity =>
+        {
+            entity.HasIndex(evidence => evidence.StorageKey).IsUnique();
+            entity.HasOne(evidence => evidence.ReturnRequest)
+                .WithMany(request => request.Evidence)
+                .HasForeignKey(evidence => evidence.ReturnRequestId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(evidence => evidence.ReturnRequestItem)
+                .WithMany(item => item.Evidence)
+                .HasForeignKey(evidence => evidence.ReturnRequestItemId)
+                .OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(evidence => evidence.UploadedByUser)
+                .WithMany()
+                .HasForeignKey(evidence => evidence.UploadedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ReturnEvent>(entity =>
+        {
+            entity.HasIndex(eventItem => new { eventItem.ReturnRequestId, eventItem.CreatedAtUtc });
+            entity.HasOne(eventItem => eventItem.ReturnRequest)
+                .WithMany(request => request.Events)
+                .HasForeignKey(eventItem => eventItem.ReturnRequestId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(eventItem => eventItem.ReturnRequestItem)
+                .WithMany()
+                .HasForeignKey(eventItem => eventItem.ReturnRequestItemId)
+                .OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(eventItem => eventItem.ActorUser)
+                .WithMany()
+                .HasForeignKey(eventItem => eventItem.ActorUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<Refund>(entity =>
+        {
+            entity.HasIndex(refund => refund.ReturnRequestId).IsUnique();
+            entity.HasIndex(refund => refund.TransactionReference)
+                .IsUnique()
+                .HasFilter("[TransactionReference] IS NOT NULL");
+            entity.Property(refund => refund.Amount).HasPrecision(12, 2);
+            entity.Property(refund => refund.ShippingFeeAmount).HasPrecision(12, 2);
+            entity.HasOne(refund => refund.ReturnRequest)
+                .WithOne(request => request.Refund)
+                .HasForeignKey<Refund>(refund => refund.ReturnRequestId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(refund => refund.Order)
+                .WithMany()
+                .HasForeignKey(refund => refund.OrderId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(refund => refund.CreatedByUser)
+                .WithMany()
+                .HasForeignKey(refund => refund.CreatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(refund => refund.ProcessedByUser)
+                .WithMany()
+                .HasForeignKey(refund => refund.ProcessedByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.ToTable(table => table.HasCheckConstraint(
+                "CK_Refunds_AmountsNonNegative",
+                "[Amount] >= 0 AND [ShippingFeeAmount] >= 0"));
         });
 
         // Combo

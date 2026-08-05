@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Fruitables.Models.Returns;
 
 namespace Fruitables.Models;
 
@@ -95,6 +96,7 @@ public class User
     /// Lịch sử khóa/mở khóa tài khoản
     /// </summary>
     public virtual ICollection<UserAccountLog> AccountLogs { get; set; } = new List<UserAccountLog>();
+    public virtual ICollection<ReturnRequest> ReturnRequests { get; set; } = new List<ReturnRequest>();
     
     /// <summary>
     /// Vai trò RBAC của người dùng

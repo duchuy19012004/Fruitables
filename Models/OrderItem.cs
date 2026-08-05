@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using Fruitables.Models.Returns;
 
 namespace Fruitables.Models;
 
@@ -54,4 +55,5 @@ public class OrderItem
     public virtual Order Order { get; set; } = null!;
     public virtual Product Product { get; set; } = null!;
     public virtual ProductVariant? ProductVariant { get; set; }
+    public virtual ICollection<ReturnRequestItem> ReturnRequestItems { get; set; } = new List<ReturnRequestItem>();
 }
