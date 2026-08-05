@@ -225,7 +225,10 @@ public class ApplicationDbContext : DbContext
             entity.Property(request => request.RequestedAmount).HasPrecision(12, 2);
             entity.Property(request => request.ApprovedAmount).HasPrecision(12, 2);
             entity.Property(request => request.ApprovedShippingFeeAmount).HasPrecision(12, 2);
-            entity.Property(request => request.RowVersion).IsRowVersion().IsConcurrencyToken();
+            entity.Property(request => request.RowVersion)
+                .IsConcurrencyToken()
+                .ValueGeneratedNever()
+                .HasColumnType("varbinary(16)");
             entity.HasOne(request => request.Order)
                 .WithOne(order => order.ReturnRequest)
                 .HasForeignKey<ReturnRequest>(request => request.OrderId)

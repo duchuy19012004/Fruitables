@@ -35,7 +35,7 @@ public class ReturnRequest
     [MaxLength(4000)]
     public string? AdminNote { get; set; }
 
-    [Timestamp]
+    [ConcurrencyCheck]
     public byte[]? RowVersion { get; set; }
 
     public virtual Order Order { get; set; } = null!;
