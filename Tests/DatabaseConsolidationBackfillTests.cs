@@ -233,6 +233,42 @@ public class DatabaseConsolidationBackfillTests
     }
 
     [Fact]
+    public async Task Historical_audit_row_does_not_collide_with_new_product_log_source_identity()
+    {
+        var options = TestDbContextFactory.CreateSqliteOptions();
+        await using var db = new ApplicationDbContext(options);
+        await DatabaseConsolidationFixture.SeedAsync(db);
+        db.AuditLogs.Add(new AuditLog
+        {
+            Id = 1500,
+            SourceType = "ProductLog",
+            SourceId = 1001,
+            EntityType = "ProductLog",
+            EntityId = 1001,
+            Action = ProductLogActions.Update,
+            ChangedByAdminId = DatabaseConsolidationFixture.AdminId,
+            ChangedAt = DateTime.UtcNow.AddDays(-1),
+            NewValue = "{\"historical\":true}"
+        });
+        await db.SaveChangesAsync();
+        await db.Database.ExecuteSqlRawAsync(DatabaseConsolidationSql.BuildHistoricalAuditIdentityUpdate());
+        db.ChangeTracker.Clear();
+
+        var report = await CreateService(db).BackfillAsync(apply: true, CancellationToken.None);
+
+        Assert.True(report.Success, string.Join(Environment.NewLine, report.Errors.Select(error => error.Message)));
+        var rows = await db.AuditLogs
+            .AsNoTracking()
+            .Where(log => log.EntityType == "ProductLog" && log.EntityId == 1001)
+            .OrderBy(log => log.SourceType)
+            .ToListAsync();
+        Assert.Equal(2, rows.Count);
+        var identities = string.Join(", ", rows.Select(log => $"{log.Id}:{log.SourceType}:{log.SourceId}"));
+        Assert.True(rows.Any(log => log.SourceType == "LegacyAudit" && log.SourceId == -1500), identities);
+        Assert.True(rows.Any(log => log.SourceType == "ProductLog" && log.SourceId == 1001), identities);
+    }
+
+    [Fact]
     public async Task Apply_reports_a_transaction_failure_without_partially_updating_product_json()
     {
         var options = TestDbContextFactory.CreateSqliteOptions();

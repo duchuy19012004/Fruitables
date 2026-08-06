@@ -4,18 +4,8 @@ public static class DatabaseConsolidationSql
 {
     public static string BuildHistoricalAuditIdentityUpdate() => """
         UPDATE [AuditLogs]
-        SET [SourceType] = [EntityType],
-            [SourceId] = CASE
-                WHEN EXISTS (
-                    SELECT 1
-                    FROM [AuditLogs] AS [prior]
-                    WHERE [prior].[EntityType] = [AuditLogs].[EntityType]
-                      AND [prior].[EntityId] = [AuditLogs].[EntityId]
-                      AND [prior].[Id] < [AuditLogs].[Id])
-                THEN -CAST([AuditLogs].[Id] AS bigint)
-                ELSE CAST([AuditLogs].[EntityId] AS bigint)
-            END
-        WHERE [SourceType] IS NULL OR [SourceId] IS NULL;
+        SET [SourceType] = 'LegacyAudit',
+            [SourceId] = -CAST([AuditLogs].[Id] AS bigint);
         """;
 
     public static string BuildIsJsonQuery(

@@ -1,7 +1,11 @@
 using Fruitables.Data;
+using Fruitables.Migrations;
 using Fruitables.Services.Infrastructure.DatabaseConsolidation;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
+using System.Reflection;
 using Xunit;
 
 namespace Fruitables.Tests;
@@ -35,6 +39,7 @@ public sealed class MigrationGuardTests
             .UseSqlite(connection)
             .Options;
         await using var db = new ApplicationDbContext(options);
+        var longEntityType = new string('E', 100);
         await db.Database.ExecuteSqlRawAsync("""
             CREATE TABLE [AuditLogs]
             (
@@ -49,28 +54,48 @@ public sealed class MigrationGuardTests
                 [SourceId] INTEGER NULL,
                 [SourceType] TEXT NULL
             );
+            """);
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
             INSERT INTO [AuditLogs] ([Id], [Action], [EntityType], [EntityId], [ChangedByAdminId], [ChangedAt])
-            VALUES (11, 'Update', 'Product', 10, 1, '2026-08-07T00:00:00Z');
+            VALUES (11, 'Update', {longEntityType}, 10, 1, '2026-08-07T00:00:00Z');
             INSERT INTO [AuditLogs] ([Id], [Action], [EntityType], [EntityId], [ChangedByAdminId], [ChangedAt])
-            VALUES (12, 'Update', 'Product', 10, 1, '2026-08-07T00:01:00Z');
+            VALUES (12, 'Update', {longEntityType}, 10, 1, '2026-08-07T00:01:00Z');
             """);
 
         await db.Database.ExecuteSqlRawAsync(DatabaseConsolidationSql.BuildHistoricalAuditIdentityUpdate());
         await db.Database.ExecuteSqlRawAsync(
             "CREATE UNIQUE INDEX [IX_AuditLogs_SourceType_SourceId] ON [AuditLogs] ([SourceType], [SourceId]);");
 
-        var migrationPath = Path.Combine(FindRepositoryRoot(), "Migrations", "20260806224359_AddConsolidationIdentityAndPaymentStatus.cs");
-        var migrationSource = File.ReadAllText(migrationPath);
-        Assert.Contains("THEN -CAST([AuditLogs].[Id] AS bigint)", migrationSource, StringComparison.Ordinal);
-
         var rows = await db.Database
             .SqlQueryRaw<AuditIdentity>("SELECT [SourceType] AS [SourceType], [SourceId] AS [SourceId] FROM [AuditLogs] ORDER BY [Id]")
             .ToListAsync();
 
         Assert.Equal(2, rows.Count);
-        Assert.Equal(new AuditIdentity("Product", 10), rows[0]);
-        Assert.Equal(new AuditIdentity("Product", -12), rows[1]);
+        Assert.Equal(new AuditIdentity("LegacyAudit", -11), rows[0]);
+        Assert.Equal(new AuditIdentity("LegacyAudit", -12), rows[1]);
         Assert.Equal(2, await db.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS [Value] FROM [AuditLogs]").SingleAsync());
+    }
+
+    [Fact]
+    public void Consolidation_identity_migration_up_contains_reserved_historical_namespace()
+    {
+        var migrationBuilder = new MigrationBuilder("Microsoft.EntityFrameworkCore.SqlServer");
+        var migration = new AddConsolidationIdentityAndPaymentStatus();
+        var up = typeof(AddConsolidationIdentityAndPaymentStatus).GetMethod(
+            "Up",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(up);
+
+        up!.Invoke(migration, [migrationBuilder]);
+
+        var auditSql = migrationBuilder.Operations
+            .OfType<SqlOperation>()
+            .Single(operation => operation.Sql.Contains("[AuditLogs]", StringComparison.Ordinal));
+        Assert.Contains("LegacyAudit", auditSql.Sql, StringComparison.Ordinal);
+        Assert.Contains("-CAST([AuditLogs].[Id] AS bigint)", auditSql.Sql, StringComparison.Ordinal);
+        Assert.Contains(
+            migrationBuilder.Operations.OfType<CreateIndexOperation>(),
+            operation => operation.Name == "IX_AuditLogs_SourceType_SourceId" && operation.IsUnique);
     }
 
     private sealed record AuditIdentity(string SourceType, long SourceId);
