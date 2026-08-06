@@ -26,6 +26,8 @@ using Fruitables.Services.Identity.Profiles;
 using Fruitables.Services.Identity.Rbac;
 using Fruitables.Services.Identity.Users;
 using Fruitables.Services.Infrastructure;
+using Fruitables.Services.Infrastructure.Auditing;
+using Fruitables.Services.Infrastructure.Json;
 using Fruitables.Services.Orders.Cart;
 using Fruitables.Services.Orders.OrderManagement;
 using Fruitables.Services.Returns;
@@ -159,6 +161,8 @@ builder.Services.AddScoped<IRealtimeNotifier, SignalRRealtimeNotifier>();
 // Add RBAC Services
 builder.Services.AddScoped<IRbacService, RbacService>();
 builder.Services.AddScoped<IMigrationService, MigrationService>();
+builder.Services.AddSingleton<IJsonDocumentSerializer, VersionedJsonSerializer>();
+builder.Services.AddScoped<IAuditLogWriter, AuditLogWriter>();
 
 // Named HttpClient for AddressKit API (used by MigrationService for data conversion)
 builder.Services.AddHttpClient("AddressKit", client =>
