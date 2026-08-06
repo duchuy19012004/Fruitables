@@ -258,6 +258,24 @@ public class DatabaseConsolidationBackfillTests
     }
 
     [Fact]
+    public async Task Apply_reports_when_product_stock_changes_during_backfill()
+    {
+        var options = TestDbContextFactory.CreateSqliteOptions();
+        await using var db = new ApplicationDbContext(options);
+        await DatabaseConsolidationFixture.SeedAsync(db);
+        await db.Database.ExecuteSqlRawAsync(
+            "CREATE TRIGGER ChangeProductStock AFTER UPDATE OF ImagesJson ON Products BEGIN UPDATE Products SET StockQuantity = StockQuantity + 1 WHERE Id = 10; END;");
+
+        var report = await CreateService(db).BackfillAsync(apply: true, CancellationToken.None);
+
+        Assert.False(report.Success);
+        Assert.Contains(report.Errors, error =>
+            error.SourceId == "Product:10"
+            && error.Message.Contains("stock", StringComparison.OrdinalIgnoreCase));
+        Assert.NotNull(await db.Products.SingleOrDefaultAsync(product => product.Id == DatabaseConsolidationFixture.ProductId));
+    }
+
+    [Fact]
     public async Task Rerun_preserves_target_owned_content_read_state_and_return_links()
     {
         var options = TestDbContextFactory.CreateSqliteOptions();
@@ -486,6 +504,7 @@ internal static class DatabaseConsolidationFixture
                     ProductVariantId = VariantId,
                     ProductName = "Fixture Apple",
                     Quantity = 2m,
+                    BasePrice = 10m,
                     Price = 10m,
                     Total = 20m
                 }

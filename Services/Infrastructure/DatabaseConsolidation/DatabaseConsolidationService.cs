@@ -150,6 +150,7 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
 
     private async Task BackfillProductsAsync(ConsolidationReport report, CancellationToken cancellationToken)
     {
+        var stockBefore = await CaptureProductStockAsync(cancellationToken);
         var products = await _db.Products
             .AsNoTracking()
             .Include(product => product.Images)
@@ -187,6 +188,8 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
                 return await UpdateProductJsonAsync(product.Id, imagesJson, tagsJson, report.Applied, cancellationToken);
             });
         }
+
+        await VerifyProductStockUnchangedAsync(report, stockBefore, cancellationToken);
     }
 
     private async Task BackfillRolesAsync(ConsolidationReport report, CancellationToken cancellationToken)
@@ -1160,6 +1163,7 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
     private async Task VerifyProductsAsync(ConsolidationVerificationReport report, CancellationToken cancellationToken)
     {
         var products = await _db.Products.AsNoTracking().OrderBy(product => product.Id).ToListAsync(cancellationToken);
+        var productIds = products.Select(product => product.Id).ToHashSet();
         report.MutableSourceCounts["products"] = products.Count;
         var targetCount = 0;
         foreach (var product in products)
@@ -1196,6 +1200,8 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
         var variants = await _db.ProductVariants.AsNoTracking().ToListAsync(cancellationToken);
         foreach (var variant in variants)
         {
+            if (!productIds.Contains(variant.ProductId))
+                report.AddError("ProductVariant", SourceId("ProductVariant", variant.Id), $"Variant references missing product {variant.ProductId}.");
             if (variant.StockQuantity < 0)
                 report.AddError("ProductVariant", SourceId("ProductVariant", variant.Id), "Variant stock is negative.");
         }
@@ -1295,12 +1301,25 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
             }
 
             var items = await _db.OrderItems.AsNoTracking().Where(item => item.OrderId == order.Id).ToListAsync(cancellationToken);
-            var itemSubtotal = items.Sum(item => item.Total);
+            var itemSubtotal = 0m;
+            foreach (var item in items)
+            {
+                if (item.Quantity <= 0)
+                    report.AddError("OrderItem", $"OrderItem:{item.Id}", "Order item quantity must be positive.");
+
+                var expectedPromotionDiscount = (item.BasePrice - item.Price) * item.Quantity;
+                if (item.PromotionDiscount != expectedPromotionDiscount)
+                    report.AddError("OrderItem", $"OrderItem:{item.Id}", $"Order item promotion discount mismatch: source formula {expectedPromotionDiscount}, target {item.PromotionDiscount}.");
+
+                var expectedLineTotal = item.Price * item.Quantity - item.ComboDiscount;
+                if (item.Total != expectedLineTotal)
+                    report.AddError("OrderItem", $"OrderItem:{item.Id}", $"Order item line total mismatch: source formula {expectedLineTotal}, target {item.Total}.");
+                itemSubtotal += expectedLineTotal;
+            }
+
             if (itemSubtotal != order.Subtotal)
-                report.AddError("Order", sourceId, $"Order total item subtotal mismatch: source {order.Subtotal}, target {itemSubtotal}.");
-            if (items.Any(item => item.Quantity <= 0))
-                report.AddError("Order", sourceId, "Order item quantity must be positive.");
-            var expectedTotal = order.Subtotal + order.ShippingFee - order.Discount;
+                report.AddError("Order", sourceId, $"Order item subtotal mismatch: source {order.Subtotal}, recalculated {itemSubtotal}.");
+            var expectedTotal = itemSubtotal + order.ShippingFee - order.Discount;
             if (expectedTotal != order.Total)
                 report.AddError("Order", sourceId, $"Order total mismatch: source total {order.Total}, target total {expectedTotal}.");
         }
@@ -1570,9 +1589,18 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
         bool nullable,
         CancellationToken cancellationToken)
     {
-        var invalidIds = await _db.Database
-            .SqlQueryRaw<string>(DatabaseConsolidationSql.BuildIsJsonQuery(tableName, columns, nullable))
-            .ToListAsync(cancellationToken);
+        List<string> invalidIds;
+        try
+        {
+            invalidIds = await _db.Database
+                .SqlQueryRaw<string>(DatabaseConsolidationSql.BuildIsJsonQuery(tableName, columns, nullable))
+                .ToListAsync(cancellationToken);
+        }
+        catch
+        {
+            report.IsJsonValid = false;
+            throw;
+        }
         foreach (var id in invalidIds)
         {
             report.IsJsonValid = false;
@@ -1725,6 +1753,59 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
     private static string PromotionKey(string type, int id) => $"{type}:{id}";
 
     private static string ContentKey(string type, int id) => $"{type}:{id}";
+
+    private async Task<ProductStockSnapshot> CaptureProductStockAsync(CancellationToken cancellationToken)
+    {
+        var products = await _db.Products
+            .AsNoTracking()
+            .Select(product => new { product.Id, product.StockQuantity })
+            .ToDictionaryAsync(product => product.Id, product => product.StockQuantity, cancellationToken);
+        var variants = await _db.ProductVariants
+            .AsNoTracking()
+            .Select(variant => new { variant.Id, variant.ProductId, variant.StockQuantity })
+            .ToDictionaryAsync(
+                variant => variant.Id,
+                variant => new ProductVariantStock(variant.ProductId, variant.StockQuantity),
+                cancellationToken);
+        return new ProductStockSnapshot(products, variants);
+    }
+
+    private async Task VerifyProductStockUnchangedAsync(
+        ConsolidationReport report,
+        ProductStockSnapshot expected,
+        CancellationToken cancellationToken)
+    {
+        var actual = await CaptureProductStockAsync(cancellationToken);
+        foreach (var (productId, expectedStock) in expected.Products)
+        {
+            if (!actual.Products.TryGetValue(productId, out var actualStock))
+            {
+                report.AddError(new ConsolidationError("ProductStock", SourceId("Product", productId), "Product disappeared during backfill."));
+            }
+            else if (actualStock != expectedStock)
+            {
+                report.AddError(new ConsolidationError(
+                    "ProductStock",
+                    SourceId("Product", productId),
+                    $"Product stock changed during backfill: before {expectedStock}, after {actualStock}."));
+            }
+        }
+
+        foreach (var (variantId, expectedVariant) in expected.Variants)
+        {
+            if (!actual.Variants.TryGetValue(variantId, out var actualVariant))
+            {
+                report.AddError(new ConsolidationError("ProductStock", SourceId("ProductVariant", variantId), "Product variant disappeared during backfill."));
+            }
+            else if (actualVariant != expectedVariant)
+            {
+                report.AddError(new ConsolidationError(
+                    "ProductStock",
+                    SourceId("ProductVariant", variantId),
+                    $"Product variant stock or parent changed during backfill: before {expectedVariant.StockQuantity}/{expectedVariant.ProductId}, after {actualVariant.StockQuantity}/{actualVariant.ProductId}."));
+            }
+        }
+    }
 
     private static PaymentProviderEventStatus ToProviderEventStatus(SePayTransactionStatus status) => status switch
     {
@@ -1923,4 +2004,10 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
     }
 
     private delegate bool TryDeserialize<T>(string json, out T? document, out string? error);
+
+    private sealed record ProductStockSnapshot(
+        IReadOnlyDictionary<int, decimal> Products,
+        IReadOnlyDictionary<int, ProductVariantStock> Variants);
+
+    private sealed record ProductVariantStock(int ProductId, decimal StockQuantity);
 }

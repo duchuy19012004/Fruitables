@@ -274,7 +274,7 @@ if (args.Contains("--database-consolidation-backfill", StringComparer.OrdinalIgn
         $"planned {report.Planned}, processed {report.Processed}, skipped {report.Skipped}, failed {report.Failed}.");
     foreach (var error in report.Errors)
         Console.WriteLine($"ERROR {error.AggregateType} {error.SourceId}: {error.Message}");
-    Environment.ExitCode = report.Success ? 0 : 1;
+    Environment.ExitCode = DatabaseConsolidationCli.ExitCode(report.Success);
     return;
 }
 
@@ -289,7 +289,7 @@ if (args.Contains("--database-consolidation-verify", StringComparer.OrdinalIgnor
         $"ISJSON {(report.IsJsonValid ? "valid" : "invalid")}, errors {report.Errors.Count}.");
     foreach (var error in report.Errors)
         Console.WriteLine($"ERROR {error.AggregateType} {error.SourceId}: {error.Message}");
-    Environment.ExitCode = report.Success ? 0 : 1;
+    Environment.ExitCode = DatabaseConsolidationCli.ExitCode(report.Success);
     return;
 }
 
