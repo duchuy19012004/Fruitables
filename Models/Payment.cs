@@ -3,6 +3,13 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Fruitables.Models;
 
+public enum PaymentProviderEventStatus
+{
+    Accepted,
+    Duplicate,
+    Ignored
+}
+
 public class Payment
 {
     public int Id { get; set; }
@@ -19,6 +26,8 @@ public class Payment
     public decimal Amount { get; set; }
 
     public PaymentStatus Status { get; set; } = PaymentStatus.Pending;
+
+    public PaymentProviderEventStatus ProviderEventStatus { get; set; } = PaymentProviderEventStatus.Accepted;
 
     [MaxLength(16)]
     public string? PaymentCode { get; set; }
@@ -37,4 +46,9 @@ public class Payment
     public byte[]? RowVersion { get; set; }
 
     public virtual Order Order { get; set; } = null!;
+
+    [NotMapped]
+    public bool IsBusinessPayment =>
+        ProviderEventStatus == PaymentProviderEventStatus.Accepted
+        && Status == PaymentStatus.Paid;
 }

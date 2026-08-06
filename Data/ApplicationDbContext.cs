@@ -201,6 +201,7 @@ public class ApplicationDbContext : DbContext
                   .IsUnique();
             entity.HasIndex(payment => payment.OrderId);
             entity.HasIndex(payment => payment.Status);
+            entity.HasIndex(payment => payment.ProviderEventStatus);
             entity.HasIndex(payment => payment.CreatedAtUtc);
             entity.HasOne(payment => payment.Order)
                   .WithMany(order => order.Payments)
@@ -255,6 +256,7 @@ public class ApplicationDbContext : DbContext
 
         modelBuilder.Entity<AuditLog>(entity =>
         {
+            entity.HasIndex(audit => new { audit.SourceType, audit.SourceId }).IsUnique();
             entity.HasIndex(audit => new { audit.EntityType, audit.EntityId });
             entity.HasIndex(audit => audit.ChangedAt);
             entity.HasIndex(audit => audit.ChangedByAdminId);

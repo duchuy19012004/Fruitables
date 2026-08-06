@@ -1,7 +1,12 @@
 using System.Text.Json;
+using Fruitables.Areas.Admin.Controllers;
+using Fruitables.Attributes;
 using Fruitables.Data;
+using Fruitables.Models;
+using Fruitables.Models.Json;
 using Fruitables.Services.Infrastructure.DatabaseConsolidation;
 using Fruitables.Services.Infrastructure.Json;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -94,6 +99,102 @@ public class DatabaseConsolidationVerificationTests
         Assert.Equal(before, after);
         Assert.Equal(productJson, productJsonAfter);
         Assert.DoesNotContain(db.ChangeTracker.Entries(), entry => entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted);
+    }
+
+    [Fact]
+    public async Task Verify_rejects_valid_json_with_an_invalid_typed_promotion_payload()
+    {
+        var options = TestDbContextFactory.CreateSqliteOptions();
+        await using var db = new ApplicationDbContext(options);
+        await DatabaseConsolidationFixture.SeedAsync(db);
+        var service = CreateService(db);
+        var backfill = await service.BackfillAsync(apply: true, CancellationToken.None);
+        Assert.True(backfill.Success, string.Join(Environment.NewLine, backfill.Errors.Select(error => error.Message)));
+
+        var promotion = await db.Promotions.SingleAsync(item => item.Type == "combo");
+        promotion.PayloadJson = "{\"schemaVersion\":1}";
+        await db.SaveChangesAsync();
+
+        var report = await service.VerifyAsync(CancellationToken.None);
+
+        Assert.False(report.Success);
+        Assert.Contains(report.Errors, error =>
+            error.AggregateType == "Promotion"
+            && error.Message.Contains("Typed JSON validation failed", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Verify_reports_extra_target_rows_separately_from_source_derived_keys()
+    {
+        var options = TestDbContextFactory.CreateSqliteOptions();
+        await using var db = new ApplicationDbContext(options);
+        await DatabaseConsolidationFixture.SeedAsync(db);
+        var service = CreateService(db);
+        var backfill = await service.BackfillAsync(apply: true, CancellationToken.None);
+        Assert.True(backfill.Success, string.Join(Environment.NewLine, backfill.Errors.Select(error => error.Message)));
+
+        db.Promotions.Add(new Promotion
+        {
+            Type = "manual",
+            Code = "manual:extra",
+            PayloadJson = "{\"schemaVersion\":1}",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var report = await service.VerifyAsync(CancellationToken.None);
+
+        Assert.False(report.Success);
+        Assert.Equal(1, report.TargetCounts["promotions.extra"]);
+        Assert.Contains(report.Errors, error => error.SourceId.Contains("extra", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task Verify_compares_payment_amount_event_status_and_refund_values()
+    {
+        var options = TestDbContextFactory.CreateSqliteOptions();
+        await using var db = new ApplicationDbContext(options);
+        await DatabaseConsolidationFixture.SeedAsync(db);
+        var service = CreateService(db);
+        var backfill = await service.BackfillAsync(apply: true, CancellationToken.None);
+        Assert.True(backfill.Success, string.Join(Environment.NewLine, backfill.Errors.Select(error => error.Message)));
+
+        var payment = await db.Payments.SingleAsync();
+        payment.Amount = 999m;
+        payment.ProviderEventStatus = PaymentProviderEventStatus.Ignored;
+        var refund = await db.Refunds.SingleAsync();
+        refund.Amount = 999m;
+        await db.SaveChangesAsync();
+
+        var report = await service.VerifyAsync(CancellationToken.None);
+
+        Assert.False(report.Success);
+        Assert.Contains(report.Errors, error => error.Message.Contains("payment amount", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(report.Errors, error => error.Message.Contains("provider event status", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(report.Errors, error => error.Message.Contains("refund amount", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Diagnostics_status_requires_permission_and_is_not_anonymous()
+    {
+        var method = typeof(DiagnosticsController).GetMethod(nameof(DiagnosticsController.DatabaseConsolidationStatus));
+        Assert.NotNull(method);
+        Assert.Contains(method!.GetCustomAttributes(typeof(RequirePermissionAttribute), inherit: true), attribute =>
+            ((RequirePermissionAttribute)attribute).Permissions.Contains("system.manage_rbac"));
+        Assert.Empty(method.GetCustomAttributes(typeof(AllowAnonymousAttribute), inherit: true));
+    }
+
+    [Fact]
+    public void Sql_server_json_guard_emits_actual_isjson_predicates()
+    {
+        var sql = DatabaseConsolidationSql.BuildIsJsonQuery(
+            "Products",
+            ["ImagesJson", "TagsJson"]);
+
+        Assert.Contains("ISJSON([ImagesJson])", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ISJSON([TagsJson])", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("FROM [Products]", sql, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

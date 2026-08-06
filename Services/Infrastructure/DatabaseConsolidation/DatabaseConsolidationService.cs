@@ -64,6 +64,7 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
         await RunVerificationStageAsync(report, "ContentEntries", VerifyContentEntriesAsync, cancellationToken);
         await RunVerificationStageAsync(report, "ChatSessions", VerifyChatSessionsAsync, cancellationToken);
         await RunVerificationStageAsync(report, "AuditLogs", VerifyAuditLogsAsync, cancellationToken);
+        await RunVerificationStageAsync(report, "SqlServerISJSON", VerifySqlServerJsonAsync, cancellationToken);
 
         return report;
     }
@@ -385,6 +386,7 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
                     Provider = "SePay",
                     ProviderTransactionId = providerTransactionId,
                     Amount = transaction.TransferAmount,
+                    ProviderEventStatus = ToProviderEventStatus(transaction.Status),
                     Status = transaction.Status == SePayTransactionStatus.Paid
                         ? PaymentStatus.Paid
                         : PaymentStatus.Pending,
@@ -621,6 +623,7 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
                         throw new InvalidOperationException($"ReturnEvidence {evidence.Id} references an invalid return item.");
                     evidenceDocuments.Add(new ReturnEvidenceDetails
                     {
+                        ReturnRequestItemId = evidence.ReturnRequestItemId,
                         StorageKey = RequireText(evidence.StorageKey, $"ReturnEvidence:{evidence.Id}.StorageKey"),
                         OriginalFileName = RequireText(evidence.OriginalFileName, $"ReturnEvidence:{evidence.Id}.OriginalFileName"),
                         ContentType = RequireText(evidence.ContentType, $"ReturnEvidence:{evidence.Id}.ContentType"),
@@ -645,6 +648,7 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
                         throw new InvalidOperationException($"ReturnEvent {eventItem.Id} references an invalid return item.");
                     eventDocuments.Add(new ReturnEventDetails
                     {
+                        ReturnRequestItemId = eventItem.ReturnRequestItemId,
                         OldStatus = eventItem.OldStatus,
                         NewStatus = eventItem.NewStatus,
                         EventType = eventItem.EventType,
@@ -791,6 +795,8 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
                     await RequireProductReferenceAsync(log.ProductId.Value, null, sourceId, cancellationToken);
                 return await UpsertAuditLogAsync(new AuditLog
                 {
+                    SourceType = "ProductLog",
+                    SourceId = log.Id,
                     Action = RequireText(log.Action, sourceId),
                     EntityType = "ProductLog",
                     EntityId = log.Id,
@@ -814,6 +820,8 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
                     throw new InvalidOperationException($"Combo audit log {log.Id} references missing combo {log.ComboId.Value}.");
                 return await UpsertAuditLogAsync(new AuditLog
                 {
+                    SourceType = "ComboAuditLog",
+                    SourceId = log.Id,
                     Action = RequireText(log.Action, sourceId),
                     EntityType = "ComboAuditLog",
                     EntityId = checked((int)log.Id),
@@ -845,6 +853,8 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
                 }, WishlistJsonOptions);
                 return await UpsertAuditLogAsync(new AuditLog
                 {
+                    SourceType = "UserAccountLog",
+                    SourceId = log.Id,
                     Action = RequireText(log.Action, sourceId),
                     EntityType = "UserAccountLog",
                     EntityId = log.Id,
@@ -866,6 +876,8 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
                 ValidateOptionalJson(log.NewValue, $"RbacAuditLog:{log.Id}.NewValue");
                 return await UpsertAuditLogAsync(new AuditLog
                 {
+                    SourceType = "RbacAuditLog",
+                    SourceId = log.Id,
                     Action = RequireText(log.Action, sourceId),
                     EntityType = "RbacAuditLog",
                     EntityId = log.Id,
@@ -1066,21 +1078,33 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
     private async Task<bool> UpsertAuditLogAsync(AuditLog candidate, bool apply, CancellationToken cancellationToken)
     {
         var existing = await _db.AuditLogs.AsNoTracking().SingleOrDefaultAsync(log =>
-            log.EntityType == candidate.EntityType && log.EntityId == candidate.EntityId, cancellationToken);
+            log.SourceType == candidate.SourceType && log.SourceId == candidate.SourceId, cancellationToken);
         if (existing is not null && SameAuditLog(existing, candidate))
             return false;
         if (!apply)
             return true;
-        return await InTransactionAsync(async () =>
+        try
         {
-            var entity = await _db.AuditLogs.SingleOrDefaultAsync(log =>
-                log.EntityType == candidate.EntityType && log.EntityId == candidate.EntityId, cancellationToken);
-            if (entity is null)
-                _db.AuditLogs.Add(candidate);
-            else
-                CopyAuditLog(entity, candidate);
-            return true;
-        }, cancellationToken);
+            return await InTransactionAsync(async () =>
+            {
+                var entity = await _db.AuditLogs.SingleOrDefaultAsync(log =>
+                    log.SourceType == candidate.SourceType && log.SourceId == candidate.SourceId, cancellationToken);
+                if (entity is null)
+                    _db.AuditLogs.Add(candidate);
+                else
+                    CopyAuditLog(entity, candidate);
+                return true;
+            }, cancellationToken);
+        }
+        catch (DbUpdateException exception) when (IsUniqueConstraintViolation(exception))
+        {
+            _db.ChangeTracker.Clear();
+            var raced = await _db.AuditLogs.AsNoTracking().AnyAsync(log =>
+                log.SourceType == candidate.SourceType && log.SourceId == candidate.SourceId, cancellationToken);
+            if (raced)
+                return false;
+            throw;
+        }
     }
 
     private async Task<bool> UpdateTrackedPropertyAsync<TEntity>(
@@ -1122,6 +1146,15 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
             _db.ChangeTracker.Clear();
             throw;
         }
+    }
+
+    private static bool IsUniqueConstraintViolation(DbUpdateException exception)
+    {
+        var message = exception.ToString();
+        return message.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("unique index", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("2601", StringComparison.Ordinal)
+            || message.Contains("2627", StringComparison.Ordinal);
     }
 
     private async Task VerifyProductsAsync(ConsolidationVerificationReport report, CancellationToken cancellationToken)
@@ -1279,36 +1312,81 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
     {
         var transactions = await _db.SePayTransactions.AsNoTracking().ToListAsync(cancellationToken);
         var payments = await _db.Payments.AsNoTracking().ToListAsync(cancellationToken);
+        var expectedKeys = transactions
+            .Select(transaction => $"SePay:{transaction.SePayTransactionId.ToString(CultureInfo.InvariantCulture)}")
+            .ToHashSet(StringComparer.Ordinal);
+        var sourceDerivedCount = payments.Count(payment =>
+            expectedKeys.Contains($"{payment.Provider}:{payment.ProviderTransactionId}"));
         report.MutableSourceCounts["payments"] = transactions.Count;
-        report.MutableTargetCounts["payments"] = payments.Count;
-        CompareCounts(report, "Payments", transactions.Count, payments.Count);
+        report.MutableTargetCounts["payments"] = sourceDerivedCount;
+        CompareCounts(report, "Payments", transactions.Count, sourceDerivedCount);
         foreach (var transaction in transactions)
         {
-            var sourceId = $"Payment:SePay:{transaction.SePayTransactionId.ToString(CultureInfo.InvariantCulture)}";
+            var providerKey = $"SePay:{transaction.SePayTransactionId.ToString(CultureInfo.InvariantCulture)}";
+            var sourceId = $"Payment:{providerKey}";
             var providerTransactionId = transaction.SePayTransactionId.ToString(CultureInfo.InvariantCulture);
-            if (!payments.Any(payment => payment.Provider == "SePay" && payment.ProviderTransactionId == providerTransactionId))
+            var payment = payments.SingleOrDefault(item => item.Provider == "SePay" && item.ProviderTransactionId == providerTransactionId);
+            if (payment is null)
+            {
                 report.AddError("Payment", sourceId, $"Payment transaction ID {providerTransactionId} is missing from target.");
+                continue;
+            }
+            var expectedEventStatus = ToProviderEventStatus(transaction.Status);
+            if (payment.ProviderEventStatus != expectedEventStatus)
+                report.AddError("Payment", sourceId, $"Provider event status mismatch: source {expectedEventStatus}, target {payment.ProviderEventStatus}.");
+            if (payment.Amount != transaction.TransferAmount)
+                report.AddError("Payment", sourceId, $"Payment amount mismatch: source {transaction.TransferAmount}, target {payment.Amount}.");
+            if (transaction.Status == SePayTransactionStatus.Paid && !payment.IsBusinessPayment)
+                report.AddError("Payment", sourceId, "Accepted paid event is not a business payment.");
+            if ((transaction.Status is SePayTransactionStatus.Ignored or SePayTransactionStatus.Duplicate)
+                && payment.IsBusinessPayment)
+                report.AddError("Payment", sourceId, "Ignored or duplicate provider event became a business payment.");
         }
+        report.MutableTargetCounts["payments.extra"] = payments.Count - sourceDerivedCount;
+        foreach (var extra in payments.Where(payment => !expectedKeys.Contains($"{payment.Provider}:{payment.ProviderTransactionId}")))
+            report.AddError("Payment", $"extra:{extra.Provider}:{extra.ProviderTransactionId}", "Target payment is not source-derived.");
     }
 
     private async Task VerifyPromotionsAsync(ConsolidationVerificationReport report, CancellationToken cancellationToken)
     {
-        var sourceCount = await _db.Coupons.CountAsync(cancellationToken)
-            + await _db.Combos.CountAsync(cancellationToken)
-            + await _db.PriceSchedules.CountAsync(cancellationToken);
-        var targetCount = await _db.Promotions.CountAsync(cancellationToken);
+        var expectedKeys = new HashSet<(string Type, string Key)>();
+        foreach (var sourceId in await _db.Coupons.AsNoTracking().Select(coupon => coupon.Id).ToListAsync(cancellationToken))
+            expectedKeys.Add(("coupon", PromotionKey("coupon", sourceId)));
+        foreach (var sourceId in await _db.Combos.AsNoTracking().Select(combo => combo.Id).ToListAsync(cancellationToken))
+            expectedKeys.Add(("combo", PromotionKey("combo", sourceId)));
+        foreach (var sourceId in await _db.PriceSchedules.AsNoTracking().Select(schedule => schedule.Id).ToListAsync(cancellationToken))
+            expectedKeys.Add(("price-schedule", PromotionKey("price-schedule", sourceId)));
+
+        var promotions = await _db.Promotions.AsNoTracking().ToListAsync(cancellationToken);
+        var sourceCount = expectedKeys.Count;
+        var targetCount = promotions.Count(promotion =>
+            expectedKeys.Contains((promotion.Type, promotion.Code ?? string.Empty)));
         report.MutableSourceCounts["promotions"] = sourceCount;
         report.MutableTargetCounts["promotions"] = targetCount;
         CompareCounts(report, "Promotions", sourceCount, targetCount);
-        var promotions = await _db.Promotions.AsNoTracking().ToListAsync(cancellationToken);
+        var matchedKeys = new HashSet<(string Type, string Key)>();
         foreach (var promotion in promotions)
         {
-            VerifyJson(report, "Promotion", $"Promotion:{promotion.Type}:{promotion.Code}", promotion.PayloadJson);
+            var sourceId = $"Promotion:{promotion.Type}:{promotion.Code}";
+            var typed = promotion.Type.ToLowerInvariant() switch
+            {
+                "coupon" => VerifyDocument<CouponPayload>(report, "Promotion", sourceId, promotion.PayloadJson, _serializer.TryDeserialize<CouponPayload>),
+                "combo" => VerifyDocument<ComboPayload>(report, "Promotion", sourceId, promotion.PayloadJson, _serializer.TryDeserialize<ComboPayload>),
+                "price-schedule" => VerifyDocument<PriceSchedulePayload>(report, "Promotion", sourceId, promotion.PayloadJson, _serializer.TryDeserialize<PriceSchedulePayload>),
+                _ => false
+            };
+            var key = (promotion.Type, promotion.Code ?? string.Empty);
+            if (!expectedKeys.Contains(key))
+            {
+                report.AddError("Promotion", $"extra:{promotion.Type}:{promotion.Code}", "Target promotion is not source-derived.");
+                continue;
+            }
+            if (typed)
+                matchedKeys.Add(key);
         }
-
-        await VerifyPromotionKeyAsync(report, "coupon", await _db.Coupons.AsNoTracking().Select(coupon => coupon.Id).ToListAsync(cancellationToken), cancellationToken);
-        await VerifyPromotionKeyAsync(report, "combo", await _db.Combos.AsNoTracking().Select(combo => combo.Id).ToListAsync(cancellationToken), cancellationToken);
-        await VerifyPromotionKeyAsync(report, "price-schedule", await _db.PriceSchedules.AsNoTracking().Select(schedule => schedule.Id).ToListAsync(cancellationToken), cancellationToken);
+        report.MutableTargetCounts["promotions.extra"] = promotions.Count - targetCount;
+        foreach (var expectedKey in expectedKeys.Except(matchedKeys))
+            report.AddError("Promotion", $"Promotion:{expectedKey.Type}:{expectedKey.Key}", "Source promotion target is missing or invalid.");
     }
 
     private async Task VerifyReviewsAsync(ConsolidationVerificationReport report, CancellationToken cancellationToken)
@@ -1339,9 +1417,14 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
     {
         var requests = await _db.ReturnRequests.AsNoTracking().ToListAsync(cancellationToken);
         var targets = await _db.Returns.AsNoTracking().ToListAsync(cancellationToken);
+        var expectedKeys = requests.Select(request => request.OrderId).ToHashSet();
+        var sourceDerivedCount = targets.Count(target => expectedKeys.Contains(target.OrderId));
         report.MutableSourceCounts["returns"] = requests.Count;
-        report.MutableTargetCounts["returns"] = targets.Count;
-        CompareCounts(report, "Returns", requests.Count, targets.Count);
+        report.MutableTargetCounts["returns"] = sourceDerivedCount;
+        CompareCounts(report, "Returns", requests.Count, sourceDerivedCount);
+        report.MutableTargetCounts["returns.extra"] = targets.Count - sourceDerivedCount;
+        foreach (var extra in targets.Where(target => !expectedKeys.Contains(target.OrderId)))
+            report.AddError("Return", $"extra:{extra.OrderId}", "Target return is not source-derived.");
         foreach (var request in requests)
         {
             var target = targets.SingleOrDefault(item => item.OrderId == request.OrderId);
@@ -1363,6 +1446,26 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
             var sourceEventCount = await _db.ReturnEvents.CountAsync(item => item.ReturnRequestId == request.Id, cancellationToken);
             if (details.Items.Count != sourceItemCount || details.Evidence.Count != sourceEvidenceCount || details.Events.Count != sourceEventCount)
                 report.AddError("Return", sourceId, $"Return detail count mismatch: source {sourceItemCount}/{sourceEvidenceCount}/{sourceEventCount}, target {details.Items.Count}/{details.Evidence.Count}/{details.Events.Count}.");
+            var sourceRefund = await _db.Refunds.AsNoTracking().SingleOrDefaultAsync(refund => refund.ReturnRequestId == request.Id, cancellationToken);
+            if (sourceRefund is null && details.Refund is not null)
+                report.AddError("Return", sourceId, "Target refund exists without a source refund.");
+            else if (sourceRefund is not null && details.Refund is null)
+                report.AddError("Return", sourceId, "Source refund is missing from target details.");
+            else if (sourceRefund is not null && details.Refund is not null)
+            {
+                var targetRefund = details.Refund;
+                if (sourceRefund.Amount != targetRefund.Amount)
+                    report.AddError("Return", sourceId, $"Refund amount mismatch: source {sourceRefund.Amount}, target {targetRefund.Amount}.");
+                if (sourceRefund.ShippingFeeAmount != targetRefund.ShippingFeeAmount
+                    || sourceRefund.Status != targetRefund.Status
+                    || sourceRefund.TransactionReference != targetRefund.TransactionReference
+                    || sourceRefund.FailureReason != targetRefund.FailureReason
+                    || sourceRefund.CreatedByUserId != targetRefund.CreatedByUserId
+                    || sourceRefund.ProcessedByUserId != targetRefund.ProcessedByUserId
+                    || sourceRefund.CreatedAtUtc != targetRefund.CreatedAtUtc
+                    || sourceRefund.ProcessedAtUtc != targetRefund.ProcessedAtUtc)
+                    report.AddError("Return", sourceId, "Refund detail values do not match the source refund.");
+            }
         }
     }
 
@@ -1370,13 +1473,18 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
     {
         var sourceCount = await _db.Faqs.CountAsync(cancellationToken);
         var entries = await _db.ContentEntries.AsNoTracking().ToListAsync(cancellationToken);
+        var faqs = await _db.Faqs.AsNoTracking().Select(faq => faq.Id).ToListAsync(cancellationToken);
+        var expectedKeys = faqs.Select(faqId => (EntryType: "faq", Key: ContentKey("faq", faqId))).ToHashSet();
+        var sourceDerivedCount = entries.Count(entry => expectedKeys.Contains((entry.EntryType, entry.Key)));
         report.MutableSourceCounts["content"] = sourceCount;
-        report.MutableTargetCounts["content"] = entries.Count;
-        CompareCounts(report, "ContentEntries", sourceCount, entries.Count);
+        report.MutableTargetCounts["content"] = sourceDerivedCount;
+        CompareCounts(report, "ContentEntries", sourceCount, sourceDerivedCount);
+        report.MutableTargetCounts["content.extra"] = entries.Count - sourceDerivedCount;
         foreach (var entry in entries)
             VerifyDocument<ContentPayload>(report, "ContentEntry", $"ContentEntry:{entry.EntryType}:{entry.Key}", entry.PayloadJson, _serializer.TryDeserialize<ContentPayload>);
-        var faqs = await _db.Faqs.AsNoTracking().Select(faq => faq.Id).ToListAsync(cancellationToken);
         var entryKeys = entries.Select(entry => (entry.EntryType, entry.Key)).ToHashSet();
+        foreach (var extra in entries.Where(entry => !expectedKeys.Contains((entry.EntryType, entry.Key))))
+            report.AddError("ContentEntry", $"extra:{extra.EntryType}:{extra.Key}", "Target content entry is not source-derived.");
         foreach (var faqId in faqs)
         {
             var key = ContentKey("faq", faqId);
@@ -1401,29 +1509,75 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
 
     private async Task VerifyAuditLogsAsync(ConsolidationVerificationReport report, CancellationToken cancellationToken)
     {
-        var sourceCount = await _db.ProductLogs.CountAsync(cancellationToken)
-            + await _db.ComboAuditLogs.CountAsync(cancellationToken)
-            + await _db.UserAccountLogs.CountAsync(cancellationToken)
-            + await _db.RbacAuditLogs.CountAsync(cancellationToken);
-        var targetCount = await _db.AuditLogs.CountAsync(cancellationToken);
+        var productLogIds = (await _db.ProductLogs.AsNoTracking().Select(log => log.Id).ToListAsync(cancellationToken))
+            .Select(id => (SourceType: "ProductLog", SourceId: (long)id));
+        var comboLogIds = (await _db.ComboAuditLogs.AsNoTracking().Select(log => log.Id).ToListAsync(cancellationToken))
+            .Select(id => (SourceType: "ComboAuditLog", SourceId: id));
+        var accountLogIds = (await _db.UserAccountLogs.AsNoTracking().Select(log => log.Id).ToListAsync(cancellationToken))
+            .Select(id => (SourceType: "UserAccountLog", SourceId: (long)id));
+        var rbacLogIds = (await _db.RbacAuditLogs.AsNoTracking().Select(log => log.Id).ToListAsync(cancellationToken))
+            .Select(id => (SourceType: "RbacAuditLog", SourceId: (long)id));
+        var expectedKeys = productLogIds
+            .Concat(comboLogIds)
+            .Concat(accountLogIds)
+            .Concat(rbacLogIds)
+            .ToHashSet();
+        var logs = await _db.AuditLogs.AsNoTracking().ToListAsync(cancellationToken);
+        var sourceCount = expectedKeys.Count;
+        var targetCount = logs.Count(log => expectedKeys.Contains((log.SourceType, log.SourceId)));
         report.MutableSourceCounts["auditLogs"] = sourceCount;
         report.MutableTargetCounts["auditLogs"] = targetCount;
         CompareCounts(report, "AuditLogs", sourceCount, targetCount);
-        var logs = await _db.AuditLogs.AsNoTracking().ToListAsync(cancellationToken);
+        var matchedKeys = new HashSet<(string SourceType, long SourceId)>();
         foreach (var log in logs)
         {
             VerifyOptionalJson(report, "AuditLog", $"AuditLog:{log.EntityType}:{log.EntityId}", log.OldValue);
             VerifyOptionalJson(report, "AuditLog", $"AuditLog:{log.EntityType}:{log.EntityId}", log.NewValue);
+            var key = (log.SourceType, log.SourceId);
+            if (!expectedKeys.Contains(key))
+                report.AddError("AuditLog", $"extra:{log.SourceType}:{log.SourceId}", "Target audit row is not source-derived.");
+            else
+                matchedKeys.Add(key);
         }
+        report.MutableTargetCounts["auditLogs.extra"] = logs.Count - targetCount;
+        foreach (var key in expectedKeys.Except(matchedKeys))
+            report.AddError("AuditLog", $"{key.SourceType}:{key.SourceId}", "Source audit target is missing.");
+    }
 
-        var productLogIds = await _db.ProductLogs.AsNoTracking().Select(log => log.Id).ToListAsync(cancellationToken);
-        var comboLogIds = await _db.ComboAuditLogs.AsNoTracking().Select(log => checked((int)log.Id)).ToListAsync(cancellationToken);
-        var accountLogIds = await _db.UserAccountLogs.AsNoTracking().Select(log => log.Id).ToListAsync(cancellationToken);
-        var rbacLogIds = await _db.RbacAuditLogs.AsNoTracking().Select(log => log.Id).ToListAsync(cancellationToken);
-        VerifyAuditKeys(report, "ProductLog", productLogIds, logs);
-        VerifyAuditKeys(report, "ComboAuditLog", comboLogIds, logs);
-        VerifyAuditKeys(report, "UserAccountLog", accountLogIds, logs);
-        VerifyAuditKeys(report, "RbacAuditLog", rbacLogIds, logs);
+    private async Task VerifySqlServerJsonAsync(ConsolidationVerificationReport report, CancellationToken cancellationToken)
+    {
+        if (!_db.Database.IsSqlServer())
+            return;
+
+        await VerifySqlServerJsonTableAsync(report, "Product", "Products", ["ImagesJson", "TagsJson"], nullable: false, cancellationToken);
+        await VerifySqlServerJsonTableAsync(report, "User", "Users", ["RoleIdsJson", "WishlistJson"], nullable: false, cancellationToken);
+        await VerifySqlServerJsonTableAsync(report, "RolePermissions", "Roles", ["PermissionsJson"], nullable: false, cancellationToken);
+        await VerifySqlServerJsonTableAsync(report, "Cart", "Carts", ["LinesJson"], nullable: false, cancellationToken);
+        await VerifySqlServerJsonTableAsync(report, "Order", "Orders", ["StatusHistoryJson", "NotesJson"], nullable: false, cancellationToken);
+        await VerifySqlServerJsonTableAsync(report, "ReviewMetadata", "Reviews", ["MetadataJson"], nullable: false, cancellationToken);
+        await VerifySqlServerJsonTableAsync(report, "ChatMessages", "ChatSessions", ["MessagesJson"], nullable: false, cancellationToken);
+        await VerifySqlServerJsonTableAsync(report, "Promotion", "Promotions", ["PayloadJson"], nullable: false, cancellationToken);
+        await VerifySqlServerJsonTableAsync(report, "Return", "Returns", ["DetailsJson"], nullable: false, cancellationToken);
+        await VerifySqlServerJsonTableAsync(report, "ContentEntry", "ContentEntries", ["PayloadJson"], nullable: false, cancellationToken);
+        await VerifySqlServerJsonTableAsync(report, "AuditLog", "AuditLogs", ["OldValue", "NewValue"], nullable: true, cancellationToken);
+    }
+
+    private async Task VerifySqlServerJsonTableAsync(
+        ConsolidationVerificationReport report,
+        string aggregateType,
+        string tableName,
+        IReadOnlyCollection<string> columns,
+        bool nullable,
+        CancellationToken cancellationToken)
+    {
+        var invalidIds = await _db.Database
+            .SqlQueryRaw<string>(DatabaseConsolidationSql.BuildIsJsonQuery(tableName, columns, nullable))
+            .ToListAsync(cancellationToken);
+        foreach (var id in invalidIds)
+        {
+            report.IsJsonValid = false;
+            report.AddError(aggregateType, $"{tableName}:{id}", $"SQL Server ISJSON failed for {tableName}.");
+        }
     }
 
     private bool VerifyDocument<T>(
@@ -1518,19 +1672,6 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
         }
     }
 
-    private static void VerifyAuditKeys(
-        ConsolidationVerificationReport report,
-        string entityType,
-        IReadOnlyCollection<int> sourceIds,
-        IReadOnlyCollection<AuditLog> logs)
-    {
-        foreach (var sourceId in sourceIds)
-        {
-            if (!logs.Any(log => log.EntityType == entityType && log.EntityId == sourceId))
-                report.AddError("AuditLog", SourceId(entityType, sourceId), "Audit target is missing.");
-        }
-    }
-
     private static void CompareCounts(ConsolidationVerificationReport report, string aggregateType, int sourceCount, int targetCount)
     {
         if (sourceCount != targetCount)
@@ -1585,6 +1726,14 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
 
     private static string ContentKey(string type, int id) => $"{type}:{id}";
 
+    private static PaymentProviderEventStatus ToProviderEventStatus(SePayTransactionStatus status) => status switch
+    {
+        SePayTransactionStatus.Paid => PaymentProviderEventStatus.Accepted,
+        SePayTransactionStatus.Duplicate => PaymentProviderEventStatus.Duplicate,
+        SePayTransactionStatus.Ignored => PaymentProviderEventStatus.Ignored,
+        _ => throw new ArgumentOutOfRangeException(nameof(status), status, "Unknown SePay transaction status.")
+    };
+
     private static DateTime LegacyPromotionTimestamp(int sourceId) =>
         new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddTicks(sourceId);
 
@@ -1636,15 +1785,8 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
     {
         if (details is null)
             return null;
-        try
-        {
-            using var document = JsonDocument.Parse(details);
-            return details;
-        }
-        catch (JsonException)
-        {
-            return JsonSerializer.Serialize(new { details }, WishlistJsonOptions);
-        }
+        using var document = JsonDocument.Parse(details);
+        return details;
     }
 
     private static void ValidateOptionalJson(string? json, string field)
@@ -1667,6 +1809,7 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
         && left.ProviderTransactionId == right.ProviderTransactionId
         && left.Amount == right.Amount
         && left.Status == right.Status
+        && left.ProviderEventStatus == right.ProviderEventStatus
         && left.PaymentCode == right.PaymentCode
         && left.ReferenceCode == right.ReferenceCode
         && left.Message == right.Message
@@ -1679,6 +1822,7 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
         target.OrderId = source.OrderId;
         target.Amount = source.Amount;
         target.Status = source.Status;
+        target.ProviderEventStatus = source.ProviderEventStatus;
         target.PaymentCode = source.PaymentCode;
         target.ReferenceCode = source.ReferenceCode;
         target.Message = source.Message;
@@ -1744,7 +1888,6 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
         && left.Title == right.Title
         && left.PayloadJson == right.PayloadJson
         && left.IsActive == right.IsActive
-        && left.IsRead == right.IsRead
         && left.CreatedAt == right.CreatedAt
         && left.UpdatedAt == right.UpdatedAt;
 
@@ -1753,13 +1896,14 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
         target.Title = source.Title;
         target.PayloadJson = source.PayloadJson;
         target.IsActive = source.IsActive;
-        target.IsRead = source.IsRead;
         target.CreatedAt = source.CreatedAt;
         target.UpdatedAt = source.UpdatedAt;
     }
 
     private static bool SameAuditLog(AuditLog left, AuditLog right) =>
-        left.Action == right.Action
+        left.SourceType == right.SourceType
+        && left.SourceId == right.SourceId
+        && left.Action == right.Action
         && left.EntityType == right.EntityType
         && left.EntityId == right.EntityId
         && left.ChangedByAdminId == right.ChangedByAdminId
@@ -1769,6 +1913,8 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
 
     private static void CopyAuditLog(AuditLog target, AuditLog source)
     {
+        target.SourceType = source.SourceType;
+        target.SourceId = source.SourceId;
         target.Action = source.Action;
         target.ChangedByAdminId = source.ChangedByAdminId;
         target.ChangedAt = source.ChangedAt;

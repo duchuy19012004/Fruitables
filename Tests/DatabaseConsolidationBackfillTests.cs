@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Fruitables.Data;
 using Fruitables.Models;
+using Fruitables.Models.Json;
 using Fruitables.Models.Returns;
 using Fruitables.Services.Infrastructure.DatabaseConsolidation;
 using Fruitables.Services.Infrastructure.Json;
@@ -20,6 +21,7 @@ public class DatabaseConsolidationBackfillTests
         await DatabaseConsolidationFixture.SeedAsync(db);
 
         var before = await DatabaseConsolidationFixture.SnapshotAsync(db);
+        var rootJsonBefore = await DatabaseConsolidationFixture.RootJsonSnapshotAsync(db);
         var service = CreateService(db);
 
         var report = await service.BackfillAsync(apply: false, CancellationToken.None);
@@ -34,6 +36,7 @@ public class DatabaseConsolidationBackfillTests
         Assert.Equal(0, await db.Returns.CountAsync());
         Assert.Equal(0, await db.AuditLogs.CountAsync());
         Assert.Equal(before, await DatabaseConsolidationFixture.SnapshotAsync(db));
+        Assert.Equal(rootJsonBefore, await DatabaseConsolidationFixture.RootJsonSnapshotAsync(db));
     }
 
     [Fact]
@@ -114,6 +117,167 @@ public class DatabaseConsolidationBackfillTests
         Assert.Equal(2, await db.SePayTransactions.CountAsync());
         Assert.Null(await db.AuditLogs.SingleOrDefaultAsync(log => log.EntityId == 999));
         Assert.Null(await db.Payments.SingleOrDefaultAsync(payment => payment.ProviderTransactionId == "998"));
+    }
+
+    [Fact]
+    public async Task Invalid_product_and_combo_audit_json_is_reported_without_dropping_source_rows()
+    {
+        var options = TestDbContextFactory.CreateSqliteOptions();
+        await using var db = new ApplicationDbContext(options);
+        await DatabaseConsolidationFixture.SeedAsync(db);
+        db.ProductLogs.Add(new ProductLog
+        {
+            Id = 1005,
+            ProductId = DatabaseConsolidationFixture.ProductId,
+            AdminId = DatabaseConsolidationFixture.AdminId,
+            Action = ProductLogActions.Update,
+            Details = "not-json"
+        });
+        db.ComboAuditLogs.Add(new ComboAuditLog
+        {
+            Id = 1006,
+            ComboId = DatabaseConsolidationFixture.ComboId,
+            AdminId = DatabaseConsolidationFixture.AdminId,
+            Action = ComboAuditActions.Update,
+            Revision = 1,
+            Details = "not-json"
+        });
+        await db.SaveChangesAsync();
+
+        var report = await CreateService(db).BackfillAsync(apply: true, CancellationToken.None);
+
+        Assert.False(report.Success);
+        Assert.Contains(report.Errors, error => error.SourceId == "ProductLog:1005");
+        Assert.Contains(report.Errors, error => error.SourceId == "ComboAuditLog:1006");
+        Assert.NotNull(await db.ProductLogs.SingleOrDefaultAsync(log => log.Id == 1005));
+        Assert.NotNull(await db.ComboAuditLogs.SingleOrDefaultAsync(log => log.Id == 1006));
+        Assert.Null(await db.AuditLogs.SingleOrDefaultAsync(log => log.SourceType == "ProductLog" && log.SourceId == 1005));
+        Assert.Null(await db.AuditLogs.SingleOrDefaultAsync(log => log.SourceType == "ComboAuditLog" && log.SourceId == 1006));
+    }
+
+    [Fact]
+    public async Task Ignored_and_duplicate_sepay_events_are_represented_but_not_business_payments()
+    {
+        var options = TestDbContextFactory.CreateSqliteOptions();
+        await using var db = new ApplicationDbContext(options);
+        await DatabaseConsolidationFixture.SeedAsync(db);
+        db.SePayTransactions.AddRange(
+            new SePayTransaction
+            {
+                Id = 1007,
+                SePayTransactionId = 12346,
+                OrderId = DatabaseConsolidationFixture.OrderId,
+                TransferAmount = 21m,
+                Status = SePayTransactionStatus.Ignored,
+                Message = "Amount mismatch"
+            },
+            new SePayTransaction
+            {
+                Id = 1008,
+                SePayTransactionId = 12347,
+                OrderId = DatabaseConsolidationFixture.OrderId,
+                TransferAmount = 21m,
+                Status = SePayTransactionStatus.Duplicate,
+                Message = "Duplicate event"
+            });
+        await db.SaveChangesAsync();
+
+        var report = await CreateService(db).BackfillAsync(apply: true, CancellationToken.None);
+
+        Assert.True(report.Success, string.Join(Environment.NewLine, report.Errors.Select(error => error.Message)));
+        var ignored = await db.Payments.SingleAsync(payment => payment.ProviderTransactionId == "12346");
+        var duplicate = await db.Payments.SingleAsync(payment => payment.ProviderTransactionId == "12347");
+        Assert.Equal(PaymentProviderEventStatus.Ignored, ignored.ProviderEventStatus);
+        Assert.Equal(PaymentProviderEventStatus.Duplicate, duplicate.ProviderEventStatus);
+        Assert.False(ignored.IsBusinessPayment);
+        Assert.False(duplicate.IsBusinessPayment);
+        Assert.Equal(3, await db.Payments.CountAsync());
+    }
+
+    [Fact]
+    public async Task Audit_source_identity_is_unique_and_preserves_multiple_events_for_one_product()
+    {
+        var options = TestDbContextFactory.CreateSqliteOptions();
+        await using var db = new ApplicationDbContext(options);
+        await DatabaseConsolidationFixture.SeedAsync(db);
+        db.ProductLogs.Add(new ProductLog
+        {
+            Id = 1009,
+            ProductId = DatabaseConsolidationFixture.ProductId,
+            AdminId = DatabaseConsolidationFixture.AdminId,
+            Action = ProductLogActions.TagUpdate,
+            Details = "{\"field\":\"tags\"}"
+        });
+        await db.SaveChangesAsync();
+
+        var report = await CreateService(db).BackfillAsync(apply: true, CancellationToken.None);
+
+        Assert.True(report.Success, string.Join(Environment.NewLine, report.Errors.Select(error => error.Message)));
+        Assert.Equal(2, await db.AuditLogs.CountAsync(log => log.SourceType == "ProductLog"));
+        var index = db.Model.FindEntityType(typeof(AuditLog))!
+            .GetIndexes()
+            .Single(index => index.Properties.Select(property => property.Name).SequenceEqual(["SourceType", "SourceId"]));
+        Assert.True(index.IsUnique);
+
+        db.AuditLogs.Add(new AuditLog
+        {
+            SourceType = "ProductLog",
+            SourceId = 1001,
+            EntityType = "ProductLog",
+            EntityId = 1001,
+            Action = ProductLogActions.Update,
+            ChangedByAdminId = DatabaseConsolidationFixture.AdminId,
+            NewValue = "{}"
+        });
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task Apply_reports_a_transaction_failure_without_partially_updating_product_json()
+    {
+        var options = TestDbContextFactory.CreateSqliteOptions();
+        await using var db = new ApplicationDbContext(options);
+        await DatabaseConsolidationFixture.SeedAsync(db);
+        var before = await db.Products
+            .Where(product => product.Id == DatabaseConsolidationFixture.ProductId)
+            .Select(product => new { product.ImagesJson, product.TagsJson })
+            .SingleAsync();
+        await db.Database.ExecuteSqlRawAsync(
+            "CREATE TRIGGER FailProductJsonUpdate BEFORE UPDATE OF ImagesJson ON Products BEGIN SELECT RAISE(ABORT, 'forced target failure'); END;");
+
+        var report = await CreateService(db).BackfillAsync(apply: true, CancellationToken.None);
+
+        Assert.False(report.Success);
+        Assert.Contains(report.Errors, error => error.SourceId == "Product:10");
+        var after = await db.Products
+            .Where(product => product.Id == DatabaseConsolidationFixture.ProductId)
+            .Select(product => new { product.ImagesJson, product.TagsJson })
+            .SingleAsync();
+        Assert.Equal(before.ImagesJson, after.ImagesJson);
+        Assert.Equal(before.TagsJson, after.TagsJson);
+    }
+
+    [Fact]
+    public async Task Rerun_preserves_target_owned_content_read_state_and_return_links()
+    {
+        var options = TestDbContextFactory.CreateSqliteOptions();
+        await using var db = new ApplicationDbContext(options);
+        await DatabaseConsolidationFixture.SeedAsync(db);
+        var service = CreateService(db);
+        var first = await service.BackfillAsync(apply: true, CancellationToken.None);
+        Assert.True(first.Success, string.Join(Environment.NewLine, first.Errors.Select(error => error.Message)));
+
+        var content = await db.ContentEntries.SingleAsync(entry => entry.EntryType == "faq" && entry.Key == "faq:801");
+        content.IsRead = true;
+        await db.SaveChangesAsync();
+        var second = await service.BackfillAsync(apply: true, CancellationToken.None);
+        var detailsJson = await db.Returns.Select(item => item.DetailsJson).SingleAsync();
+        var details = new VersionedJsonSerializer().Deserialize<ReturnDetailsDocument>(detailsJson);
+
+        Assert.True(second.Success, string.Join(Environment.NewLine, second.Errors.Select(error => error.Message)));
+        Assert.True(await db.ContentEntries.Where(entry => entry.EntryType == "faq" && entry.Key == "faq:801").Select(entry => entry.IsRead).SingleAsync());
+        Assert.Equal(701, details.Evidence.Single().ReturnRequestItemId);
+        Assert.Equal(701, details.Events.Single().ReturnRequestItemId);
     }
 
     private static IDatabaseConsolidationService CreateService(ApplicationDbContext db) =>
@@ -428,6 +592,7 @@ internal static class DatabaseConsolidationFixture
                 new ReturnEvidence
                 {
                     Id = 702,
+                    ReturnRequestItemId = 701,
                     StorageKey = "returns/fixture.jpg",
                     OriginalFileName = "fixture.jpg",
                     ContentType = "image/jpeg",
@@ -440,6 +605,7 @@ internal static class DatabaseConsolidationFixture
                 new ReturnEvent
                 {
                     Id = 703,
+                    ReturnRequestItemId = 701,
                     EventType = ReturnEventType.Approved,
                     ActorUserId = AdminId,
                     NewStatus = ReturnRequestStatus.Refunded
@@ -556,6 +722,26 @@ internal static class DatabaseConsolidationFixture
             await db.RbacAuditLogs.CountAsync());
     }
 
+    public static async Task<RootJsonSnapshot> RootJsonSnapshotAsync(ApplicationDbContext db)
+    {
+        var product = await db.Products.AsNoTracking().SingleAsync(product => product.Id == ProductId);
+        var user = await db.Users.AsNoTracking().SingleAsync(user => user.Id == UserId);
+        var cart = await db.Carts.AsNoTracking().SingleAsync(cart => cart.Id == 404);
+        var order = await db.Orders.AsNoTracking().SingleAsync(order => order.Id == OrderId);
+        var review = await db.Reviews.AsNoTracking().SingleAsync(review => review.Id == ReviewId);
+        var chat = await db.ChatSessions.AsNoTracking().SingleAsync();
+        return new RootJsonSnapshot(
+            product.ImagesJson,
+            product.TagsJson,
+            user.RoleIdsJson,
+            user.WishlistJson,
+            cart.LinesJson,
+            order.StatusHistoryJson,
+            order.NotesJson,
+            review.MetadataJson,
+            chat.MessagesJson);
+    }
+
     public static async Task<TargetCounts> TargetCountsAsync(ApplicationDbContext db) =>
         new(
             await db.Payments.CountAsync(),
@@ -590,6 +776,17 @@ internal static class DatabaseConsolidationFixture
         int ComboAuditLogs,
         int UserAccountLogs,
         int RbacAuditLogs);
+
+    public readonly record struct RootJsonSnapshot(
+        string ProductImages,
+        string ProductTags,
+        string UserRoles,
+        string Wishlist,
+        string CartLines,
+        string OrderHistory,
+        string OrderNotes,
+        string ReviewMetadata,
+        string ChatMessages);
 
     public readonly record struct TargetCounts(
         int Payments,

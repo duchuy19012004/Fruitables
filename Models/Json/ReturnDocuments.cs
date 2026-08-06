@@ -213,6 +213,9 @@ public sealed class ReturnEvidenceDetails
     [JsonPropertyName("storageKey")]
     public string StorageKey { get; init; } = string.Empty;
 
+    [JsonPropertyName("returnRequestItemId")]
+    public int? ReturnRequestItemId { get; init; }
+
     [JsonPropertyName("originalFileName")]
     public string OriginalFileName { get; init; } = string.Empty;
 
@@ -239,6 +242,8 @@ public sealed class ReturnEvidenceDetails
         Require(SizeBytes >= 0, "sizeBytes");
         Require(UploadedByUserId > 0, "uploadedByUserId");
         Require(UploadedAtUtc != default, "uploadedAtUtc");
+        if (ReturnRequestItemId.HasValue)
+            Require(ReturnRequestItemId.Value > 0, "returnRequestItemId");
     }
 
     internal void Validate(JsonElement json)
@@ -246,6 +251,9 @@ public sealed class ReturnEvidenceDetails
         JsonDocumentValidation.RequireObject(json, "return evidence");
         JsonDocumentValidation.RequireProperties(json, RequiredProperties);
         JsonDocumentValidation.RequireString(json, "storageKey");
+        if (JsonDocumentValidation.TryGetProperty(json, "returnRequestItemId", out var rawItemId)
+            && rawItemId.ValueKind is not (JsonValueKind.Number or JsonValueKind.Null))
+            throw JsonDocumentValidation.Invalid("returnRequestItemId", "not a number");
         JsonDocumentValidation.RequireString(json, "originalFileName");
         JsonDocumentValidation.RequireString(json, "contentType");
         JsonDocumentValidation.RequireNumber(json, "sizeBytes");
@@ -277,6 +285,9 @@ public sealed class ReturnEventDetails
     [JsonPropertyName("actorUserId")]
     public int? ActorUserId { get; init; }
 
+    [JsonPropertyName("returnRequestItemId")]
+    public int? ReturnRequestItemId { get; init; }
+
     [JsonPropertyName("note")]
     public string? Note { get; init; }
 
@@ -294,6 +305,8 @@ public sealed class ReturnEventDetails
         if (NewStatus.HasValue)
             JsonDocumentValidation.RequireDefinedEnum(NewStatus.Value, "newStatus");
         Require(CreatedAtUtc != default, "createdAtUtc");
+        if (ReturnRequestItemId.HasValue)
+            Require(ReturnRequestItemId.Value > 0, "returnRequestItemId");
     }
 
     internal void Validate(JsonElement json)
@@ -302,6 +315,9 @@ public sealed class ReturnEventDetails
         JsonDocumentValidation.RequireProperties(json, RequiredProperties);
         JsonDocumentValidation.RequireNumber(json, "eventType");
         JsonDocumentValidation.RequireString(json, "createdAtUtc");
+        if (JsonDocumentValidation.TryGetProperty(json, "returnRequestItemId", out var rawItemId)
+            && rawItemId.ValueKind is not (JsonValueKind.Number or JsonValueKind.Null))
+            throw JsonDocumentValidation.Invalid("returnRequestItemId", "not a number");
         JsonDocumentValidation.RequireOptionalEnum(json, "oldStatus", OldStatus);
         JsonDocumentValidation.RequireOptionalEnum(json, "newStatus", NewStatus);
         Validate();

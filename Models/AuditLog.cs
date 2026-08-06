@@ -7,6 +7,11 @@ public class AuditLog
     public int Id { get; set; }
 
     [Required, MaxLength(50)]
+    public string SourceType { get; set; } = string.Empty;
+
+    public long SourceId { get; set; }
+
+    [Required, MaxLength(50)]
     public string Action { get; set; } = string.Empty;
 
     [Required, MaxLength(100)]
