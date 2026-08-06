@@ -29,7 +29,12 @@ public class ApplicationDbContext : DbContext
     public DbSet<CartGroup> CartGroups => Set<CartGroup>();
     public DbSet<CartItem> CartItems => Set<CartItem>();
     public DbSet<Order> Orders => Set<Order>();
+    public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<Promotion> Promotions => Set<Promotion>();
+    public DbSet<ContentEntry> ContentEntries => Set<ContentEntry>();
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
+    public DbSet<ReturnCase> Returns => Set<ReturnCase>();
     public DbSet<ReturnRequest> ReturnRequests => Set<ReturnRequest>();
     public DbSet<ReturnRequestItem> ReturnRequestItems => Set<ReturnRequestItem>();
     public DbSet<ReturnEvidence> ReturnEvidence => Set<ReturnEvidence>();
@@ -72,6 +77,7 @@ public class ApplicationDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
         ConfigureOutbox(modelBuilder);
+        var isSqlServer = Database.IsSqlServer();
 
         // Category - Self-referencing
         modelBuilder.Entity<Category>(entity =>
@@ -91,10 +97,30 @@ public class ApplicationDbContext : DbContext
                   .HasDefaultValue(1);
             entity.Property(product => product.StockQuantity).HasPrecision(10, 2);
             entity.Property(product => product.MinOrderQuantity).HasPrecision(10, 2);
+            entity.Property(product => product.ImagesJson)
+                  .HasColumnType(isSqlServer ? "nvarchar(max)" : "TEXT")
+                  .IsRequired()
+                  .HasDefaultValue("[]");
+            entity.Property(product => product.TagsJson)
+                  .HasColumnType(isSqlServer ? "nvarchar(max)" : "TEXT")
+                  .IsRequired()
+                  .HasDefaultValue("[]");
+            entity.Property(product => product.RowVersion)
+                  .HasColumnType("varbinary(16)")
+                  .IsConcurrencyToken()
+                  .ValueGeneratedNever();
             entity.HasOne(p => p.Category)
                   .WithMany(c => c.Products)
                   .HasForeignKey(p => p.CategoryId)
                   .OnDelete(DeleteBehavior.Restrict);
+            if (isSqlServer)
+            {
+                entity.ToTable(table =>
+                {
+                    table.HasCheckConstraint("CK_Products_ImagesJson_IsJson", "ISJSON([ImagesJson]) = 1");
+                    table.HasCheckConstraint("CK_Products_TagsJson_IsJson", "ISJSON([TagsJson]) = 1");
+                });
+            }
         });
 
         // Product - Tag (Many-to-Many)
@@ -113,10 +139,23 @@ public class ApplicationDbContext : DbContext
         // Cart - User (One-to-One)
         modelBuilder.Entity<Cart>(entity =>
         {
+            entity.Property(cart => cart.LinesJson)
+                  .HasColumnType(isSqlServer ? "nvarchar(max)" : "TEXT")
+                  .IsRequired()
+                  .HasDefaultValue("[]");
+            entity.Property(cart => cart.RowVersion)
+                  .HasColumnType("varbinary(16)")
+                  .IsConcurrencyToken()
+                  .ValueGeneratedNever();
             entity.HasOne(c => c.User)
                   .WithOne(u => u.Cart)
                   .HasForeignKey<Cart>(c => c.UserId)
                   .OnDelete(DeleteBehavior.Cascade);
+            if (isSqlServer)
+            {
+                entity.ToTable(table =>
+                    table.HasCheckConstraint("CK_Carts_LinesJson_IsJson", "ISJSON([LinesJson]) = 1"));
+            }
         });
 
         // Order
@@ -129,10 +168,141 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(e => e.PaymentCode)
                   .IsUnique()
                   .HasFilter("[PaymentCode] IS NOT NULL");
+            entity.Property(order => order.StatusHistoryJson)
+                  .HasColumnType(isSqlServer ? "nvarchar(max)" : "TEXT")
+                  .IsRequired()
+                  .HasDefaultValue("[]");
+            entity.Property(order => order.NotesJson)
+                  .HasColumnType(isSqlServer ? "nvarchar(max)" : "TEXT")
+                  .IsRequired()
+                  .HasDefaultValue("[]");
             entity.HasOne(o => o.Address)
                   .WithMany(a => a.Orders)
                   .HasForeignKey(o => o.AddressId)
                   .OnDelete(DeleteBehavior.SetNull);
+            if (isSqlServer)
+            {
+                entity.ToTable(table =>
+                {
+                    table.HasCheckConstraint("CK_Orders_StatusHistoryJson_IsJson", "ISJSON([StatusHistoryJson]) = 1");
+                    table.HasCheckConstraint("CK_Orders_NotesJson_IsJson", "ISJSON([NotesJson]) = 1");
+                });
+            }
+        });
+
+        modelBuilder.Entity<Payment>(entity =>
+        {
+            entity.Property(payment => payment.Amount).HasPrecision(12, 2);
+            entity.Property(payment => payment.RowVersion)
+                  .HasColumnType("varbinary(16)")
+                  .IsConcurrencyToken()
+                  .ValueGeneratedNever();
+            entity.HasIndex(payment => new { payment.Provider, payment.ProviderTransactionId })
+                  .IsUnique();
+            entity.HasIndex(payment => payment.OrderId);
+            entity.HasIndex(payment => payment.Status);
+            entity.HasIndex(payment => payment.CreatedAtUtc);
+            entity.HasOne(payment => payment.Order)
+                  .WithMany(order => order.Payments)
+                  .HasForeignKey(payment => payment.OrderId)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<Promotion>(entity =>
+        {
+            entity.Property(promotion => promotion.PayloadJson)
+                  .HasColumnType(isSqlServer ? "nvarchar(max)" : "TEXT")
+                  .IsRequired()
+                  .HasDefaultValue("{ \"schemaVersion\": 1 }");
+            entity.Property(promotion => promotion.Revision)
+                  .HasDefaultValue(1);
+            entity.Property(promotion => promotion.RowVersion)
+                  .HasColumnType("varbinary(16)")
+                  .IsConcurrencyToken()
+                  .ValueGeneratedNever();
+            entity.HasIndex(promotion => promotion.Type);
+            entity.HasIndex(promotion => promotion.Code)
+                  .IsUnique()
+                  .HasFilter("[Code] IS NOT NULL");
+            entity.HasIndex(promotion => new { promotion.IsActive, promotion.StartsAt, promotion.EndsAt });
+            if (isSqlServer)
+            {
+                entity.ToTable(table =>
+                    table.HasCheckConstraint("CK_Promotions_PayloadJson_IsJson", "ISJSON([PayloadJson]) = 1"));
+            }
+        });
+
+        modelBuilder.Entity<ContentEntry>(entity =>
+        {
+            entity.Property(content => content.PayloadJson)
+                  .HasColumnType(isSqlServer ? "nvarchar(max)" : "TEXT")
+                  .IsRequired()
+                  .HasDefaultValue("{ \"schemaVersion\": 1 }");
+            entity.Property(content => content.RowVersion)
+                  .HasColumnType("varbinary(16)")
+                  .IsConcurrencyToken()
+                  .ValueGeneratedNever();
+            entity.HasIndex(content => new { content.EntryType, content.Key }).IsUnique();
+            entity.HasIndex(content => content.EntryType);
+            entity.HasIndex(content => content.IsActive);
+            entity.HasIndex(content => content.IsRead);
+            if (isSqlServer)
+            {
+                entity.ToTable(table =>
+                    table.HasCheckConstraint("CK_ContentEntries_PayloadJson_IsJson", "ISJSON([PayloadJson]) = 1"));
+            }
+        });
+
+        modelBuilder.Entity<AuditLog>(entity =>
+        {
+            entity.HasIndex(audit => new { audit.EntityType, audit.EntityId });
+            entity.HasIndex(audit => audit.ChangedAt);
+            entity.HasIndex(audit => audit.ChangedByAdminId);
+            if (isSqlServer)
+            {
+                entity.ToTable(table =>
+                {
+                    table.HasCheckConstraint(
+                        "CK_AuditLogs_OldValue_IsJson",
+                        "[OldValue] IS NULL OR ISJSON([OldValue]) = 1");
+                    table.HasCheckConstraint(
+                        "CK_AuditLogs_NewValue_IsJson",
+                        "[NewValue] IS NULL OR ISJSON([NewValue]) = 1");
+                });
+            }
+        });
+
+        modelBuilder.Entity<ReturnCase>(entity =>
+        {
+            entity.Property(returnCase => returnCase.RequestedAmount).HasPrecision(12, 2);
+            entity.Property(returnCase => returnCase.ApprovedAmount).HasPrecision(12, 2);
+            entity.Property(returnCase => returnCase.ApprovedShippingFeeAmount).HasPrecision(12, 2);
+            entity.Property(returnCase => returnCase.DetailsJson)
+                  .HasColumnType(isSqlServer ? "nvarchar(max)" : "TEXT")
+                  .IsRequired()
+                  .HasDefaultValue("{ \"schemaVersion\": 1 }");
+            entity.Property(returnCase => returnCase.RowVersion)
+                  .HasColumnType("varbinary(16)")
+                  .IsConcurrencyToken()
+                  .ValueGeneratedNever();
+            entity.HasIndex(returnCase => returnCase.OrderId).IsUnique();
+            entity.HasIndex(returnCase => returnCase.ReturnNumber).IsUnique();
+            entity.HasIndex(returnCase => new { returnCase.Status, returnCase.ClaimDeadlineAtUtc });
+            entity.HasIndex(returnCase => new { returnCase.UserId, returnCase.SubmittedAtUtc });
+            entity.HasOne(returnCase => returnCase.Order)
+                  .WithOne(order => order.ReturnCase)
+                  .HasForeignKey<ReturnCase>(returnCase => returnCase.OrderId)
+                  .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(returnCase => returnCase.User)
+                  .WithMany(user => user.ReturnCases)
+                  .HasForeignKey(returnCase => returnCase.UserId)
+                  .OnDelete(DeleteBehavior.Restrict);
+            entity.ToTable("Returns");
+            if (isSqlServer)
+            {
+                entity.ToTable(table =>
+                    table.HasCheckConstraint("CK_Returns_DetailsJson_IsJson", "ISJSON([DetailsJson]) = 1"));
+            }
         });
 
         modelBuilder.Entity<SePayTransaction>(entity =>
@@ -464,16 +634,49 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<User>(entity =>
         {
             entity.HasIndex(e => e.Email).IsUnique();
+            entity.Property(user => user.RoleIdsJson)
+                  .HasColumnType(isSqlServer ? "nvarchar(max)" : "TEXT")
+                  .IsRequired()
+                  .HasDefaultValue("[]");
+            entity.Property(user => user.WishlistJson)
+                  .HasColumnType(isSqlServer ? "nvarchar(max)" : "TEXT")
+                  .IsRequired()
+                  .HasDefaultValue("[]");
+            entity.Property(user => user.RowVersion)
+                  .HasColumnType("varbinary(16)")
+                  .IsConcurrencyToken()
+                  .ValueGeneratedNever();
             entity.HasOne(u => u.LockedByAdmin)
                   .WithMany()
                   .HasForeignKey(u => u.LockedByAdminId)
                   .OnDelete(DeleteBehavior.NoAction);
+            if (isSqlServer)
+            {
+                entity.ToTable(table =>
+                {
+                    table.HasCheckConstraint("CK_Users_RoleIdsJson_IsJson", "ISJSON([RoleIdsJson]) = 1");
+                    table.HasCheckConstraint("CK_Users_WishlistJson_IsJson", "ISJSON([WishlistJson]) = 1");
+                });
+            }
         });
 
         // Role
         modelBuilder.Entity<Role>(entity =>
         {
             entity.HasIndex(e => e.Name).IsUnique();
+            entity.Property(role => role.PermissionsJson)
+                  .HasColumnType(isSqlServer ? "nvarchar(max)" : "TEXT")
+                  .IsRequired()
+                  .HasDefaultValue("[]");
+            entity.Property(role => role.RowVersion)
+                  .HasColumnType("varbinary(16)")
+                  .IsConcurrencyToken()
+                  .ValueGeneratedNever();
+            if (isSqlServer)
+            {
+                entity.ToTable(table =>
+                    table.HasCheckConstraint("CK_Roles_PermissionsJson_IsJson", "ISJSON([PermissionsJson]) = 1"));
+            }
         });
 
         // Permission
@@ -552,6 +755,14 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(e => e.Rating);
             entity.HasIndex(e => new { e.ProductId, e.Status, e.IsHidden })
                   .HasFilter("[IsDeleted] = 0");
+            entity.Property(review => review.MetadataJson)
+                  .HasColumnType(isSqlServer ? "nvarchar(max)" : "TEXT")
+                  .IsRequired()
+                  .HasDefaultValue("{ \"schemaVersion\": 1 }");
+            entity.Property(review => review.RowVersion)
+                  .HasColumnType("varbinary(16)")
+                  .IsConcurrencyToken()
+                  .ValueGeneratedNever();
             
             entity.HasOne(r => r.Product)
                   .WithMany(p => p.Reviews)
@@ -575,6 +786,11 @@ public class ApplicationDbContext : DbContext
                   .HasForeignKey(r => r.DeletedByAdminId)
                   .OnDelete(DeleteBehavior.Restrict)
                   .IsRequired(false);
+            if (isSqlServer)
+            {
+                entity.ToTable(table =>
+                    table.HasCheckConstraint("CK_Reviews_MetadataJson_IsJson", "ISJSON([MetadataJson]) = 1"));
+            }
         });
 
         // ReviewReport
@@ -658,12 +874,25 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<ChatSession>(entity =>
         {
             entity.HasKey(e => e.Id);
+            entity.Property(session => session.MessagesJson)
+                  .HasColumnType(isSqlServer ? "nvarchar(max)" : "TEXT")
+                  .IsRequired()
+                  .HasDefaultValue("[]");
+            entity.Property(session => session.RowVersion)
+                  .HasColumnType("varbinary(16)")
+                  .IsConcurrencyToken()
+                  .ValueGeneratedNever();
             entity.HasOne(e => e.User)
                   .WithMany()
                   .HasForeignKey(e => e.UserId)
                   .OnDelete(DeleteBehavior.SetNull);
             entity.HasIndex(e => e.UserId);
             entity.HasIndex(e => e.LastMessageAt);
+            if (isSqlServer)
+            {
+                entity.ToTable(table =>
+                    table.HasCheckConstraint("CK_ChatSessions_MessagesJson_IsJson", "ISJSON([MessagesJson]) = 1"));
+            }
         });
 
         // ChatMessage

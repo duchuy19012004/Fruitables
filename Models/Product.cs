@@ -63,6 +63,9 @@ public class Product
 
     public DateTime? DeletedAt { get; set; }
 
+    public string ImagesJson { get; set; } = "[]";
+    public string TagsJson { get; set; } = "[]";
+
     // Review statistics
     [Column(TypeName = "decimal(3,2)")]
     public decimal AverageRating { get; set; } = 0;
@@ -71,6 +74,9 @@ public class Product
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+    [ConcurrencyCheck]
+    public byte[]? RowVersion { get; set; }
 
     // Navigation properties
     public virtual Category Category { get; set; } = null!;

@@ -76,6 +76,9 @@ public class Order
 
     public string? Notes { get; set; }
 
+    public string StatusHistoryJson { get; set; } = "[]";
+    public string NotesJson { get; set; } = "[]";
+
     [MaxLength(500)]
     public string? CancelReason { get; set; }
 
@@ -92,4 +95,6 @@ public class Order
     public virtual ICollection<OrderStatusHistory> StatusHistory { get; set; } = new List<OrderStatusHistory>();
     public virtual ICollection<OrderNote> OrderNotes { get; set; } = new List<OrderNote>();
     public virtual ReturnRequest? ReturnRequest { get; set; }
+    public virtual ReturnCase? ReturnCase { get; set; }
+    public virtual ICollection<Payment> Payments { get; set; } = new List<Payment>();
 }

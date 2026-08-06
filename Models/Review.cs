@@ -37,6 +37,11 @@ public class Review
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
 
+    public string MetadataJson { get; set; } = "{ \"schemaVersion\": 1 }";
+
+    [ConcurrencyCheck]
+    public byte[]? RowVersion { get; set; }
+
     // Navigation properties
     public virtual Product Product { get; set; } = null!;
     public virtual User User { get; set; } = null!;

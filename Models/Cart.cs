@@ -14,6 +14,11 @@ public class Cart
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+    public string LinesJson { get; set; } = "[]";
+
+    [ConcurrencyCheck]
+    public byte[]? RowVersion { get; set; }
+
     // Mã giảm giá đang áp dụng
     [MaxLength(50)]
     public string? CouponCode { get; set; }
