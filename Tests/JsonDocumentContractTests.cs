@@ -371,6 +371,405 @@ public sealed class JsonDocumentContractTests
         Assert.Equal("Fresh", Assert.Single(document.Tags).Name);
     }
 
+    [Fact]
+    public void Null_nested_elements_are_rejected_by_try_deserialize()
+    {
+        AssertNullChildRejected(
+            new ProductImagesDocument
+            {
+                Images = [new ProductImageDocument { Url = "image", StorageKey = "image-key", IsPrimary = true, SortOrder = 1 }]
+            },
+            "images");
+        AssertNullChildRejected(
+            new ProductTagsDocument
+            {
+                Tags = [new ProductTagDocument { Name = "Fresh", Slug = "fresh" }]
+            },
+            "tags");
+        AssertNullChildRejected(
+            new CartLinesDocument
+            {
+                Lines = [new CartLineDocument { ProductId = 1, Quantity = 1, Price = 2, ComboDiscount = 0 }]
+            },
+            "lines");
+        AssertNullChildRejected(
+            new OrderStatusHistoryDocument
+            {
+                Entries = [new OrderStatusHistoryEntry { OldStatus = OrderStatus.Pending, NewStatus = OrderStatus.Processing, AdminId = 1, CreatedAt = DateTime.UtcNow }]
+            },
+            "entries");
+        AssertNullChildRejected(
+            new OrderNotesDocument
+            {
+                Notes = [new OrderNoteDocument { AdminId = 1, AdminName = "Admin", Content = "Note", CreatedAt = DateTime.UtcNow }]
+            },
+            "notes");
+        AssertNullChildRejected(
+            new ComboPayload
+            {
+                Name = "Combo",
+                Slug = "combo",
+                Items = [new ComboItemPayload { ProductId = 1, Quantity = 1, SortOrder = 0 }]
+            },
+            "items");
+        AssertNullChildRejected(CreateReturnDetailsDocument(), "items");
+        AssertNullChildRejected(CreateReturnDetailsDocument(), "evidence");
+        AssertNullChildRejected(CreateReturnDetailsDocument(), "events");
+        AssertNullChildRejected(
+            new ChatMessagesDocument
+            {
+                Messages = [new ChatMessageDocument { Role = "user", Content = "Hello", CreatedAt = DateTime.UtcNow }]
+            },
+            "messages");
+        AssertNullChildRejected(
+            new RolePermissionsDocument
+            {
+                RoleId = 1,
+                Permissions = [new RolePermissionEntry { PermissionId = 1, PermissionName = "products.read", AssignedAt = DateTime.UtcNow }]
+            },
+            "permissions");
+        AssertNullChildRejected(
+            new UserRolesDocument
+            {
+                UserId = 1,
+                Roles = [new UserRoleEntry { RoleId = 1, RoleName = "Admin", AssignedAt = DateTime.UtcNow }]
+            },
+            "roles");
+    }
+
+    [Fact]
+    public void Nested_required_scalar_properties_are_rejected()
+    {
+        AssertNestedPropertiesRejected(
+            new ProductImagesDocument
+            {
+                Images = [new ProductImageDocument { Url = "image", StorageKey = "image-key", IsPrimary = true, SortOrder = 1 }]
+            },
+            "images",
+            "url", "storageKey", "isPrimary", "sortOrder");
+        AssertNestedPropertiesRejected(
+            new ProductTagsDocument
+            {
+                Tags = [new ProductTagDocument { Name = "Fresh", Slug = "fresh" }]
+            },
+            "tags",
+            "name", "slug");
+        AssertNestedPropertiesRejected(
+            new CartLinesDocument
+            {
+                Lines = [new CartLineDocument { ProductId = 1, Quantity = 1, Price = 2, ComboDiscount = 0 }]
+            },
+            "lines",
+            "productId", "quantity", "price", "comboDiscount");
+        AssertNestedPropertiesRejected(
+            new OrderStatusHistoryDocument
+            {
+                Entries = [new OrderStatusHistoryEntry { OldStatus = OrderStatus.Pending, NewStatus = OrderStatus.Processing, AdminId = 1, CreatedAt = DateTime.UtcNow }]
+            },
+            "entries",
+            "oldStatus", "newStatus", "adminId", "createdAt");
+        AssertNestedPropertiesRejected(
+            new OrderNotesDocument
+            {
+                Notes = [new OrderNoteDocument { AdminId = 1, AdminName = "Admin", Content = "Note", CreatedAt = DateTime.UtcNow }]
+            },
+            "notes",
+            "adminId", "adminName", "content", "createdAt");
+        AssertNestedPropertiesRejected(
+            new ComboPayload
+            {
+                Name = "Combo",
+                Slug = "combo",
+                Items = [new ComboItemPayload { ProductId = 1, Quantity = 1, SortOrder = 0 }]
+            },
+            "items",
+            "productId", "quantity", "sortOrder");
+
+        var returnDetails = CreateReturnDetailsDocument(includeRefund: true);
+        AssertNestedPropertiesRejected(
+            returnDetails,
+            "items",
+            "orderItemId", "decisionStatus", "requestedQuantity", "approvedQuantity", "reason",
+            "description", "requestedAmount", "approvedAmount");
+        AssertNestedPropertiesRejected(
+            returnDetails,
+            "evidence",
+            "storageKey", "originalFileName", "contentType", "sizeBytes", "uploadedByUserId", "uploadedAtUtc");
+        AssertNestedPropertiesRejected(returnDetails, "events", "eventType", "createdAtUtc");
+        AssertObjectPropertiesRejected(
+            returnDetails,
+            "refund",
+            "amount", "shippingFeeAmount", "status", "createdByUserId", "createdAtUtc");
+        AssertNestedPropertiesRejected(
+            new ChatMessagesDocument
+            {
+                Messages = [new ChatMessageDocument { Role = "user", Content = "Hello", CreatedAt = DateTime.UtcNow }]
+            },
+            "messages",
+            "role", "content", "createdAt");
+        AssertNestedPropertiesRejected(
+            new RolePermissionsDocument
+            {
+                RoleId = 1,
+                Permissions = [new RolePermissionEntry { PermissionId = 1, PermissionName = "products.read", AssignedAt = DateTime.UtcNow }]
+            },
+            "permissions",
+            "permissionId", "permissionName", "assignedAt");
+        AssertNestedPropertiesRejected(
+            new UserRolesDocument
+            {
+                UserId = 1,
+                Roles = [new UserRoleEntry { RoleId = 1, RoleName = "Admin", AssignedAt = DateTime.UtcNow }]
+            },
+            "roles",
+            "roleId", "roleName", "assignedAt");
+    }
+
+    [Fact]
+    public void Root_required_properties_are_rejected_individually()
+    {
+        AssertRootPropertiesRejected(
+            new CouponPayload { Code = "SAVE", Type = CouponType.Percentage, Value = 10, MinOrderAmount = 20, MinQuantity = 1, UsedCount = 0, IsActive = true },
+            "code", "type", "value", "minOrderAmount", "minQuantity", "usedCount", "isActive");
+        AssertRootPropertiesRejected(
+            new ComboPayload
+            {
+                Name = "Combo", Slug = "combo", IsActive = true, Status = ComboLifecycleStatus.Active,
+                PricingType = ComboPricingType.SumOfItems, AllowCouponStacking = true, Revision = 1, SortOrder = 0,
+                Items = []
+            },
+            "name", "slug", "isActive", "status", "pricingType", "allowCouponStacking", "revision", "sortOrder", "items");
+        AssertRootPropertiesRejected(
+            new PriceSchedulePayload
+            {
+                ProductId = 1, DiscountType = DiscountType.Percentage, Value = 10, StartsAt = DateTimeOffset.UtcNow,
+                IsCancelled = false, Revision = 1, CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow
+            },
+            "productId", "discountType", "value", "startsAt", "isCancelled", "revision", "createdAt", "updatedAt");
+        AssertRootPropertiesRejected(
+            new ReviewMetadataDocument { Status = ReviewStatus.Approved, IsHidden = false, IsDeleted = false, IsVerifiedPurchase = true, HelpfulCount = 0, ReportCount = 0, CreatedAt = DateTime.UtcNow },
+            "status", "isHidden", "isDeleted", "isVerifiedPurchase", "helpfulCount", "reportCount", "createdAt");
+        AssertRootPropertiesRejected(
+            CreateReturnDetailsDocument(),
+            "status", "submittedAtUtc", "claimDeadlineAtUtc", "supplementCount", "requestedAmount", "approvedAmount",
+            "approvedShippingFeeAmount", "items", "evidence", "events");
+        AssertRootPropertiesRejected(
+            new ContentPayload { Title = "Title", Body = "Body", Category = "general", IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+            "title", "body", "category", "isActive", "createdAt", "updatedAt");
+        AssertRootPropertiesRejected(
+            new RolePermissionsDocument { RoleId = 1, Permissions = [] },
+            "roleId", "permissions");
+        AssertRootPropertiesRejected(
+            new UserRolesDocument { UserId = 1, Roles = [] },
+            "userId", "roles");
+    }
+
+    [Fact]
+    public void Undefined_enum_values_are_rejected()
+    {
+        AssertRootPropertyValueRejected(
+            new CouponPayload { Code = "SAVE", Type = CouponType.Percentage, Value = 10, MinOrderAmount = 20, MinQuantity = 1, UsedCount = 0, IsActive = true },
+            "type",
+            999);
+        AssertRootPropertyValueRejected(
+            new ComboPayload { Name = "Combo", Slug = "combo", Status = ComboLifecycleStatus.Active, PricingType = ComboPricingType.SumOfItems, Items = [] },
+            "status",
+            999);
+        AssertRootPropertyValueRejected(
+            new ComboPayload { Name = "Combo", Slug = "combo", Status = ComboLifecycleStatus.Active, PricingType = ComboPricingType.SumOfItems, Items = [] },
+            "pricingType",
+            999);
+        AssertRootPropertyValueRejected(
+            new PriceSchedulePayload { ProductId = 1, DiscountType = DiscountType.Percentage, StartsAt = DateTimeOffset.UtcNow, CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow },
+            "discountType",
+            999);
+        AssertRootPropertyValueRejected(
+            new ReviewMetadataDocument { Status = ReviewStatus.Approved, CreatedAt = DateTime.UtcNow },
+            "status",
+            999);
+        AssertRootPropertyValueRejected(CreateReturnDetailsDocument(), "status", 999);
+        AssertNestedPropertyValueRejected(
+            new OrderStatusHistoryDocument
+            {
+                Entries = [new OrderStatusHistoryEntry { OldStatus = OrderStatus.Pending, NewStatus = OrderStatus.Processing, AdminId = 1, CreatedAt = DateTime.UtcNow }]
+            },
+            "entries",
+            "oldStatus",
+            999);
+        AssertNestedPropertyValueRejected(
+            CreateReturnDetailsDocument(),
+            "items",
+            "decisionStatus",
+            999);
+        AssertNestedPropertyValueRejected(
+            CreateReturnDetailsDocument(),
+            "items",
+            "reason",
+            999);
+        AssertNestedPropertyValueRejected(
+            CreateReturnDetailsDocument(),
+            "events",
+            "eventType",
+            999);
+    }
+
+    private void AssertNullChildRejected<T>(T document, string collectionProperty)
+        where T : VersionedJsonDocument
+    {
+        var root = JsonNode.Parse(_serializer.Serialize(document))!.AsObject();
+        root[collectionProperty] = JsonNode.Parse("[null]");
+
+        Assert.False(
+            _serializer.TryDeserialize<T>(root.ToJsonString(), out var invalidDocument, out var error),
+            $"{typeof(T).Name}.{collectionProperty} accepted a null child.");
+        Assert.Null(invalidDocument);
+        Assert.NotNull(error);
+    }
+
+    private void AssertNestedPropertiesRejected<T>(T document, string collectionProperty, params string[] properties)
+        where T : VersionedJsonDocument
+    {
+        var json = _serializer.Serialize(document);
+        foreach (var property in properties)
+        {
+            var invalidJson = RemoveNestedProperty(json, collectionProperty, property);
+            Assert.False(
+                _serializer.TryDeserialize<T>(invalidJson, out var invalidDocument, out var error),
+                $"{typeof(T).Name}.{collectionProperty} accepted a missing '{property}' property.");
+            Assert.Null(invalidDocument);
+            Assert.NotNull(error);
+        }
+    }
+
+    private void AssertObjectPropertiesRejected<T>(T document, string objectProperty, params string[] properties)
+        where T : VersionedJsonDocument
+    {
+        var json = _serializer.Serialize(document);
+        foreach (var property in properties)
+        {
+            var invalidJson = RemoveObjectProperty(json, objectProperty, property);
+            Assert.False(
+                _serializer.TryDeserialize<T>(invalidJson, out var invalidDocument, out var error),
+                $"{typeof(T).Name}.{objectProperty} accepted a missing '{property}' property.");
+            Assert.Null(invalidDocument);
+            Assert.NotNull(error);
+        }
+    }
+
+    private void AssertRootPropertiesRejected<T>(T document, params string[] properties)
+        where T : VersionedJsonDocument
+    {
+        var json = _serializer.Serialize(document);
+        foreach (var property in properties)
+        {
+            var root = JsonNode.Parse(json)!.AsObject();
+            root.Remove(property);
+            Assert.False(
+                _serializer.TryDeserialize<T>(root.ToJsonString(), out var invalidDocument, out var error),
+                $"{typeof(T).Name} accepted a missing '{property}' property.");
+            Assert.Null(invalidDocument);
+            Assert.NotNull(error);
+        }
+    }
+
+    private void AssertRootPropertyValueRejected<T>(T document, string property, int value)
+        where T : VersionedJsonDocument
+    {
+        var root = JsonNode.Parse(_serializer.Serialize(document))!.AsObject();
+        root[property] = JsonValue.Create(value);
+        Assert.False(
+            _serializer.TryDeserialize<T>(root.ToJsonString(), out var invalidDocument, out var error),
+            $"{typeof(T).Name} accepted an invalid '{property}' value.");
+        Assert.Null(invalidDocument);
+        Assert.NotNull(error);
+    }
+
+    private void AssertNestedPropertyValueRejected<T>(T document, string collectionProperty, string property, int value)
+        where T : VersionedJsonDocument
+    {
+        var root = JsonNode.Parse(_serializer.Serialize(document))!.AsObject();
+        var child = root[collectionProperty]!.AsArray()[0]!.AsObject();
+        child[property] = JsonValue.Create(value);
+        Assert.False(
+            _serializer.TryDeserialize<T>(root.ToJsonString(), out var invalidDocument, out var error),
+            $"{typeof(T).Name}.{collectionProperty} accepted an invalid '{property}' value.");
+        Assert.Null(invalidDocument);
+        Assert.NotNull(error);
+    }
+
+    private static string RemoveNestedProperty(string json, string collectionProperty, string property)
+    {
+        var root = JsonNode.Parse(json)!.AsObject();
+        root[collectionProperty]!.AsArray()[0]!.AsObject().Remove(property);
+        return root.ToJsonString();
+    }
+
+    private static string RemoveObjectProperty(string json, string objectProperty, string property)
+    {
+        var root = JsonNode.Parse(json)!.AsObject();
+        root[objectProperty]!.AsObject().Remove(property);
+        return root.ToJsonString();
+    }
+
+    private static ReturnDetailsDocument CreateReturnDetailsDocument(bool includeRefund = false)
+    {
+        return new ReturnDetailsDocument
+        {
+            Status = ReturnRequestStatus.Submitted,
+            SubmittedAtUtc = DateTime.UtcNow,
+            ClaimDeadlineAtUtc = DateTime.UtcNow.AddDays(7),
+            SupplementCount = 0,
+            RequestedAmount = 25,
+            ApprovedAmount = 0,
+            ApprovedShippingFeeAmount = 0,
+            Items =
+            [
+                new ReturnItemDetails
+                {
+                    OrderItemId = 1,
+                    DecisionStatus = ReturnItemDecisionStatus.Pending,
+                    RequestedQuantity = 1,
+                    ApprovedQuantity = 0,
+                    Reason = ReturnReasonCode.Damaged,
+                    Description = "Damaged",
+                    RequestedAmount = 25,
+                    ApprovedAmount = 0
+                }
+            ],
+            Evidence =
+            [
+                new ReturnEvidenceDetails
+                {
+                    StorageKey = "returns/photo",
+                    OriginalFileName = "photo.jpg",
+                    ContentType = "image/jpeg",
+                    SizeBytes = 100,
+                    UploadedByUserId = 1,
+                    UploadedAtUtc = DateTime.UtcNow
+                }
+            ],
+            Events =
+            [
+                new ReturnEventDetails
+                {
+                    NewStatus = ReturnRequestStatus.Submitted,
+                    EventType = ReturnEventType.Submitted,
+                    CreatedAtUtc = DateTime.UtcNow
+                }
+            ],
+            Refund = includeRefund
+                ? new RefundDetails
+                {
+                    Amount = 25,
+                    ShippingFeeAmount = 0,
+                    Status = RefundStatus.Pending,
+                    CreatedByUserId = 1,
+                    CreatedAtUtc = DateTime.UtcNow
+                }
+                : null
+        };
+    }
+
     private void AssertContract<T>(T document, string requiredProperty)
         where T : VersionedJsonDocument
     {
@@ -385,13 +784,20 @@ public sealed class JsonDocumentContractTests
             JsonNode.DeepEquals(JsonNode.Parse(json), JsonNode.Parse(_serializer.Serialize(roundTrip))),
             $"Round-trip JSON differed for {typeof(T).Name}.");
 
-        var missingRequiredProperty = JsonNode.Parse(json)!.AsObject();
-        missingRequiredProperty.Remove(requiredProperty);
-        var missingRequiredJson = missingRequiredProperty.ToJsonString();
-        Assert.Throws<JsonException>(() => _serializer.Deserialize<T>(missingRequiredJson));
-        Assert.False(_serializer.TryDeserialize<T>(missingRequiredJson, out var missingDocument, out var missingError));
-        Assert.Null(missingDocument);
-        Assert.NotNull(missingError);
+        var requiredProperties = document.RequiredProperties
+            .Append(requiredProperty)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        foreach (var property in requiredProperties)
+        {
+            var missingRequiredProperty = JsonNode.Parse(json)!.AsObject();
+            missingRequiredProperty.Remove(property);
+            var missingRequiredJson = missingRequiredProperty.ToJsonString();
+            Assert.Throws<JsonException>(() => _serializer.Deserialize<T>(missingRequiredJson));
+            Assert.False(_serializer.TryDeserialize<T>(missingRequiredJson, out var missingDocument, out var missingError));
+            Assert.Null(missingDocument);
+            Assert.NotNull(missingError);
+        }
 
         Assert.Throws<JsonException>(() => _serializer.Deserialize<T>("{ malformed"));
         Assert.False(_serializer.TryDeserialize<T>("{ malformed", out var malformedDocument, out var malformedError));

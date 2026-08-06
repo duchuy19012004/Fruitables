@@ -6,7 +6,8 @@ namespace Fruitables.Models.Json;
 
 public sealed class CouponPayload : VersionedJsonDocument
 {
-    private static readonly string[] RequiredPropertyNames = ["code"];
+    private static readonly string[] RequiredPropertyNames =
+        ["code", "type", "value", "minOrderAmount", "minQuantity", "usedCount", "isActive"];
 
     [JsonPropertyName("code")]
     public string Code { get; init; } = string.Empty;
@@ -46,13 +47,29 @@ public sealed class CouponPayload : VersionedJsonDocument
         base.Validate();
         Require(!string.IsNullOrWhiteSpace(Code), "code");
         Require(MinQuantity > 0, "minQuantity");
+        JsonDocumentValidation.RequireDefinedEnum(Type, "type");
+        Require(UsedCount >= 0, "usedCount");
+    }
+
+    internal override void Validate(JsonElement json)
+    {
+        base.Validate(json);
+        JsonDocumentValidation.RequireString(json, "code");
+        JsonDocumentValidation.RequireNumber(json, "type");
+        JsonDocumentValidation.RequireNumber(json, "value");
+        JsonDocumentValidation.RequireNumber(json, "minOrderAmount");
+        JsonDocumentValidation.RequireNumber(json, "minQuantity");
+        JsonDocumentValidation.RequireNumber(json, "usedCount");
+        JsonDocumentValidation.RequireBoolean(json, "isActive");
+        Validate();
     }
 
 }
 
 public sealed class ComboPayload : VersionedJsonDocument
 {
-    private static readonly string[] RequiredPropertyNames = ["name", "slug", "items"];
+    private static readonly string[] RequiredPropertyNames =
+        ["name", "slug", "isActive", "status", "pricingType", "allowCouponStacking", "revision", "sortOrder", "items"];
 
     [JsonPropertyName("name")]
     public string Name { get; init; } = string.Empty;
@@ -107,14 +124,48 @@ public sealed class ComboPayload : VersionedJsonDocument
         base.Validate();
         Require(!string.IsNullOrWhiteSpace(Name), "name");
         Require(!string.IsNullOrWhiteSpace(Slug), "slug");
-        Require(Items is not null, "items");
-        foreach (var item in Items!)
+        JsonDocumentValidation.RequireDefinedEnum(Status, "status");
+        JsonDocumentValidation.RequireDefinedEnum(PricingType, "pricingType");
+        Require(Revision > 0, "revision");
+        var items = Items ?? throw JsonDocumentValidation.Invalid("items");
+        foreach (var item in items)
+        {
+            if (item is null)
+                throw JsonDocumentValidation.Invalid("items", "a null child");
             item.Validate();
+        }
+    }
+
+    internal override void Validate(JsonElement json)
+    {
+        base.Validate(json);
+        JsonDocumentValidation.RequireString(json, "name");
+        JsonDocumentValidation.RequireString(json, "slug");
+        JsonDocumentValidation.RequireBoolean(json, "isActive");
+        JsonDocumentValidation.RequireNumber(json, "status");
+        JsonDocumentValidation.RequireNumber(json, "pricingType");
+        JsonDocumentValidation.RequireBoolean(json, "allowCouponStacking");
+        JsonDocumentValidation.RequireNumber(json, "revision");
+        JsonDocumentValidation.RequireNumber(json, "sortOrder");
+
+        var rawItems = JsonDocumentValidation.RequireArray(json, "items");
+        var items = Items ?? throw JsonDocumentValidation.Invalid("items");
+        if (items.Count != rawItems.GetArrayLength())
+            throw JsonDocumentValidation.Invalid("items", "an invalid child collection");
+
+        for (var index = 0; index < rawItems.GetArrayLength(); index++)
+        {
+            if (items[index] is null)
+                throw JsonDocumentValidation.Invalid("items", "a null child");
+            items[index].Validate(rawItems[index]);
+        }
     }
 }
 
 public sealed class ComboItemPayload
 {
+    private static readonly string[] RequiredPropertyNames = ["productId", "quantity", "sortOrder"];
+
     [JsonPropertyName("productId")]
     public int ProductId { get; init; }
 
@@ -127,10 +178,23 @@ public sealed class ComboItemPayload
     [JsonPropertyName("sortOrder")]
     public int SortOrder { get; init; }
 
+    [JsonIgnore]
+    public IReadOnlyCollection<string> RequiredProperties => RequiredPropertyNames;
+
     public void Validate()
     {
         Require(ProductId > 0, "productId");
         Require(Quantity > 0, "quantity");
+    }
+
+    internal void Validate(JsonElement json)
+    {
+        JsonDocumentValidation.RequireObject(json, "combo item");
+        JsonDocumentValidation.RequireProperties(json, RequiredProperties);
+        JsonDocumentValidation.RequireNumber(json, "productId");
+        JsonDocumentValidation.RequireNumber(json, "quantity");
+        JsonDocumentValidation.RequireNumber(json, "sortOrder");
+        Validate();
     }
 
     private static void Require(bool condition, string propertyName)
@@ -142,7 +206,8 @@ public sealed class ComboItemPayload
 
 public sealed class PriceSchedulePayload : VersionedJsonDocument
 {
-    private static readonly string[] RequiredPropertyNames = ["productId", "discountType"];
+    private static readonly string[] RequiredPropertyNames =
+        ["productId", "discountType", "value", "startsAt", "isCancelled", "revision", "createdAt", "updatedAt"];
 
     [JsonPropertyName("productId")]
     public int ProductId { get; init; }
@@ -196,6 +261,22 @@ public sealed class PriceSchedulePayload : VersionedJsonDocument
         Require(StartsAt != default, "startsAt");
         Require(CreatedAt != default, "createdAt");
         Require(UpdatedAt != default, "updatedAt");
+        JsonDocumentValidation.RequireDefinedEnum(DiscountType, "discountType");
+        Require(Revision > 0, "revision");
+    }
+
+    internal override void Validate(JsonElement json)
+    {
+        base.Validate(json);
+        JsonDocumentValidation.RequireNumber(json, "productId");
+        JsonDocumentValidation.RequireNumber(json, "discountType");
+        JsonDocumentValidation.RequireNumber(json, "value");
+        JsonDocumentValidation.RequireString(json, "startsAt");
+        JsonDocumentValidation.RequireBoolean(json, "isCancelled");
+        JsonDocumentValidation.RequireNumber(json, "revision");
+        JsonDocumentValidation.RequireString(json, "createdAt");
+        JsonDocumentValidation.RequireString(json, "updatedAt");
+        Validate();
     }
 
 }

@@ -5,7 +5,7 @@ namespace Fruitables.Models.Json;
 
 public sealed class ContentPayload : VersionedJsonDocument
 {
-    private static readonly string[] RequiredPropertyNames = ["title", "body"];
+    private static readonly string[] RequiredPropertyNames = ["title", "body", "category", "isActive", "createdAt", "updatedAt"];
 
     [JsonPropertyName("title")]
     public string Title { get; init; } = string.Empty;
@@ -35,6 +35,18 @@ public sealed class ContentPayload : VersionedJsonDocument
         Require(!string.IsNullOrWhiteSpace(Body), "body");
         Require(CreatedAt != default, "createdAt");
         Require(UpdatedAt != default, "updatedAt");
+    }
+
+    internal override void Validate(JsonElement json)
+    {
+        base.Validate(json);
+        JsonDocumentValidation.RequireString(json, "title");
+        JsonDocumentValidation.RequireString(json, "body");
+        JsonDocumentValidation.RequireString(json, "category");
+        JsonDocumentValidation.RequireBoolean(json, "isActive");
+        JsonDocumentValidation.RequireString(json, "createdAt");
+        JsonDocumentValidation.RequireString(json, "updatedAt");
+        Validate();
     }
 
 }

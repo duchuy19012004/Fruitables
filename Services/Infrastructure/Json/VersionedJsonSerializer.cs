@@ -6,8 +6,6 @@ namespace Fruitables.Services.Infrastructure.Json;
 
 public sealed class VersionedJsonSerializer : IJsonDocumentSerializer
 {
-    private const int CurrentSchemaVersion = 1;
-
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -23,7 +21,7 @@ public sealed class VersionedJsonSerializer : IJsonDocumentSerializer
         if (document is not VersionedJsonDocument versionedDocument)
             throw new JsonException($"Type {typeof(T).Name} is not a versioned JSON document.");
 
-        ValidateVersion(versionedDocument.SchemaVersion);
+        VersionedJsonDocument.RequireSupportedSchemaVersion(versionedDocument.SchemaVersion);
         versionedDocument.Validate();
 
         return JsonSerializer.Serialize(document, JsonOptions);
@@ -41,7 +39,7 @@ public sealed class VersionedJsonSerializer : IJsonDocumentSerializer
                 throw new JsonException("JSON document must be an object.");
 
             var schemaVersion = ReadSchemaVersion(parsed.RootElement);
-            ValidateVersion(schemaVersion);
+            VersionedJsonDocument.RequireSupportedSchemaVersion(schemaVersion);
 
             var document = JsonSerializer.Deserialize<T>(json, JsonOptions);
             if (document is null)
@@ -50,14 +48,7 @@ public sealed class VersionedJsonSerializer : IJsonDocumentSerializer
             if (document is not VersionedJsonDocument versionedDocument)
                 throw new JsonException($"Type {typeof(T).Name} is not a versioned JSON document.");
 
-            foreach (var requiredProperty in versionedDocument.RequiredProperties)
-            {
-                if (!HasProperty(parsed.RootElement, requiredProperty))
-                    throw new JsonException($"Required JSON property '{requiredProperty}' is missing.");
-            }
-
-            ValidateVersion(versionedDocument.SchemaVersion);
-            versionedDocument.Validate();
+            versionedDocument.Validate(parsed.RootElement);
             return document;
         }
         catch (JsonException ex) when (ex.GetType() != typeof(JsonException))
@@ -86,7 +77,7 @@ public sealed class VersionedJsonSerializer : IJsonDocumentSerializer
             error = null;
             return true;
         }
-        catch (Exception ex) when (ex is JsonException or ArgumentException or NotSupportedException)
+        catch (Exception ex) when (ex is JsonException or ArgumentException or NotSupportedException or FormatException or InvalidOperationException)
         {
             document = default;
             error = ex.Message;
@@ -110,20 +101,4 @@ public sealed class VersionedJsonSerializer : IJsonDocumentSerializer
         throw new JsonException("Required JSON property 'schemaVersion' is missing.");
     }
 
-    private static bool HasProperty(JsonElement root, string propertyName)
-    {
-        foreach (var property in root.EnumerateObject())
-        {
-            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-
-        return false;
-    }
-
-    private static void ValidateVersion(int schemaVersion)
-    {
-        if (schemaVersion != CurrentSchemaVersion)
-            throw new JsonException($"Unsupported schema version: {schemaVersion}.");
-    }
 }

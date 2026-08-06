@@ -6,7 +6,8 @@ namespace Fruitables.Models.Json;
 
 public sealed class ReviewMetadataDocument : VersionedJsonDocument
 {
-    private static readonly string[] RequiredPropertyNames = ["status"];
+    private static readonly string[] RequiredPropertyNames =
+        ["status", "isHidden", "isDeleted", "isVerifiedPurchase", "helpfulCount", "reportCount", "createdAt"];
 
     [JsonPropertyName("status")]
     public ReviewStatus Status { get; init; }
@@ -53,9 +54,23 @@ public sealed class ReviewMetadataDocument : VersionedJsonDocument
     public override void Validate()
     {
         base.Validate();
+        JsonDocumentValidation.RequireDefinedEnum(Status, "status");
         Require(CreatedAt != default, "createdAt");
         Require(HelpfulCount >= 0, "helpfulCount");
         Require(ReportCount >= 0, "reportCount");
+    }
+
+    internal override void Validate(JsonElement json)
+    {
+        base.Validate(json);
+        JsonDocumentValidation.RequireNumber(json, "status");
+        JsonDocumentValidation.RequireBoolean(json, "isHidden");
+        JsonDocumentValidation.RequireBoolean(json, "isDeleted");
+        JsonDocumentValidation.RequireBoolean(json, "isVerifiedPurchase");
+        JsonDocumentValidation.RequireNumber(json, "helpfulCount");
+        JsonDocumentValidation.RequireNumber(json, "reportCount");
+        JsonDocumentValidation.RequireString(json, "createdAt");
+        Validate();
     }
 
 }
