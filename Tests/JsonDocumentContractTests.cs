@@ -613,6 +613,52 @@ public sealed class JsonDocumentContractTests
             999);
     }
 
+    [Fact]
+    public void Undefined_order_status_history_new_status_is_rejected()
+    {
+        AssertNestedPropertyValueRejected(
+            new OrderStatusHistoryDocument
+            {
+                Entries =
+                [
+                    new OrderStatusHistoryEntry
+                    {
+                        OldStatus = OrderStatus.Pending,
+                        NewStatus = OrderStatus.Processing,
+                        AdminId = 1,
+                        CreatedAt = DateTime.UtcNow
+                    }
+                ]
+            },
+            "entries",
+            "newStatus",
+            999);
+    }
+
+    [Fact]
+    public void Undefined_return_event_old_status_is_rejected()
+    {
+        AssertNestedPropertyValueRejected(CreateReturnDetailsDocument(), "events", "oldStatus", 999);
+    }
+
+    [Fact]
+    public void Undefined_return_event_new_status_is_rejected()
+    {
+        AssertNestedPropertyValueRejected(CreateReturnDetailsDocument(), "events", "newStatus", 999);
+    }
+
+    [Fact]
+    public void Undefined_refund_status_is_rejected()
+    {
+        var root = JsonNode.Parse(_serializer.Serialize(CreateReturnDetailsDocument(includeRefund: true)))!.AsObject();
+        root["refund"]!["status"] = JsonValue.Create(999);
+
+        Assert.False(
+            _serializer.TryDeserialize<ReturnDetailsDocument>(root.ToJsonString(), out var invalidDocument, out var error));
+        Assert.Null(invalidDocument);
+        Assert.NotNull(error);
+    }
+
     private void AssertNullChildRejected<T>(T document, string collectionProperty)
         where T : VersionedJsonDocument
     {
