@@ -42,13 +42,16 @@ public sealed class PriceScheduleWorker : BackgroundService
                 var notifier = scope.ServiceProvider.GetRequiredService<IRealtimeNotifier>();
                 var indexing = scope.ServiceProvider.GetRequiredService<IIndexingService>();
                 var promotions = await db.Promotions.AsNoTracking()
-                    .Where(promotion => promotion.Type == "price-schedule" && promotion.IsActive)
+                    .Where(promotion => promotion.Type == "price-schedule")
                     .ToListAsync(stoppingToken);
                 var transitions = promotions
                     .Select(promotion => _serializer.Deserialize<PriceSchedulePayload>(promotion.PayloadJson))
-                    .Where(schedule => !schedule.IsCancelled &&
-                        ((schedule.StartsAt > lastCheck && schedule.StartsAt <= now) ||
-                         (schedule.EndsAt.HasValue && schedule.EndsAt > lastCheck && schedule.EndsAt <= now)))
+                    .Where(schedule =>
+                        (!schedule.IsCancelled &&
+                            ((schedule.StartsAt > lastCheck && schedule.StartsAt <= now) ||
+                             (schedule.EndsAt.HasValue && schedule.EndsAt > lastCheck && schedule.EndsAt <= now))) ||
+                        (schedule.IsCancelled && schedule.CancelledAt.HasValue &&
+                            schedule.CancelledAt > lastCheck && schedule.CancelledAt <= now))
                     .Select(schedule => new { schedule.ProductId, schedule.ProductVariantId })
                     .Distinct().ToList();
                 foreach (var transition in transitions)

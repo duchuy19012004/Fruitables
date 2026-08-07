@@ -12,6 +12,9 @@ public class Promotion
     [MaxLength(50)]
     public string? Code { get; set; }
 
+    [MaxLength(50)]
+    public string? CustomerCode { get; set; }
+
     public string PayloadJson { get; set; } = "{ \"schemaVersion\": 1 }";
 
     public bool IsActive { get; set; } = true;

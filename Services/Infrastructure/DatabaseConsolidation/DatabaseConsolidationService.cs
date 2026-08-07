@@ -168,6 +168,7 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
                     .ThenBy(image => image.Id)
                     .Select(image => new ProductImageDocument
                     {
+                        Id = image.Id,
                         Url = RequireText(image.ImageUrl, $"ProductImage:{image.Id}.ImageUrl"),
                         StorageKey = RequireText(image.ImageUrl, $"ProductImage:{image.Id}.StorageKey").TrimStart('/'),
                         IsPrimary = image.IsPrimary,
@@ -430,6 +431,7 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
                 {
                     Type = "coupon",
                     Code = PromotionKey("coupon", coupon.Id),
+                    CustomerCode = payload.Code,
                     PayloadJson = _serializer.Serialize(payload),
                     IsActive = coupon.IsActive,
                     StartsAt = ToOffset(coupon.StartDate),
@@ -512,6 +514,7 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
                 {
                     ProductId = schedule.ProductId,
                     ProductVariantId = schedule.ProductVariantId,
+                    LegacyScheduleId = schedule.Id,
                     DiscountType = schedule.DiscountType,
                     Value = schedule.Value,
                     StartsAt = schedule.StartsAt,
@@ -1915,6 +1918,7 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
     private static bool SamePromotion(Promotion left, Promotion right) =>
         left.Type == right.Type
         && left.Code == right.Code
+        && left.CustomerCode == right.CustomerCode
         && left.PayloadJson == right.PayloadJson
         && left.IsActive == right.IsActive
         && left.StartsAt == right.StartsAt
@@ -1925,6 +1929,7 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
 
     private static void CopyPromotion(Promotion target, Promotion source)
     {
+        target.CustomerCode = source.CustomerCode;
         target.PayloadJson = source.PayloadJson;
         target.IsActive = source.IsActive;
         target.StartsAt = source.StartsAt;

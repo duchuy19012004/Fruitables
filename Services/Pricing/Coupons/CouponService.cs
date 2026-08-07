@@ -76,6 +76,7 @@ public class CouponService : ICouponService
         {
             Type = "coupon",
             Code = $"coupon:new-{Guid.NewGuid():N}",
+            CustomerCode = payload.Code,
             PayloadJson = _serializer.Serialize(payload),
             IsActive = payload.IsActive,
             StartsAt = ToOffset(payload.StartDate),
@@ -84,10 +85,17 @@ public class CouponService : ICouponService
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
-        _dbContext.Promotions.Add(promotion);
-        await _dbContext.SaveChangesAsync();
-        promotion.Code = $"coupon:{promotion.Id}";
-        await _dbContext.SaveChangesAsync();
+        try
+        {
+            _dbContext.Promotions.Add(promotion);
+            await _dbContext.SaveChangesAsync();
+            promotion.Code = $"coupon:{promotion.Id}";
+            await _dbContext.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            return (false, $"Mã giảm giá '{codeUpper}' đã tồn tại");
+        }
         await WriteAuditAsync("Create", promotion.Id, 0, payload);
         return (true, null);
     }
@@ -128,12 +136,24 @@ public class CouponService : ICouponService
             IsActive = request.IsActive
         };
         promotion.PayloadJson = _serializer.Serialize(payload);
+        promotion.CustomerCode = payload.Code;
         promotion.IsActive = payload.IsActive;
         promotion.StartsAt = ToOffset(payload.StartDate);
         promotion.EndsAt = ToOffset(payload.EndDate);
         promotion.Revision++;
         promotion.UpdatedAt = DateTime.UtcNow;
-        await _dbContext.SaveChangesAsync();
+        try
+        {
+            await _dbContext.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return (false, "Mã giảm giá đã được người khác cập nhật. Vui lòng tải lại trang");
+        }
+        catch (DbUpdateException)
+        {
+            return (false, $"Mã giảm giá '{codeUpper}' đã tồn tại");
+        }
         await WriteAuditAsync("Update", promotion.Id, 0, payload);
         return (true, null);
     }
@@ -156,7 +176,7 @@ public class CouponService : ICouponService
 
     public async Task<CouponApplyResult> ApplyCouponAsync(string code, decimal subtotal, decimal itemCount)
     {
-        var codeUpper = code.Trim().ToUpper();
+        var codeUpper = code.Trim().ToUpperInvariant();
 
         var coupon = (await LoadCouponsAsync()).FirstOrDefault(c => c.Code == codeUpper);
 
@@ -281,7 +301,8 @@ public class CouponService : ICouponService
             UsedCount = payload.UsedCount,
             StartDate = payload.StartDate,
             EndDate = payload.EndDate,
-            IsActive = payload.IsActive
+            IsActive = payload.IsActive,
+            Revision = promotion.Revision
         };
     }
 

@@ -98,6 +98,7 @@ public sealed class ProductImageNormalizationService
 
                 var replacement = new ProductImageDocument
                 {
+                    Id = image.Document.Id,
                     Url = newUrl,
                     StorageKey = newUrl.TrimStart('/'),
                     IsPrimary = image.Document.IsPrimary,

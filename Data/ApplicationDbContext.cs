@@ -95,6 +95,9 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(e => e.Slug).IsUnique();
             entity.Property(product => product.PriceRevision)
                   .HasDefaultValue(1);
+            entity.Property(product => product.AssetRevision)
+                  .HasDefaultValue(1)
+                  .IsConcurrencyToken();
             entity.Property(product => product.StockQuantity).HasPrecision(10, 2);
             entity.Property(product => product.MinOrderQuantity).HasPrecision(10, 2);
             entity.Property(product => product.ImagesJson)
@@ -216,7 +219,8 @@ public class ApplicationDbContext : DbContext
                   .IsRequired()
                   .HasDefaultValue("{ \"schemaVersion\": 1 }");
             entity.Property(promotion => promotion.Revision)
-                  .HasDefaultValue(1);
+                  .HasDefaultValue(1)
+                  .IsConcurrencyToken();
             entity.Property(promotion => promotion.RowVersion)
                   .HasColumnType("varbinary(16)")
                   .IsConcurrencyToken()
@@ -225,6 +229,9 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(promotion => promotion.Code)
                   .IsUnique()
                   .HasFilter("[Code] IS NOT NULL");
+            entity.HasIndex(promotion => promotion.CustomerCode)
+                  .IsUnique()
+                  .HasFilter("[CustomerCode] IS NOT NULL");
             entity.HasIndex(promotion => new { promotion.IsActive, promotion.StartsAt, promotion.EndsAt });
             if (isSqlServer)
             {

@@ -1,8 +1,10 @@
 // Tests/Search/SearchSuggestServiceTests.cs
 using Fruitables.Data;
 using Fruitables.Models;
+using Fruitables.Models.Json;
 using Fruitables.Options;
 using Fruitables.Services.Search;
+using Fruitables.Services.Infrastructure.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -28,6 +30,7 @@ public class SearchSuggestServiceTests
 
     private static async Task SeedCatalogAsync(ApplicationDbContext db)
     {
+        var serializer = new VersionedJsonSerializer();
         var catFruit = new Category
         {
             Id = 1, Name = "Trái cây", Slug = "trai-cay", IsActive = true, IsDeleted = false
@@ -42,7 +45,20 @@ public class SearchSuggestServiceTests
             new Product
             {
                 Id = 1, CategoryId = 1, Name = "Táo Fuji", Slug = "tao-fuji",
-                Price = 125000, SalePrice = 99000, IsActive = true, IsDeleted = false, IsFeatured = true
+                Price = 125000, SalePrice = 99000, IsActive = true, IsDeleted = false, IsFeatured = true,
+                ImagesJson = serializer.Serialize(new ProductImagesDocument
+                {
+                    Images =
+                    [
+                        new ProductImageDocument
+                        {
+                            Url = "/uploads/json-tao.jpg",
+                            StorageKey = "catalog/json-tao.jpg",
+                            IsPrimary = true,
+                            SortOrder = 0
+                        }
+                    ]
+                })
             },
             new Product
             {
@@ -101,7 +117,7 @@ public class SearchSuggestServiceTests
         Assert.DoesNotContain(result.Products, p => p.Slug == "nho-my"); // inactive
         Assert.DoesNotContain(result.Products, p => p.Slug == "ca-rot"); // deleted
         Assert.Equal("/Shop/Detail/tao-fuji", result.Products.First(p => p.Slug == "tao-fuji").Url);
-        Assert.Equal("/uploads/tao.jpg", result.Products.First(p => p.Slug == "tao-fuji").ImageUrl);
+        Assert.Equal("/uploads/json-tao.jpg", result.Products.First(p => p.Slug == "tao-fuji").ImageUrl);
         Assert.Contains(result.Keywords, k => k.Text == "táo fuji");
         Assert.DoesNotContain(result.Keywords, k => k.Text == "hidden");
         Assert.StartsWith("/Shop?search=", result.ViewAllUrl);

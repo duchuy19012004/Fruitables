@@ -237,7 +237,7 @@ public sealed class PriceManagementService : IPriceManagementService
             if (validation != null) return PriceManagementResult.Fail(validation);
 
             var now = _timeProvider.GetUtcNow();
-            var payload = new PriceSchedulePayload
+            var legacySchedule = new PriceSchedule
             {
                 ProductId = request.ProductId,
                 ProductVariantId = request.ProductVariantId,
@@ -249,10 +249,26 @@ public sealed class PriceManagementService : IPriceManagementService
                 CreatedAt = now,
                 UpdatedAt = now
             };
+            await _unitOfWork.PriceSchedules.AddAsync(legacySchedule);
+            await _unitOfWork.SaveChangesAsync();
+
+            var payload = new PriceSchedulePayload
+            {
+                ProductId = request.ProductId,
+                ProductVariantId = request.ProductVariantId,
+                LegacyScheduleId = legacySchedule.Id,
+                DiscountType = request.DiscountType,
+                Value = request.Value,
+                StartsAt = request.StartsAt.ToUniversalTime(),
+                EndsAt = request.EndsAt?.ToUniversalTime(),
+                CreatedByAdminId = adminId,
+                CreatedAt = now,
+                UpdatedAt = now
+            };
             var promotion = new Promotion
             {
                 Type = "price-schedule",
-                Code = $"price-schedule:new-{Guid.NewGuid():N}",
+                Code = $"price-schedule:{legacySchedule.Id}",
                 PayloadJson = _serializer.Serialize(payload),
                 IsActive = true,
                 StartsAt = payload.StartsAt,
@@ -262,8 +278,6 @@ public sealed class PriceManagementService : IPriceManagementService
                 UpdatedAt = now.UtcDateTime
             };
             _dbContext.Promotions.Add(promotion);
-            await _dbContext.SaveChangesAsync();
-            promotion.Code = $"price-schedule:{promotion.Id}";
             await _dbContext.SaveChangesAsync();
             await AddLogAsync(request.ProductId, adminId, "PriceScheduleCreate", $"Tạo lịch giảm giá từ {payload.StartsAt:O}");
             return PriceManagementResult.Ok(promotion.Revision);
@@ -291,6 +305,8 @@ public sealed class PriceManagementService : IPriceManagementService
 
             var validation = await ValidateScheduleAsync(request, id);
             if (validation != null) return PriceManagementResult.Fail(validation);
+            var legacySchedule = await EnsureLegacyScheduleAsync(promotion, schedule);
+            schedule.Id = legacySchedule.Id;
             schedule.DiscountType = request.DiscountType;
             schedule.Value = request.Value;
             schedule.StartsAt = request.StartsAt.ToUniversalTime();
@@ -302,6 +318,7 @@ public sealed class PriceManagementService : IPriceManagementService
             promotion.EndsAt = schedule.EndsAt;
             promotion.Revision = schedule.Revision;
             promotion.UpdatedAt = schedule.UpdatedAt.UtcDateTime;
+            CopyToLegacySchedule(legacySchedule, schedule);
             await AddLogAsync(request.ProductId, adminId, "PriceScheduleUpdate", $"Cập nhật lịch giá #{id}");
             await _dbContext.SaveChangesAsync();
             return PriceManagementResult.Ok(schedule.Revision);
@@ -340,6 +357,8 @@ public sealed class PriceManagementService : IPriceManagementService
             if (reason?.Length > 500)
                 return PriceManagementResult.Fail("Lý do hủy không được vượt quá 500 ký tự.");
 
+            var legacySchedule = await EnsureLegacyScheduleAsync(promotion, schedule);
+            schedule.Id = legacySchedule.Id;
             schedule.IsCancelled = true;
             schedule.CancelledAt = now;
             schedule.CancelledByAdminId = adminId;
@@ -358,6 +377,7 @@ public sealed class PriceManagementService : IPriceManagementService
                 ? "PriceScheduleStoppedEarly"
                 : "PriceScheduleCancel";
             var detail = $"{action} #{id}; reason={schedule.CancellationReason ?? "không có"}; cancelledAt={now:O}";
+            CopyToLegacySchedule(legacySchedule, schedule);
             await AddLogAsync(schedule.ProductId, adminId, action, detail);
             await _dbContext.SaveChangesAsync();
 
@@ -725,7 +745,8 @@ public sealed class PriceManagementService : IPriceManagementService
             return null;
 
         var promotion = await _dbContext.Promotions
-            .FirstOrDefaultAsync(item => item.Id == id && item.Type == "price-schedule");
+            .FirstOrDefaultAsync(item => item.Type == "price-schedule" &&
+                (item.Id == id || item.Code == $"price-schedule:{id}"));
         if (promotion == null)
             return null;
         return (promotion, ToSchedule(promotion));
@@ -736,7 +757,7 @@ public sealed class PriceManagementService : IPriceManagementService
         var payload = _serializer.Deserialize<PriceSchedulePayload>(promotion.PayloadJson);
         return new PriceSchedule
         {
-            Id = promotion.Id,
+            Id = payload.LegacyScheduleId ?? ParseLegacyScheduleId(promotion.Code) ?? promotion.Id,
             ProductId = payload.ProductId,
             ProductVariantId = payload.ProductVariantId,
             DiscountType = payload.DiscountType,
@@ -758,6 +779,7 @@ public sealed class PriceManagementService : IPriceManagementService
     {
         ProductId = schedule.ProductId,
         ProductVariantId = schedule.ProductVariantId,
+        LegacyScheduleId = schedule.Id,
         DiscountType = schedule.DiscountType,
         Value = schedule.Value,
         StartsAt = schedule.StartsAt,
@@ -771,4 +793,64 @@ public sealed class PriceManagementService : IPriceManagementService
         CreatedAt = schedule.CreatedAt,
         UpdatedAt = schedule.UpdatedAt
     };
+
+    private async Task<PriceSchedule> EnsureLegacyScheduleAsync(Promotion promotion, PriceSchedule schedule)
+    {
+        if (_dbContext == null)
+            return schedule;
+
+        var legacy = await _dbContext.PriceSchedules
+            .FirstOrDefaultAsync(item => item.Id == schedule.Id);
+        if (legacy != null)
+            return legacy;
+
+        legacy = new PriceSchedule
+        {
+            ProductId = schedule.ProductId,
+            ProductVariantId = schedule.ProductVariantId,
+            DiscountType = schedule.DiscountType,
+            Value = schedule.Value,
+            StartsAt = schedule.StartsAt,
+            EndsAt = schedule.EndsAt,
+            IsCancelled = schedule.IsCancelled,
+            CancelledAt = schedule.CancelledAt,
+            CancelledByAdminId = schedule.CancelledByAdminId,
+            CancellationReason = schedule.CancellationReason,
+            Revision = schedule.Revision,
+            CreatedByAdminId = schedule.CreatedByAdminId,
+            CreatedAt = schedule.CreatedAt,
+            UpdatedAt = schedule.UpdatedAt
+        };
+        await _dbContext.PriceSchedules.AddAsync(legacy);
+        await _dbContext.SaveChangesAsync();
+        promotion.Code = $"price-schedule:{legacy.Id}";
+        return legacy;
+    }
+
+    private static void CopyToLegacySchedule(PriceSchedule target, PriceSchedule source)
+    {
+        target.ProductId = source.ProductId;
+        target.ProductVariantId = source.ProductVariantId;
+        target.DiscountType = source.DiscountType;
+        target.Value = source.Value;
+        target.StartsAt = source.StartsAt;
+        target.EndsAt = source.EndsAt;
+        target.IsCancelled = source.IsCancelled;
+        target.CancelledAt = source.CancelledAt;
+        target.CancelledByAdminId = source.CancelledByAdminId;
+        target.CancellationReason = source.CancellationReason;
+        target.Revision = source.Revision;
+        target.CreatedByAdminId = source.CreatedByAdminId;
+        target.CreatedAt = source.CreatedAt;
+        target.UpdatedAt = source.UpdatedAt;
+    }
+
+    private static int? ParseLegacyScheduleId(string? code)
+    {
+        const string prefix = "price-schedule:";
+        return code != null && code.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+            int.TryParse(code[prefix.Length..], out var id) && id > 0
+            ? id
+            : null;
+    }
 }

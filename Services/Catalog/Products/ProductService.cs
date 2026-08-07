@@ -215,15 +215,15 @@ internal static class ProductAggregateJson
         {
             var images = ReadImages(product.ImagesJson, serializer);
             var tags = ReadTags(product.TagsJson, serializer);
+            var orderedImages = OrderImages(images).ToList();
 
-            product.Images = images.Images
-                .OrderByDescending(image => image.IsPrimary)
-                .ThenBy(image => image.SortOrder)
-                .Select((image, index) => new ProductImage
+            product.Images = orderedImages
+                .Select(image => new ProductImage
                 {
-                    Id = index + 1,
+                    Id = image.Id,
                     ProductId = product.Id,
                     ImageUrl = image.Url,
+                    StorageKey = image.StorageKey,
                     IsPrimary = image.IsPrimary,
                     SortOrder = image.SortOrder,
                     Product = product
@@ -256,14 +256,13 @@ internal static class ProductAggregateJson
     }
 
     public static List<ProductImage> ReadImageModels(Product product, IJsonDocumentSerializer serializer) =>
-        ReadImages(product.ImagesJson, serializer).Images
-            .OrderByDescending(image => image.IsPrimary)
-            .ThenBy(image => image.SortOrder)
-            .Select((image, index) => new ProductImage
+        OrderImages(ReadImages(product.ImagesJson, serializer))
+            .Select(image => new ProductImage
             {
-                Id = index + 1,
+                Id = image.Id,
                 ProductId = product.Id,
                 ImageUrl = image.Url,
+                StorageKey = image.StorageKey,
                 IsPrimary = image.IsPrimary,
                 SortOrder = image.SortOrder,
                 Product = product
@@ -273,18 +272,75 @@ internal static class ProductAggregateJson
     public static string SerializeImages(IEnumerable<ProductImage> images, IJsonDocumentSerializer serializer) =>
         serializer.Serialize(new ProductImagesDocument
         {
-            Images = images
+            Images = EnsureImageIds(images
                 .OrderBy(image => image.SortOrder)
                 .ThenBy(image => image.Id)
                 .Select(image => new ProductImageDocument
                 {
+                    Id = image.Id,
                     Url = image.ImageUrl,
-                    StorageKey = image.ImageUrl.TrimStart('/'),
+                    StorageKey = string.IsNullOrWhiteSpace(image.StorageKey)
+                        ? image.ImageUrl.TrimStart('/')
+                        : image.StorageKey,
                     IsPrimary = image.IsPrimary,
                     SortOrder = image.SortOrder
-                })
+                }))
                 .ToList()
         });
+
+    private static IEnumerable<ProductImageDocument> OrderImages(ProductImagesDocument document)
+    {
+        var usedIds = new HashSet<int>();
+        var nextId = 1;
+        foreach (var image in document.Images
+                     .OrderByDescending(image => image.IsPrimary)
+                     .ThenBy(image => image.SortOrder))
+        {
+            var id = image.Id;
+            if (id <= 0 || !usedIds.Add(id))
+            {
+                while (usedIds.Contains(nextId))
+                    nextId++;
+                id = nextId++;
+                usedIds.Add(id);
+            }
+
+            yield return new ProductImageDocument
+            {
+                Id = id,
+                Url = image.Url,
+                StorageKey = image.StorageKey,
+                IsPrimary = image.IsPrimary,
+                SortOrder = image.SortOrder
+            };
+        }
+    }
+
+    private static IEnumerable<ProductImageDocument> EnsureImageIds(IEnumerable<ProductImageDocument> images)
+    {
+        var usedIds = new HashSet<int>();
+        var nextId = 1;
+        foreach (var image in images)
+        {
+            var id = image.Id;
+            if (id <= 0 || !usedIds.Add(id))
+            {
+                while (usedIds.Contains(nextId))
+                    nextId++;
+                id = nextId++;
+                usedIds.Add(id);
+            }
+
+            yield return new ProductImageDocument
+            {
+                Id = id,
+                Url = image.Url,
+                StorageKey = image.StorageKey,
+                IsPrimary = image.IsPrimary,
+                SortOrder = image.SortOrder
+            };
+        }
+    }
 
     public static string SerializeTags(IEnumerable<ProductTag> tags, IJsonDocumentSerializer serializer) =>
         serializer.Serialize(new ProductTagsDocument

@@ -215,6 +215,9 @@ public sealed class PriceSchedulePayload : VersionedJsonDocument
     [JsonPropertyName("productVariantId")]
     public int? ProductVariantId { get; init; }
 
+    [JsonPropertyName("legacyScheduleId")]
+    public int? LegacyScheduleId { get; init; }
+
     [JsonPropertyName("discountType")]
     public DiscountType DiscountType { get; init; }
 

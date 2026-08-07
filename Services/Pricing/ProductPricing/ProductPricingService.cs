@@ -177,7 +177,7 @@ public sealed class ProductPricingService : IProductPricingService
         var payload = _serializer.Deserialize<PriceSchedulePayload>(promotion.PayloadJson);
         return new PriceSchedule
         {
-            Id = promotion.Id,
+            Id = payload.LegacyScheduleId ?? ParseLegacyScheduleId(promotion.Code) ?? promotion.Id,
             ProductId = payload.ProductId,
             ProductVariantId = payload.ProductVariantId,
             DiscountType = payload.DiscountType,
@@ -193,5 +193,14 @@ public sealed class ProductPricingService : IProductPricingService
             CreatedAt = payload.CreatedAt,
             UpdatedAt = payload.UpdatedAt
         };
+    }
+
+    private static int? ParseLegacyScheduleId(string? code)
+    {
+        const string prefix = "price-schedule:";
+        return code != null && code.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+            int.TryParse(code[prefix.Length..], out var id) && id > 0
+            ? id
+            : null;
     }
 }

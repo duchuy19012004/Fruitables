@@ -126,44 +126,47 @@ public class ComboService : IComboService
         if (_dbContext == null)
             return ComboResult.Fail("Dịch vụ combo chưa được cấu hình.");
 
-        var payload = new ComboPayload
+        return await RunAtomicWriteAsync(async () =>
         {
-            Name = model.Name.Trim(),
-            Slug = slug,
-            Description = model.Description?.Trim(),
-            ImageUrl = string.IsNullOrWhiteSpace(model.ImageUrl) ? null : model.ImageUrl.Trim(),
-            IsActive = model.Status != ComboLifecycleStatus.Archived,
-            Status = model.Status,
-            StartsAt = model.StartsAt,
-            EndsAt = model.EndsAt,
-            PricingType = model.PricingType,
-            FixedPrice = model.PricingType == ComboPricingType.FixedPrice ? model.FixedPrice : null,
-            DiscountValue = model.PricingType is ComboPricingType.PercentageDiscount or ComboPricingType.FixedDiscount ? model.DiscountValue : null,
-            AllowCouponStacking = model.AllowCouponStacking,
-            SortOrder = model.SortOrder,
-            Items = BuildPayloadItems(model.Items)
-        };
+            var payload = new ComboPayload
+            {
+                Name = model.Name.Trim(),
+                Slug = slug,
+                Description = model.Description?.Trim(),
+                ImageUrl = string.IsNullOrWhiteSpace(model.ImageUrl) ? null : model.ImageUrl.Trim(),
+                IsActive = model.Status != ComboLifecycleStatus.Archived,
+                Status = model.Status,
+                StartsAt = model.StartsAt,
+                EndsAt = model.EndsAt,
+                PricingType = model.PricingType,
+                FixedPrice = model.PricingType == ComboPricingType.FixedPrice ? model.FixedPrice : null,
+                DiscountValue = model.PricingType is ComboPricingType.PercentageDiscount or ComboPricingType.FixedDiscount ? model.DiscountValue : null,
+                AllowCouponStacking = model.AllowCouponStacking,
+                SortOrder = model.SortOrder,
+                Items = BuildPayloadItems(model.Items)
+            };
 
-        var promotion = new Promotion
-        {
-            Type = "combo",
-            Code = $"combo:new-{Guid.NewGuid():N}",
-            PayloadJson = _serializer.Serialize(payload),
-            IsActive = payload.IsActive,
-            StartsAt = payload.StartsAt,
-            EndsAt = payload.EndsAt,
-            Revision = payload.Revision,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
-        };
-        _dbContext.Promotions.Add(promotion);
-        await _dbContext.SaveChangesAsync();
-        await SyncLegacyComboAsync(promotion, payload);
+            var promotion = new Promotion
+            {
+                Type = "combo",
+                Code = $"combo:new-{Guid.NewGuid():N}",
+                PayloadJson = _serializer.Serialize(payload),
+                IsActive = payload.IsActive,
+                StartsAt = payload.StartsAt,
+                EndsAt = payload.EndsAt,
+                Revision = payload.Revision,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            _dbContext.Promotions.Add(promotion);
+            await _dbContext.SaveChangesAsync();
+            await SyncLegacyComboAsync(promotion, payload);
 
-        var combo = ToCombo(promotion, payload, new Dictionary<int, Product>());
-        await AddAuditAsync(combo, adminId, ComboAuditActions.Create, Describe(combo));
-        _logger?.LogInformation("Combo {ComboId} created at revision {Revision} by admin {AdminId}", combo.Id, combo.Revision, adminId);
-        return ComboResult.Ok(combo);
+            var combo = ToCombo(promotion, payload, new Dictionary<int, Product>());
+            await AddAuditAsync(combo, adminId, ComboAuditActions.Create, Describe(combo));
+            _logger?.LogInformation("Combo {ComboId} created at revision {Revision} by admin {AdminId}", combo.Id, combo.Revision, adminId);
+            return ComboResult.Ok(combo);
+        });
     }
 
     public async Task<ComboResult> UpdateAsync(int id, ComboFormViewModel model, int? adminId = null)
@@ -171,63 +174,56 @@ public class ComboService : IComboService
         if (_dbContext == null)
             return ComboResult.Fail("Dịch vụ combo chưa được cấu hình.");
 
-        var promotion = await _dbContext.Promotions
-            .FirstOrDefaultAsync(item => item.Id == id && item.Type == "combo");
-        if (promotion == null)
-            return ComboResult.Fail("Không tìm thấy combo.");
-        var currentPayload = _serializer.Deserialize<ComboPayload>(promotion.PayloadJson);
-        var combo = (await LoadCombosAsync([id])).FirstOrDefault();
-
-        if (combo == null)
-            return ComboResult.Fail("Không tìm thấy combo.");
-        if (model.Revision != currentPayload.Revision)
-            return ComboResult.Fail("Combo đã được người khác cập nhật. Vui lòng tải lại trang.");
-
-        var validationError = await ValidateComboAsync(model);
-        if (validationError != null)
-            return ComboResult.Fail(validationError);
-
-        var slug = await ResolveSlugAsync(model.Slug, model.Name, id);
-        if (slug == null)
-            return ComboResult.Fail("Slug đã tồn tại hoặc không hợp lệ.");
-
-        var updatedPayload = new ComboPayload
+        return await RunAtomicWriteAsync(async () =>
         {
-            Name = model.Name.Trim(),
-            Slug = slug,
-            Description = model.Description?.Trim(),
-            ImageUrl = string.IsNullOrWhiteSpace(model.ImageUrl) ? null : model.ImageUrl.Trim(),
-            IsActive = model.Status != ComboLifecycleStatus.Archived,
-            Status = model.Status,
-            StartsAt = model.StartsAt,
-            EndsAt = model.EndsAt,
-            PricingType = model.PricingType,
-            FixedPrice = model.PricingType == ComboPricingType.FixedPrice ? model.FixedPrice : null,
-            DiscountValue = model.PricingType is ComboPricingType.PercentageDiscount or ComboPricingType.FixedDiscount ? model.DiscountValue : null,
-            AllowCouponStacking = model.AllowCouponStacking,
-            Revision = currentPayload.Revision + 1,
-            SortOrder = model.SortOrder,
-            Items = BuildPayloadItems(model.Items)
-        };
-        promotion.PayloadJson = _serializer.Serialize(updatedPayload);
-        promotion.IsActive = updatedPayload.IsActive;
-        promotion.StartsAt = updatedPayload.StartsAt;
-        promotion.EndsAt = updatedPayload.EndsAt;
-        promotion.Revision = updatedPayload.Revision;
-        promotion.UpdatedAt = DateTime.UtcNow;
-        try
-        {
+            var promotion = await _dbContext.Promotions
+                .FirstOrDefaultAsync(item => item.Id == id && item.Type == "combo");
+            if (promotion == null)
+                return ComboResult.Fail("Không tìm thấy combo.");
+            var currentPayload = _serializer.Deserialize<ComboPayload>(promotion.PayloadJson);
+            if (model.Revision != currentPayload.Revision || model.Revision != promotion.Revision)
+                return ComboResult.Fail("Combo đã được người khác cập nhật. Vui lòng tải lại trang.");
+
+            var validationError = await ValidateComboAsync(model);
+            if (validationError != null)
+                return ComboResult.Fail(validationError);
+
+            var slug = await ResolveSlugAsync(model.Slug, model.Name, id);
+            if (slug == null)
+                return ComboResult.Fail("Slug đã tồn tại hoặc không hợp lệ.");
+
+            var updatedPayload = new ComboPayload
+            {
+                Name = model.Name.Trim(),
+                Slug = slug,
+                Description = model.Description?.Trim(),
+                ImageUrl = string.IsNullOrWhiteSpace(model.ImageUrl) ? null : model.ImageUrl.Trim(),
+                IsActive = model.Status != ComboLifecycleStatus.Archived,
+                Status = model.Status,
+                StartsAt = model.StartsAt,
+                EndsAt = model.EndsAt,
+                PricingType = model.PricingType,
+                FixedPrice = model.PricingType == ComboPricingType.FixedPrice ? model.FixedPrice : null,
+                DiscountValue = model.PricingType is ComboPricingType.PercentageDiscount or ComboPricingType.FixedDiscount ? model.DiscountValue : null,
+                AllowCouponStacking = model.AllowCouponStacking,
+                Revision = promotion.Revision + 1,
+                SortOrder = model.SortOrder,
+                Items = BuildPayloadItems(model.Items)
+            };
+            promotion.PayloadJson = _serializer.Serialize(updatedPayload);
+            promotion.IsActive = updatedPayload.IsActive;
+            promotion.StartsAt = updatedPayload.StartsAt;
+            promotion.EndsAt = updatedPayload.EndsAt;
+            promotion.Revision = updatedPayload.Revision;
+            promotion.UpdatedAt = DateTime.UtcNow;
             await _dbContext.SaveChangesAsync();
             await SyncLegacyComboAsync(promotion, updatedPayload);
+            var updated = ToCombo(promotion, updatedPayload, new Dictionary<int, Product>());
+            await AddAuditAsync(updated, adminId, ComboAuditActions.Update, Describe(updated));
+            _logger?.LogInformation("Combo {ComboId} updated to revision {Revision} by admin {AdminId}", updated.Id, updated.Revision, adminId);
+            return ComboResult.Ok(updated);
         }
-        catch (DbUpdateConcurrencyException)
-        {
-            return ComboResult.Fail("Combo đã được người khác cập nhật. Vui lòng tải lại trang.");
-        }
-        var updated = ToCombo(promotion, updatedPayload, new Dictionary<int, Product>());
-        await AddAuditAsync(updated, adminId, ComboAuditActions.Update, Describe(updated));
-        _logger?.LogInformation("Combo {ComboId} updated to revision {Revision} by admin {AdminId}", updated.Id, updated.Revision, adminId);
-        return ComboResult.Ok(updated);
+        );
     }
 
     public async Task<ComboResult> DeleteAsync(int id, int? adminId = null)
@@ -235,47 +231,44 @@ public class ComboService : IComboService
         if (_dbContext == null)
             return ComboResult.Fail("Dịch vụ combo chưa được cấu hình.");
 
-        var promotion = await _dbContext.Promotions
-            .FirstOrDefaultAsync(item => item.Id == id && item.Type == "combo");
-        if (promotion == null)
-            return ComboResult.Fail("Không tìm thấy combo.");
+        return await RunAtomicWriteAsync(async () =>
+        {
+            var promotion = await _dbContext.Promotions
+                .FirstOrDefaultAsync(item => item.Id == id && item.Type == "combo");
+            if (promotion == null)
+                return ComboResult.Fail("Không tìm thấy combo.");
 
-        var payload = _serializer.Deserialize<ComboPayload>(promotion.PayloadJson);
-        var archived = new ComboPayload
-        {
-            Name = payload.Name,
-            Slug = payload.Slug,
-            Description = payload.Description,
-            ImageUrl = payload.ImageUrl,
-            IsActive = false,
-            Status = ComboLifecycleStatus.Archived,
-            StartsAt = payload.StartsAt,
-            EndsAt = payload.EndsAt,
-            PricingType = payload.PricingType,
-            FixedPrice = payload.FixedPrice,
-            DiscountValue = payload.DiscountValue,
-            AllowCouponStacking = payload.AllowCouponStacking,
-            Revision = payload.Revision + 1,
-            SortOrder = payload.SortOrder,
-            Items = payload.Items
-        };
-        promotion.PayloadJson = _serializer.Serialize(archived);
-        promotion.IsActive = false;
-        promotion.Revision = archived.Revision;
-        promotion.UpdatedAt = DateTime.UtcNow;
-        try
-        {
+            var payload = _serializer.Deserialize<ComboPayload>(promotion.PayloadJson);
+            var archived = new ComboPayload
+            {
+                Name = payload.Name,
+                Slug = payload.Slug,
+                Description = payload.Description,
+                ImageUrl = payload.ImageUrl,
+                IsActive = false,
+                Status = ComboLifecycleStatus.Archived,
+                StartsAt = payload.StartsAt,
+                EndsAt = payload.EndsAt,
+                PricingType = payload.PricingType,
+                FixedPrice = payload.FixedPrice,
+                DiscountValue = payload.DiscountValue,
+                AllowCouponStacking = payload.AllowCouponStacking,
+                Revision = promotion.Revision + 1,
+                SortOrder = payload.SortOrder,
+                Items = payload.Items
+            };
+            promotion.PayloadJson = _serializer.Serialize(archived);
+            promotion.IsActive = false;
+            promotion.Revision = archived.Revision;
+            promotion.UpdatedAt = DateTime.UtcNow;
             await _dbContext.SaveChangesAsync();
             await SyncLegacyComboAsync(promotion, archived);
+            var combo = ToCombo(promotion, archived, new Dictionary<int, Product>());
+            await AddAuditAsync(combo, adminId, ComboAuditActions.Archive, "Lưu trữ combo.");
+            _logger?.LogInformation("Combo {ComboId} archived by admin {AdminId}", combo.Id, adminId);
+            return ComboResult.Ok(combo);
         }
-        catch (DbUpdateConcurrencyException)
-        {
-            return ComboResult.Fail("Combo đã được người khác cập nhật. Vui lòng tải lại trang.");
-        }
-        var combo = ToCombo(promotion, archived, new Dictionary<int, Product>());
-        await AddAuditAsync(combo, adminId, ComboAuditActions.Archive, "Lưu trữ combo.");
-        _logger?.LogInformation("Combo {ComboId} archived by admin {AdminId}", combo.Id, adminId);
-        return ComboResult.Ok(combo);
+        );
     }
 
     public async Task<IReadOnlyList<ComboProductOptionViewModel>> GetProductOptionsAsync()
@@ -345,11 +338,11 @@ public class ComboService : IComboService
         if (combo.Items.Count < 2)
             return new AddComboToCartResult { Success = false, Message = "Combo chưa có đủ sản phẩm." };
 
-        var unavailable = combo.Items
-            .Select(item => new { Item = item, Reason = GetUnavailableReason(item, quotes) })
-            .Where(item => !string.IsNullOrEmpty(item.Reason))
-            .Select(item => $"{item.Item.Product.Name} ({item.Reason})")
-            .ToList();
+            var unavailable = combo.Items
+                .Select(item => new { Item = item, Reason = GetUnavailableReason(item, quotes) })
+                .Where(item => !string.IsNullOrEmpty(item.Reason))
+                .Select(item => $"{item.Item.Product?.Name ?? $"Sản phẩm #{item.Item.ProductId}"} ({item.Reason})")
+                .ToList();
         if (unavailable.Count > 0)
         {
             return new AddComboToCartResult
@@ -668,6 +661,35 @@ public class ComboService : IComboService
             newValue: newValue);
     }
 
+    private async Task<ComboResult> RunAtomicWriteAsync(Func<Task<ComboResult>> operation)
+    {
+        if (_dbContext == null)
+            return ComboResult.Fail("Dịch vụ combo chưa được cấu hình.");
+        if ((_unitOfWork.DatabaseProviderName ?? string.Empty).Contains("InMemory", StringComparison.OrdinalIgnoreCase))
+            return await operation();
+
+        await using var transaction = await _unitOfWork.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+        try
+        {
+            var result = await operation();
+            if (result.Success)
+                await transaction.CommitAsync();
+            else
+                await transaction.RollbackAsync();
+            return result;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await transaction.RollbackAsync();
+            return ComboResult.Fail("Combo đã được người khác cập nhật. Vui lòng tải lại trang.");
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
+
     private async Task<string?> ValidateComboAsync(ComboFormViewModel model)
     {
         if (!Enum.IsDefined(model.Status))
@@ -756,6 +778,11 @@ public class ComboService : IComboService
 
     private string GetUnavailableReason(ComboItem item, IReadOnlyDictionary<PriceTargetKey, PriceQuote> quotes)
     {
+        if (item.Product == null)
+            return "không tồn tại";
+        if (item.ProductVariantId.HasValue && item.ProductVariant == null)
+            return "biến thể không tồn tại";
+
         var key = new PriceTargetKey(item.ProductId, item.ProductVariantId);
         if (!quotes.ContainsKey(key))
             return "tạm hết";

@@ -168,6 +168,9 @@ public sealed class ProductImageDocument
 {
     private static readonly string[] RequiredPropertyNames = ["url", "storageKey", "isPrimary", "sortOrder"];
 
+    [JsonPropertyName("id")]
+    public int Id { get; init; }
+
     [JsonPropertyName("url")]
     public string Url { get; init; } = string.Empty;
 
@@ -185,6 +188,7 @@ public sealed class ProductImageDocument
 
     public void Validate()
     {
+        JsonDocumentValidation.Require(Id >= 0, "id");
         JsonDocumentValidation.Require(!string.IsNullOrWhiteSpace(Url), "url");
         JsonDocumentValidation.Require(!string.IsNullOrWhiteSpace(StorageKey), "storageKey");
     }
@@ -197,6 +201,7 @@ public sealed class ProductImageDocument
         JsonDocumentValidation.RequireString(json, "storageKey");
         JsonDocumentValidation.RequireBoolean(json, "isPrimary");
         JsonDocumentValidation.RequireNumber(json, "sortOrder");
+        JsonDocumentValidation.Require(Id >= 0, "id");
         Validate();
     }
 }

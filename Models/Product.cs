@@ -75,6 +75,8 @@ public class Product
 
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+    public int AssetRevision { get; set; } = 1;
+
     [ConcurrencyCheck]
     public byte[]? RowVersion { get; set; }
 
