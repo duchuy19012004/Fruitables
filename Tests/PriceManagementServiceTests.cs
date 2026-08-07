@@ -1,17 +1,73 @@
 using Fruitables.Data;
 using Fruitables.Models;
+using Fruitables.Models.Json;
 using Fruitables.Repositories;
 using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 using Fruitables.Services.Pricing.ProductPricing;
+using Fruitables.Services.Infrastructure.Auditing;
+using Fruitables.Services.Infrastructure.Json;
 
 namespace Fruitables.Tests;
 
 public class PriceManagementServiceTests
 {
     private static readonly DateTimeOffset Now = new(2026, 7, 16, 2, 0, 0, TimeSpan.Zero);
+
+    private static Promotion SchedulePromotion(PriceSchedule schedule) => new()
+    {
+        Id = schedule.Id,
+        Type = "price-schedule",
+        Code = $"price-schedule:{schedule.Id}",
+        PayloadJson = new VersionedJsonSerializer().Serialize(new PriceSchedulePayload
+        {
+            ProductId = schedule.ProductId,
+            ProductVariantId = schedule.ProductVariantId,
+            DiscountType = schedule.DiscountType,
+            Value = schedule.Value,
+            StartsAt = schedule.StartsAt,
+            EndsAt = schedule.EndsAt,
+            IsCancelled = schedule.IsCancelled,
+            CancelledAt = schedule.CancelledAt,
+            CancelledByAdminId = schedule.CancelledByAdminId,
+            CancellationReason = schedule.CancellationReason,
+            Revision = schedule.Revision,
+            CreatedByAdminId = schedule.CreatedByAdminId,
+            CreatedAt = schedule.CreatedAt,
+            UpdatedAt = schedule.UpdatedAt
+        }),
+        IsActive = !schedule.IsCancelled,
+        StartsAt = schedule.StartsAt,
+        EndsAt = schedule.EndsAt,
+        Revision = schedule.Revision,
+        CreatedAt = schedule.CreatedAt.UtcDateTime,
+        UpdatedAt = schedule.UpdatedAt.UtcDateTime
+    };
+
+    private static PriceSchedule ReadSchedule(ApplicationDbContext context, int id) =>
+        new VersionedJsonSerializer().Deserialize<PriceSchedulePayload>(
+            context.Promotions.Single(item => item.Id == id).PayloadJson) is var payload
+            ? new PriceSchedule
+            {
+                Id = id,
+                ProductId = payload.ProductId,
+                ProductVariantId = payload.ProductVariantId,
+                DiscountType = payload.DiscountType,
+                Value = payload.Value,
+                StartsAt = payload.StartsAt,
+                EndsAt = payload.EndsAt,
+                IsCancelled = payload.IsCancelled,
+                CancelledAt = payload.CancelledAt,
+                CancelledByAdminId = payload.CancelledByAdminId,
+                CancellationReason = payload.CancellationReason,
+                Revision = payload.Revision,
+                CreatedByAdminId = payload.CreatedByAdminId,
+                CreatedAt = payload.CreatedAt,
+                UpdatedAt = payload.UpdatedAt
+            }
+            : throw new InvalidOperationException();
 
     [Fact]
     public async Task CreateSchedule_rejects_zero_fixed_price()
@@ -130,11 +186,11 @@ public class PriceManagementServiceTests
     {
         await using var context = CreateContext();
         context.Products.Add(new Product { Id = 1, Name = "Táo", Slug = "tao", Price = 100_000 });
-        context.PriceSchedules.Add(new PriceSchedule
+        context.Promotions.Add(SchedulePromotion(new PriceSchedule
         {
             ProductId = 1, DiscountType = DiscountType.Percentage, Value = 10,
             StartsAt = Now.AddHours(1), EndsAt = Now.AddHours(3)
-        });
+        }));
         await context.SaveChangesAsync();
         var service = CreateService(context);
 
@@ -146,7 +202,7 @@ public class PriceManagementServiceTests
 
         Assert.False(result.Success);
         Assert.Contains("trùng", result.Error, StringComparison.OrdinalIgnoreCase);
-        Assert.Single(context.PriceSchedules);
+        Assert.Single(context.Promotions);
     }
 
     [Fact]
@@ -156,11 +212,11 @@ public class PriceManagementServiceTests
         context.Products.AddRange(
             new Product { Id = 1, Name = "Táo", Slug = "tao", Price = 100_000 },
             new Product { Id = 2, Name = "Cam", Slug = "cam", Price = 120_000 });
-        context.PriceSchedules.Add(new PriceSchedule
+        context.Promotions.Add(SchedulePromotion(new PriceSchedule
         {
             ProductId = 2, DiscountType = DiscountType.FixedPrice, Value = 110_000,
             StartsAt = Now.AddHours(-1), EndsAt = null
-        });
+        }));
         await context.SaveChangesAsync();
         var service = CreateService(context);
 
@@ -207,11 +263,11 @@ public class PriceManagementServiceTests
     {
         await using var context = CreateContext();
         context.Products.Add(new Product { Id = 1, Name = "Táo", Slug = "tao", Price = 100_000 });
-        context.PriceSchedules.Add(new PriceSchedule
+        context.Promotions.Add(SchedulePromotion(new PriceSchedule
         {
             ProductId = 1, DiscountType = DiscountType.FixedPrice, Value = 90_000,
             StartsAt = Now.AddHours(1), EndsAt = null
-        });
+        }));
         await context.SaveChangesAsync();
 
         var result = await CreateService(context).UpdateBasePriceAsync(new UpdateBasePriceRequest
@@ -231,7 +287,7 @@ public class PriceManagementServiceTests
     {
         await using var context = CreateContext();
         context.Products.Add(new Product { Id = 1, Name = "Táo", Slug = "tao", Price = 100_000 });
-        context.PriceSchedules.Add(new PriceSchedule
+        context.Promotions.Add(SchedulePromotion(new PriceSchedule
         {
             Id = 4,
             ProductId = 1,
@@ -240,7 +296,7 @@ public class PriceManagementServiceTests
             StartsAt = Now.AddHours(2),
             EndsAt = Now.AddHours(4),
             Revision = 3
-        });
+        }));
         await context.SaveChangesAsync();
 
         var result = await CreateService(context).UpdateScheduleAsync(4, new SavePriceScheduleRequest
@@ -255,8 +311,9 @@ public class PriceManagementServiceTests
 
         Assert.False(result.Success);
         Assert.Contains("đã thay đổi", result.Error);
-        Assert.Equal(10, context.PriceSchedules.Find(4)!.Value);
-        Assert.Equal(3, context.PriceSchedules.Find(4)!.Revision);
+        var unchanged = ReadSchedule(context, 4);
+        Assert.Equal(10, unchanged.Value);
+        Assert.Equal(3, unchanged.Revision);
     }
 
     [Fact]
@@ -265,7 +322,7 @@ public class PriceManagementServiceTests
         await using var context = CreateContext();
         context.Users.Add(new User { Id = 7, Name = "Admin", Email = "admin@example.com", Password = "x" });
         context.Products.Add(new Product { Id = 1, Name = "Táo", Slug = "tao", Price = 100_000 });
-        context.PriceSchedules.Add(new PriceSchedule
+        context.Promotions.Add(SchedulePromotion(new PriceSchedule
         {
             Id = 5,
             ProductId = 1,
@@ -274,7 +331,7 @@ public class PriceManagementServiceTests
             StartsAt = Now.AddHours(-1),
             EndsAt = Now.AddHours(2),
             Revision = 4
-        });
+        }));
         await context.SaveChangesAsync();
 
         var result = await CreateService(context).CancelScheduleAsync(5, new CancelPriceScheduleRequest
@@ -283,7 +340,7 @@ public class PriceManagementServiceTests
             Reason = "Dừng sớm do sai giá nhập"
         }, 7);
 
-        var schedule = context.PriceSchedules.Find(5)!;
+        var schedule = ReadSchedule(context, 5);
         Assert.True(result.Success);
         Assert.True(schedule.IsCancelled);
         Assert.Equal(Now, schedule.CancelledAt);
@@ -298,11 +355,11 @@ public class PriceManagementServiceTests
     {
         await using var context = CreateContext();
         context.Products.Add(new Product { Id = 1, Name = "Táo", Slug = "tao", Price = 100_000 });
-        context.PriceSchedules.Add(new PriceSchedule
+        context.Promotions.Add(SchedulePromotion(new PriceSchedule
         {
             Id = 3, ProductId = 1, DiscountType = DiscountType.Percentage, Value = 10,
             StartsAt = Now.AddHours(-1), EndsAt = null
-        });
+        }));
         await context.SaveChangesAsync();
 
         var result = await CreateService(context).CancelScheduleAsync(3, new CancelPriceScheduleRequest
@@ -311,9 +368,10 @@ public class PriceManagementServiceTests
         }, 7);
 
         Assert.True(result.Success);
-        Assert.True(context.PriceSchedules.Find(3)!.IsCancelled);
-        Assert.Equal(PriceScheduleStatus.StoppedEarly, context.PriceSchedules.Find(3)!.GetStatus(Now));
-        Assert.Contains(context.ProductLogs, log => log.Action == "PriceScheduleStoppedEarly");
+        var schedule = ReadSchedule(context, 3);
+        Assert.True(schedule.IsCancelled);
+        Assert.Equal(PriceScheduleStatus.StoppedEarly, schedule.GetStatus(Now));
+        Assert.Contains(context.AuditLogs, log => log.Action == "PriceScheduleStoppedEarly");
     }
 
     [Fact]
@@ -415,7 +473,7 @@ public class PriceManagementServiceTests
 
         Assert.False(result.Success);
         Assert.Contains("số nguyên", result.Error);
-        Assert.Empty(context.PriceSchedules);
+        Assert.DoesNotContain(context.Promotions, promotion => promotion.Type == "price-schedule");
     }
 
     [Fact]
@@ -480,7 +538,9 @@ public class PriceManagementServiceTests
             adminId: 7);
 
         Assert.True(result.Success);
-        Assert.Equal(10.5m, context.PriceSchedules.Single().Value);
+        var created = context.Promotions.Single(promotion => promotion.Type == "price-schedule");
+        Assert.Equal(10.5m,
+            new VersionedJsonSerializer().Deserialize<PriceSchedulePayload>(created.PayloadJson).Value);
     }
 
     [Fact]
@@ -517,7 +577,7 @@ public class PriceManagementServiceTests
             Slug = "tao-clock",
             Price = 100_000
         });
-        context.PriceSchedules.Add(new PriceSchedule
+        context.Promotions.Add(SchedulePromotion(new PriceSchedule
         {
             Id = 8,
             ProductId = 1,
@@ -526,7 +586,7 @@ public class PriceManagementServiceTests
             StartsAt = Now,
             EndsAt = Now.AddHours(2),
             Revision = 1
-        });
+        }));
         await context.SaveChangesAsync();
 
         var clock = new SequenceTimeProvider(
@@ -535,7 +595,10 @@ public class PriceManagementServiceTests
 
         var service = new PriceManagementService(
             new UnitOfWork(context),
-            clock);
+            clock,
+            dbContext: context,
+            serializer: new VersionedJsonSerializer(),
+            auditLogWriter: new AuditLogWriter(context));
 
         var result = await service.CancelScheduleAsync(
             8,
@@ -546,7 +609,7 @@ public class PriceManagementServiceTests
             },
             adminId: 7);
 
-        var schedule = context.PriceSchedules.Find(8)!;
+        var schedule = ReadSchedule(context, 8);
 
         Assert.True(result.Success);
         Assert.Equal(Now, schedule.CancelledAt);
@@ -560,7 +623,10 @@ public class PriceManagementServiceTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
 
     private static PriceManagementService CreateService(ApplicationDbContext context) =>
-        new(new UnitOfWork(context), new FixedTimeProvider(Now));
+        new(new UnitOfWork(context), new FixedTimeProvider(Now),
+            dbContext: context,
+            serializer: new VersionedJsonSerializer(),
+            auditLogWriter: new AuditLogWriter(context));
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {

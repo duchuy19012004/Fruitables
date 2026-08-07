@@ -1,5 +1,6 @@
 using Fruitables.Data;
 using Fruitables.Models;
+using Fruitables.Models.Json;
 using Fruitables.Models.Returns;
 using Fruitables.Repositories;
 using Fruitables.Services.Communications;
@@ -11,6 +12,8 @@ using Moq;
 using Xunit;
 using Fruitables.Services.Pricing.ProductPricing;
 using Fruitables.Services.Catalog.Combos;
+using Fruitables.Services.Infrastructure.Auditing;
+using Fruitables.Services.Infrastructure.Json;
 
 namespace Fruitables.Tests;
 
@@ -44,6 +47,29 @@ public class ComboOperationsTests
         IsActive = true
     };
 
+    private static Promotion ComboPromotion(int id, int revision = 1, ComboLifecycleStatus status = ComboLifecycleStatus.Active) => new()
+    {
+        Id = id,
+        Type = "combo",
+        Code = $"combo:{id}",
+        PayloadJson = new VersionedJsonSerializer().Serialize(new ComboPayload
+        {
+            Name = "Combo",
+            Slug = "combo",
+            IsActive = true,
+            Status = status,
+            PricingType = ComboPricingType.SumOfItems,
+            Revision = revision,
+            Items =
+            [
+                new ComboItemPayload { ProductId = 1, Quantity = 1 },
+                new ComboItemPayload { ProductId = 2, Quantity = 1 }
+            ]
+        }),
+        IsActive = true,
+        Revision = revision
+    };
+
     [Fact]
     public void Lifecycle_applies_start_inclusive_and_end_exclusive()
     {
@@ -67,24 +93,34 @@ public class ComboOperationsTests
         var options = TestDbContextFactory.CreateInMemoryOptions();
         await using var context = new ApplicationDbContext(options);
         context.Products.AddRange(Product(1), Product(2));
-        context.Combos.Add(new Combo
+        context.Promotions.Add(new Promotion
         {
             Id = 10,
-            Name = "Combo hẹn lịch",
-            Slug = "combo-hen-lich",
-            Status = ComboLifecycleStatus.Scheduled,
+            Type = "combo",
+            Code = "combo:10",
+            PayloadJson = new VersionedJsonSerializer().Serialize(new ComboPayload
+            {
+                Name = "Combo hẹn lịch",
+                Slug = "combo-hen-lich",
+                Status = ComboLifecycleStatus.Scheduled,
+                IsActive = true,
+                StartsAt = Now,
+                PricingType = ComboPricingType.SumOfItems,
+                Items =
+                [
+                    new ComboItemPayload { ProductId = 1, Quantity = 1 },
+                    new ComboItemPayload { ProductId = 2, Quantity = 1 }
+                ]
+            }),
             IsActive = true,
-            StartsAt = Now,
-            Items =
-            [
-                new ComboItem { ProductId = 1, Quantity = 1 },
-                new ComboItem { ProductId = 2, Quantity = 1 }
-            ]
+            StartsAt = Now
         });
         await context.SaveChangesAsync();
 
-        var before = new ComboService(new UnitOfWork(context), Pricing().Object, new FixedTimeProvider(Now.AddSeconds(-1)));
-        var atStart = new ComboService(new UnitOfWork(context), Pricing().Object, new FixedTimeProvider(Now));
+        var before = new ComboService(new UnitOfWork(context), Pricing().Object, new FixedTimeProvider(Now.AddSeconds(-1)),
+            dbContext: context, serializer: new VersionedJsonSerializer());
+        var atStart = new ComboService(new UnitOfWork(context), Pricing().Object, new FixedTimeProvider(Now),
+            dbContext: context, serializer: new VersionedJsonSerializer());
 
         Assert.Empty(await before.GetActiveComboCardsAsync());
         Assert.Single(await atStart.GetActiveComboCardsAsync());
@@ -96,21 +132,12 @@ public class ComboOperationsTests
         var options = TestDbContextFactory.CreateInMemoryOptions();
         await using var context = new ApplicationDbContext(options);
         context.Products.AddRange(Product(1), Product(2));
-        context.Combos.Add(new Combo
-        {
-            Id = 10,
-            Name = "Combo cũ",
-            Slug = "combo-cu",
-            Revision = 3,
-            Status = ComboLifecycleStatus.Active,
-            Items =
-            [
-                new ComboItem { ProductId = 1, Quantity = 1 },
-                new ComboItem { ProductId = 2, Quantity = 1 }
-            ]
-        });
+        context.Promotions.Add(ComboPromotion(10, revision: 3));
         await context.SaveChangesAsync();
-        var service = new ComboService(new UnitOfWork(context), Pricing().Object, new FixedTimeProvider(Now));
+        var service = new ComboService(new UnitOfWork(context), Pricing().Object, new FixedTimeProvider(Now),
+            dbContext: context,
+            serializer: new VersionedJsonSerializer(),
+            auditLogWriter: new AuditLogWriter(context));
         var model = new ComboFormViewModel
         {
             Revision = 2,
@@ -130,9 +157,9 @@ public class ComboOperationsTests
         Assert.False(stale.Success);
         Assert.Contains("người khác cập nhật", stale.ErrorMessage);
         Assert.True(updated.Success);
-        var audit = Assert.Single(await context.ComboAuditLogs.ToListAsync());
+        var audit = Assert.Single(await context.AuditLogs.ToListAsync());
         Assert.Equal(ComboAuditActions.Update, audit.Action);
-        Assert.Equal(4, audit.Revision);
+        Assert.Contains("revision", audit.NewValue);
     }
 
     [Fact]
@@ -220,7 +247,8 @@ public class ComboOperationsTests
         await using (var seed = new ApplicationDbContext(options))
         {
             seed.Carts.Add(new Cart { Id = 1, SessionId = "expired-combo" });
-            seed.Combos.Add(new Combo { Id = 10, Name = "Combo", Slug = "combo", Revision = 2, Status = ComboLifecycleStatus.Active });
+            seed.Promotions.Add(ComboPromotion(10, revision: 2));
+            seed.Combos.Add(new Combo { Id = 10, Name = "Combo", Slug = "combo" });
             seed.CartGroups.Add(new CartGroup
             {
                 Id = 20,

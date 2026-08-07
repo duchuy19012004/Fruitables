@@ -1,8 +1,14 @@
 using System.Text.RegularExpressions;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Fruitables.Data;
 using Fruitables.Models;
+using Fruitables.Models.Json;
 using Fruitables.Models.Returns;
 using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Communications;
+using Fruitables.Services.Infrastructure.Auditing;
+using Fruitables.Services.Infrastructure.Json;
 using Fruitables.Services.Pricing.Combos;
 using Fruitables.Services.Pricing.ProductPricing;
 using Fruitables.ViewModels;
@@ -18,23 +24,31 @@ public class ComboService : IComboService
     private readonly IProductPricingService _pricing;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<ComboService>? _logger;
+    private readonly ApplicationDbContext? _dbContext;
+    private readonly IJsonDocumentSerializer _serializer;
+    private readonly IAuditLogWriter? _auditLogWriter;
 
-    public ComboService(IUnitOfWork unitOfWork, IProductPricingService pricing, TimeProvider? timeProvider = null, ILogger<ComboService>? logger = null)
+    public ComboService(
+        IUnitOfWork unitOfWork,
+        IProductPricingService pricing,
+        TimeProvider? timeProvider = null,
+        ILogger<ComboService>? logger = null,
+        ApplicationDbContext? dbContext = null,
+        IJsonDocumentSerializer? serializer = null,
+        IAuditLogWriter? auditLogWriter = null)
     {
         _unitOfWork = unitOfWork;
         _pricing = pricing;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _logger = logger;
+        _dbContext = dbContext;
+        _serializer = serializer ?? new VersionedJsonSerializer();
+        _auditLogWriter = auditLogWriter ?? (dbContext == null ? null : new AuditLogWriter(dbContext));
     }
 
     public async Task<IReadOnlyList<ComboListRowViewModel>> GetAdminListAsync()
     {
-        var combos = await _unitOfWork.Combos.Query()
-            .Include(c => c.Items)
-            .ThenInclude(i => i.Product)
-            .OrderBy(c => c.SortOrder)
-            .ThenByDescending(c => c.CreatedAt)
-            .ToListAsync();
+        var combos = await LoadCombosAsync();
 
         var quotes = await GetQuotesForCombosAsync(combos);
         var now = _timeProvider.GetUtcNow();
@@ -64,12 +78,7 @@ public class ComboService : IComboService
 
     public async Task<ComboFormViewModel?> GetForEditAsync(int id)
     {
-        var combo = await _unitOfWork.Combos.Query()
-            .Include(c => c.Items)
-            .ThenInclude(i => i.Product)
-            .Include(c => c.Items)
-            .ThenInclude(i => i.ProductVariant)
-            .FirstOrDefaultAsync(c => c.Id == id);
+        var combo = (await LoadCombosAsync([id])).FirstOrDefault();
 
         if (combo == null) return null;
 
@@ -114,7 +123,10 @@ public class ComboService : IComboService
         if (slug == null)
             return ComboResult.Fail("Slug đã tồn tại hoặc không hợp lệ.");
 
-        var combo = new Combo
+        if (_dbContext == null)
+            return ComboResult.Fail("Dịch vụ combo chưa được cấu hình.");
+
+        var payload = new ComboPayload
         {
             Name = model.Name.Trim(),
             Slug = slug,
@@ -129,25 +141,46 @@ public class ComboService : IComboService
             DiscountValue = model.PricingType is ComboPricingType.PercentageDiscount or ComboPricingType.FixedDiscount ? model.DiscountValue : null,
             AllowCouponStacking = model.AllowCouponStacking,
             SortOrder = model.SortOrder,
-            Items = BuildItems(model.Items)
+            Items = BuildPayloadItems(model.Items)
         };
 
-        await _unitOfWork.Combos.AddAsync(combo);
+        var promotion = new Promotion
+        {
+            Type = "combo",
+            Code = $"combo:new-{Guid.NewGuid():N}",
+            PayloadJson = _serializer.Serialize(payload),
+            IsActive = payload.IsActive,
+            StartsAt = payload.StartsAt,
+            EndsAt = payload.EndsAt,
+            Revision = payload.Revision,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        _dbContext.Promotions.Add(promotion);
+        await _dbContext.SaveChangesAsync();
+        await SyncLegacyComboAsync(promotion, payload);
+
+        var combo = ToCombo(promotion, payload, new Dictionary<int, Product>());
         await AddAuditAsync(combo, adminId, ComboAuditActions.Create, Describe(combo));
-        await _unitOfWork.SaveChangesAsync();
         _logger?.LogInformation("Combo {ComboId} created at revision {Revision} by admin {AdminId}", combo.Id, combo.Revision, adminId);
         return ComboResult.Ok(combo);
     }
 
     public async Task<ComboResult> UpdateAsync(int id, ComboFormViewModel model, int? adminId = null)
     {
-        var combo = await _unitOfWork.Combos.Query()
-            .Include(c => c.Items)
-            .FirstOrDefaultAsync(c => c.Id == id);
+        if (_dbContext == null)
+            return ComboResult.Fail("Dịch vụ combo chưa được cấu hình.");
+
+        var promotion = await _dbContext.Promotions
+            .FirstOrDefaultAsync(item => item.Id == id && item.Type == "combo");
+        if (promotion == null)
+            return ComboResult.Fail("Không tìm thấy combo.");
+        var currentPayload = _serializer.Deserialize<ComboPayload>(promotion.PayloadJson);
+        var combo = (await LoadCombosAsync([id])).FirstOrDefault();
 
         if (combo == null)
             return ComboResult.Fail("Không tìm thấy combo.");
-        if (model.Revision != combo.Revision)
+        if (model.Revision != currentPayload.Revision)
             return ComboResult.Fail("Combo đã được người khác cập nhật. Vui lòng tải lại trang.");
 
         var validationError = await ValidateComboAsync(model);
@@ -158,81 +191,89 @@ public class ComboService : IComboService
         if (slug == null)
             return ComboResult.Fail("Slug đã tồn tại hoặc không hợp lệ.");
 
-        combo.Name = model.Name.Trim();
-        combo.Slug = slug;
-        combo.Description = model.Description?.Trim();
-        combo.ImageUrl = string.IsNullOrWhiteSpace(model.ImageUrl) ? null : model.ImageUrl.Trim();
-        combo.IsActive = model.Status != ComboLifecycleStatus.Archived;
-        combo.Status = model.Status;
-        combo.StartsAt = model.StartsAt;
-        combo.EndsAt = model.EndsAt;
-        combo.PricingType = model.PricingType;
-        combo.FixedPrice = model.PricingType == ComboPricingType.FixedPrice ? model.FixedPrice : null;
-        combo.DiscountValue = model.PricingType is ComboPricingType.PercentageDiscount or ComboPricingType.FixedDiscount ? model.DiscountValue : null;
-        combo.AllowCouponStacking = model.AllowCouponStacking;
-        combo.Revision++;
-        combo.SortOrder = model.SortOrder;
-        combo.UpdatedAt = DateTime.UtcNow;
-
-        var desiredItems = BuildItems(model.Items);
-        var existingByKey = combo.Items.ToDictionary(
-            item => (item.ProductId, item.ProductVariantId));
-        var desiredKeys = desiredItems
-            .Select(item => (item.ProductId, item.ProductVariantId))
-            .ToHashSet();
-
-        var itemsToRemove = combo.Items
-            .Where(item => !desiredKeys.Contains((item.ProductId, item.ProductVariantId)))
-            .ToList();
-        _unitOfWork.ComboItems.RemoveRange(itemsToRemove);
-
-        foreach (var desired in desiredItems)
+        var updatedPayload = new ComboPayload
         {
-            if (existingByKey.TryGetValue((desired.ProductId, desired.ProductVariantId), out var existingItem))
-            {
-                existingItem.Quantity = desired.Quantity;
-                existingItem.SortOrder = desired.SortOrder;
-            }
-            else
-            {
-                combo.Items.Add(desired);
-            }
-        }
-
-        _unitOfWork.Combos.Update(combo);
-        await AddAuditAsync(combo, adminId, ComboAuditActions.Update, Describe(combo));
+            Name = model.Name.Trim(),
+            Slug = slug,
+            Description = model.Description?.Trim(),
+            ImageUrl = string.IsNullOrWhiteSpace(model.ImageUrl) ? null : model.ImageUrl.Trim(),
+            IsActive = model.Status != ComboLifecycleStatus.Archived,
+            Status = model.Status,
+            StartsAt = model.StartsAt,
+            EndsAt = model.EndsAt,
+            PricingType = model.PricingType,
+            FixedPrice = model.PricingType == ComboPricingType.FixedPrice ? model.FixedPrice : null,
+            DiscountValue = model.PricingType is ComboPricingType.PercentageDiscount or ComboPricingType.FixedDiscount ? model.DiscountValue : null,
+            AllowCouponStacking = model.AllowCouponStacking,
+            Revision = currentPayload.Revision + 1,
+            SortOrder = model.SortOrder,
+            Items = BuildPayloadItems(model.Items)
+        };
+        promotion.PayloadJson = _serializer.Serialize(updatedPayload);
+        promotion.IsActive = updatedPayload.IsActive;
+        promotion.StartsAt = updatedPayload.StartsAt;
+        promotion.EndsAt = updatedPayload.EndsAt;
+        promotion.Revision = updatedPayload.Revision;
+        promotion.UpdatedAt = DateTime.UtcNow;
         try
         {
-            await _unitOfWork.SaveChangesAsync();
+            await _dbContext.SaveChangesAsync();
+            await SyncLegacyComboAsync(promotion, updatedPayload);
         }
         catch (DbUpdateConcurrencyException)
         {
             return ComboResult.Fail("Combo đã được người khác cập nhật. Vui lòng tải lại trang.");
         }
-        _logger?.LogInformation("Combo {ComboId} updated to revision {Revision} by admin {AdminId}", combo.Id, combo.Revision, adminId);
-        return ComboResult.Ok(combo);
+        var updated = ToCombo(promotion, updatedPayload, new Dictionary<int, Product>());
+        await AddAuditAsync(updated, adminId, ComboAuditActions.Update, Describe(updated));
+        _logger?.LogInformation("Combo {ComboId} updated to revision {Revision} by admin {AdminId}", updated.Id, updated.Revision, adminId);
+        return ComboResult.Ok(updated);
     }
 
     public async Task<ComboResult> DeleteAsync(int id, int? adminId = null)
     {
-        var combo = await _unitOfWork.Combos.GetByIdAsync(id);
-        if (combo == null)
+        if (_dbContext == null)
+            return ComboResult.Fail("Dịch vụ combo chưa được cấu hình.");
+
+        var promotion = await _dbContext.Promotions
+            .FirstOrDefaultAsync(item => item.Id == id && item.Type == "combo");
+        if (promotion == null)
             return ComboResult.Fail("Không tìm thấy combo.");
 
-        combo.IsActive = false;
-        combo.Status = ComboLifecycleStatus.Archived;
-        combo.Revision++;
-        combo.UpdatedAt = DateTime.UtcNow;
-        _unitOfWork.Combos.Update(combo);
-        await AddAuditAsync(combo, adminId, ComboAuditActions.Archive, "Lưu trữ combo.");
+        var payload = _serializer.Deserialize<ComboPayload>(promotion.PayloadJson);
+        var archived = new ComboPayload
+        {
+            Name = payload.Name,
+            Slug = payload.Slug,
+            Description = payload.Description,
+            ImageUrl = payload.ImageUrl,
+            IsActive = false,
+            Status = ComboLifecycleStatus.Archived,
+            StartsAt = payload.StartsAt,
+            EndsAt = payload.EndsAt,
+            PricingType = payload.PricingType,
+            FixedPrice = payload.FixedPrice,
+            DiscountValue = payload.DiscountValue,
+            AllowCouponStacking = payload.AllowCouponStacking,
+            Revision = payload.Revision + 1,
+            SortOrder = payload.SortOrder,
+            Items = payload.Items
+        };
+        promotion.PayloadJson = _serializer.Serialize(archived);
+        promotion.IsActive = false;
+        promotion.Revision = archived.Revision;
+        promotion.UpdatedAt = DateTime.UtcNow;
         try
         {
-            await _unitOfWork.SaveChangesAsync();
+            await _dbContext.SaveChangesAsync();
+            await SyncLegacyComboAsync(promotion, archived);
         }
         catch (DbUpdateConcurrencyException)
         {
             return ComboResult.Fail("Combo đã được người khác cập nhật. Vui lòng tải lại trang.");
         }
+        var combo = ToCombo(promotion, archived, new Dictionary<int, Product>());
+        await AddAuditAsync(combo, adminId, ComboAuditActions.Archive, "Lưu trữ combo.");
         _logger?.LogInformation("Combo {ComboId} archived by admin {AdminId}", combo.Id, adminId);
         return ComboResult.Ok(combo);
     }
@@ -268,19 +309,11 @@ public class ComboService : IComboService
     public async Task<IReadOnlyList<ComboCardViewModel>> GetActiveComboCardsAsync()
     {
         var now = _timeProvider.GetUtcNow();
-        var combos = await _unitOfWork.Combos.Query()
-            .Where(c => c.IsActive &&
-                (c.Status == ComboLifecycleStatus.Active || c.Status == ComboLifecycleStatus.Scheduled) &&
-                (!c.StartsAt.HasValue || c.StartsAt <= now) &&
-                (!c.EndsAt.HasValue || c.EndsAt > now))
-            .Include(c => c.Items)
-            .ThenInclude(i => i.Product)
-            .ThenInclude(p => p.Images)
-            .Include(c => c.Items)
-            .ThenInclude(i => i.ProductVariant)
-            .OrderBy(c => c.SortOrder)
-            .ThenByDescending(c => c.CreatedAt)
-            .ToListAsync();
+        var combos = (await LoadCombosAsync())
+            .Where(combo => combo.IsAvailableAt(now))
+            .OrderBy(combo => combo.SortOrder)
+            .ThenByDescending(combo => combo.CreatedAt)
+            .ToList();
 
         var quotes = await GetQuotesForCombosAsync(combos);
         var cards = new List<ComboCardViewModel>();
@@ -295,13 +328,7 @@ public class ComboService : IComboService
 
     public async Task<AddComboToCartResult> AddComboToCartAsync(string sessionId, int comboId, ICartService cartService)
     {
-        var combo = await _unitOfWork.Combos.Query()
-            .Where(c => c.IsActive)
-            .Include(c => c.Items)
-            .ThenInclude(i => i.Product)
-            .Include(c => c.Items)
-            .ThenInclude(i => i.ProductVariant)
-            .FirstOrDefaultAsync(c => c.Id == comboId);
+        var combo = (await LoadCombosAsync([comboId])).FirstOrDefault();
 
         if (combo == null || !combo.IsAvailableAt(_timeProvider.GetUtcNow()))
             return new AddComboToCartResult { Success = false, Message = "Combo chưa đến lịch bán hoặc đã ngừng bán." };
@@ -333,7 +360,8 @@ public class ComboService : IComboService
             };
         }
 
-        var cartResult = await cartService.AddComboToCartAsync(sessionId, combo.Id);
+        var cartComboId = await ResolveLegacyComboIdAsync(combo.Id);
+        var cartResult = await cartService.AddComboToCartAsync(sessionId, cartComboId);
 
         return new AddComboToCartResult
         {
@@ -415,27 +443,31 @@ public class ComboService : IComboService
 
     public async Task<ComboAuditViewModel?> GetAuditAsync(int comboId, int take = 100)
     {
-        var combo = await _unitOfWork.Combos.Query().AsNoTracking()
-            .Where(item => item.Id == comboId)
-            .Select(item => new { item.Id, item.Name })
-            .FirstOrDefaultAsync();
+        var combo = (await LoadCombosAsync([comboId])).FirstOrDefault();
         if (combo == null) return null;
 
-        var items = await _unitOfWork.ComboAuditLogs.Query().AsNoTracking()
-            .Where(log => log.ComboId == comboId)
-            .Include(log => log.Admin)
-            .OrderByDescending(log => log.CreatedAt)
+        if (_dbContext == null)
+            return new ComboAuditViewModel { ComboId = combo.Id, ComboName = combo.Name };
+
+        var logs = await _dbContext.AuditLogs.AsNoTracking()
+            .Where(log => log.EntityType == "Combo" && log.EntityId == comboId)
+            .OrderByDescending(log => log.ChangedAt)
             .Take(Math.Clamp(take, 1, 500))
-            .Select(log => new ComboAuditRowViewModel
+            .ToListAsync();
+        var adminIds = logs.Select(log => log.ChangedByAdminId).Where(id => id > 0).Distinct().ToList();
+        var admins = await _dbContext.Users.AsNoTracking()
+            .Where(user => adminIds.Contains(user.Id))
+            .ToDictionaryAsync(user => user.Id, user => user.Name);
+        var items = logs.Select(log => new ComboAuditRowViewModel
             {
                 Id = log.Id,
                 Action = log.Action,
-                Revision = log.Revision,
-                Details = log.Details,
-                AdminName = log.Admin != null ? log.Admin.Name : "Hệ thống",
-                CreatedAt = log.CreatedAt
+                Revision = ReadRevision(log.NewValue),
+                Details = ReadDetails(log.NewValue),
+                AdminName = admins.GetValueOrDefault(log.ChangedByAdminId) ?? "Hệ thống",
+                CreatedAt = log.ChangedAt
             })
-            .ToListAsync();
+            .ToList();
 
         return new ComboAuditViewModel { ComboId = combo.Id, ComboName = combo.Name, Items = items };
     }
@@ -506,16 +538,134 @@ public class ComboService : IComboService
         $"PricingType={combo.PricingType}; FixedPrice={combo.FixedPrice}; DiscountValue={combo.DiscountValue}; " +
         $"CouponStacking={combo.AllowCouponStacking}; Items={combo.Items.Count}; Revision={combo.Revision}";
 
+    private async Task<List<Combo>> LoadCombosAsync(IReadOnlyCollection<int>? ids = null)
+    {
+        if (_dbContext == null)
+            return [];
+
+        var query = _dbContext.Promotions.AsNoTracking()
+            .Where(item => item.Type == "combo");
+        if (ids is { Count: > 0 })
+            query = query.Where(item => ids.Contains(item.Id));
+
+        var promotions = await query.ToListAsync();
+        var payloads = promotions.Select(promotion =>
+            (Promotion: promotion, Payload: _serializer.Deserialize<ComboPayload>(promotion.PayloadJson)))
+            .ToList();
+        var productIds = payloads.SelectMany(item => item.Payload.Items.Select(line => line.ProductId))
+            .Distinct()
+            .ToArray();
+        var products = productIds.Length == 0
+            ? new Dictionary<int, Product>()
+            : (await _unitOfWork.Products.Query()
+                .AsNoTracking()
+                .Where(product => productIds.Contains(product.Id))
+                .Include(product => product.Variants)
+                .ToListAsync())
+                .ToDictionary(product => product.Id);
+        Fruitables.Services.Catalog.Products.ProductAggregateJson.Hydrate(products.Values, _serializer);
+
+        return payloads
+            .Select(item => ToCombo(item.Promotion, item.Payload, products))
+            .ToList();
+    }
+
+    private static Combo ToCombo(
+        Promotion promotion,
+        ComboPayload payload,
+        IReadOnlyDictionary<int, Product> products)
+    {
+        var combo = new Combo
+        {
+            Id = promotion.Id,
+            Name = payload.Name,
+            Slug = payload.Slug,
+            Description = payload.Description,
+            ImageUrl = payload.ImageUrl,
+            IsActive = promotion.IsActive && payload.IsActive,
+            Status = payload.Status,
+            StartsAt = payload.StartsAt,
+            EndsAt = payload.EndsAt,
+            PricingType = payload.PricingType,
+            FixedPrice = payload.FixedPrice,
+            DiscountValue = payload.DiscountValue,
+            AllowCouponStacking = payload.AllowCouponStacking,
+            Revision = payload.Revision,
+            SortOrder = payload.SortOrder,
+            CreatedAt = promotion.CreatedAt,
+            UpdatedAt = promotion.UpdatedAt
+        };
+
+        combo.Items = payload.Items
+            .OrderBy(item => item.SortOrder)
+            .Select((item, index) =>
+            {
+                products.TryGetValue(item.ProductId, out var product);
+                var variant = product?.Variants.FirstOrDefault(candidate =>
+                    candidate.Id == item.ProductVariantId);
+                return new ComboItem
+                {
+                    Id = index + 1,
+                    ComboId = combo.Id,
+                    ProductId = item.ProductId,
+                    ProductVariantId = item.ProductVariantId,
+                    Quantity = item.Quantity,
+                    SortOrder = item.SortOrder,
+                    Product = product!,
+                    ProductVariant = variant
+                };
+            })
+            .ToList();
+        return combo;
+    }
+
+    private static int ReadRevision(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return 0;
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            return document.RootElement.TryGetProperty("revision", out var revision)
+                && revision.TryGetInt32(out var value)
+                ? value
+                : 0;
+        }
+        catch (JsonException)
+        {
+            return 0;
+        }
+    }
+
+    private static string? ReadDetails(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            return document.RootElement.TryGetProperty("details", out var details)
+                ? details.GetString()
+                : json;
+        }
+        catch (JsonException)
+        {
+            return json;
+        }
+    }
+
     private async Task AddAuditAsync(Combo combo, int? adminId, string action, string details)
     {
-        await _unitOfWork.ComboAuditLogs.AddAsync(new ComboAuditLog
-        {
-            Combo = combo,
-            AdminId = adminId,
-            Action = action,
-            Revision = combo.Revision,
-            Details = details
-        });
+        if (_auditLogWriter == null)
+            return;
+
+        var newValue = JsonSerializer.Serialize(new { revision = combo.Revision, details });
+        await _auditLogWriter.WriteAsync(
+            action,
+            "Combo",
+            combo.Id,
+            adminId ?? 0,
+            newValue: newValue);
     }
 
     private async Task<string?> ValidateComboAsync(ComboFormViewModel model)
@@ -617,7 +767,7 @@ public class ComboService : IComboService
         return string.Empty;
     }
 
-    private List<ComboItem> BuildItems(List<ComboItemFormModel> items)
+    private static List<ComboItemPayload> BuildPayloadItems(List<ComboItemFormModel> items)
     {
         return items
             .OrderBy(i => i.SortOrder)
@@ -628,6 +778,13 @@ public class ComboService : IComboService
                 Quantity = item.Quantity,
                 SortOrder = index
             })
+            .Select(item => new ComboItemPayload
+            {
+                ProductId = item.ProductId,
+                ProductVariantId = item.ProductVariantId,
+                Quantity = item.Quantity,
+                SortOrder = item.SortOrder
+            })
             .ToList();
     }
 
@@ -637,11 +794,101 @@ public class ComboService : IComboService
         if (string.IsNullOrWhiteSpace(slug))
             return null;
 
-        var existing = await _unitOfWork.Combos.Query()
-            .Where(c => c.Slug == slug && (!excludeId.HasValue || c.Id != excludeId.Value))
-            .FirstOrDefaultAsync();
+        if (_dbContext == null)
+            return slug;
 
-        return existing == null ? slug : null;
+        var promotions = await _dbContext.Promotions.AsNoTracking()
+            .Where(item => item.Type == "combo")
+            .ToListAsync();
+        var exists = promotions.Any(promotion =>
+        {
+            if (excludeId.HasValue && promotion.Id == excludeId.Value)
+                return false;
+            return _serializer.Deserialize<ComboPayload>(promotion.PayloadJson).Slug == slug;
+        });
+
+        return exists ? null : slug;
+    }
+
+    private async Task SyncLegacyComboAsync(Promotion promotion, ComboPayload payload)
+    {
+        if (_dbContext == null)
+            return;
+
+        Combo? legacy = null;
+        if (TryReadLegacyId(promotion.Code, out var legacyId))
+        {
+            legacy = await _dbContext.Combos
+                .Include(combo => combo.Items)
+                .FirstOrDefaultAsync(combo => combo.Id == legacyId);
+        }
+
+        var createdLegacy = legacy == null;
+        if (createdLegacy)
+        {
+            legacy = new Combo();
+            _dbContext.Combos.Add(legacy);
+        }
+
+        var legacyCombo = legacy!;
+        legacyCombo.Name = payload.Name;
+        legacyCombo.Slug = payload.Slug;
+        legacyCombo.Description = payload.Description;
+        legacyCombo.ImageUrl = payload.ImageUrl;
+        legacyCombo.IsActive = payload.IsActive;
+        legacyCombo.Status = payload.Status;
+        legacyCombo.StartsAt = payload.StartsAt;
+        legacyCombo.EndsAt = payload.EndsAt;
+        legacyCombo.PricingType = payload.PricingType;
+        legacyCombo.FixedPrice = payload.FixedPrice;
+        legacyCombo.DiscountValue = payload.DiscountValue;
+        legacyCombo.AllowCouponStacking = payload.AllowCouponStacking;
+        legacyCombo.Revision = payload.Revision;
+        legacyCombo.SortOrder = payload.SortOrder;
+        legacyCombo.UpdatedAt = promotion.UpdatedAt;
+        if (legacyCombo.CreatedAt == default)
+            legacyCombo.CreatedAt = promotion.CreatedAt;
+
+        legacyCombo.Items.Clear();
+        legacyCombo.Items = payload.Items
+            .OrderBy(item => item.SortOrder)
+            .Select(item => new ComboItem
+            {
+                ProductId = item.ProductId,
+                ProductVariantId = item.ProductVariantId,
+                Quantity = item.Quantity,
+                SortOrder = item.SortOrder
+            })
+            .ToList();
+        await _dbContext.SaveChangesAsync();
+
+        if (createdLegacy)
+        {
+            promotion.Code = $"combo:{legacyCombo.Id}";
+            await _dbContext.SaveChangesAsync();
+        }
+    }
+
+    private async Task<int> ResolveLegacyComboIdAsync(int promotionId)
+    {
+        if (_dbContext == null)
+            return promotionId;
+
+        var promotion = await _dbContext.Promotions.AsNoTracking()
+            .Where(item => item.Id == promotionId && item.Type == "combo")
+            .Select(item => new { item.Code })
+            .FirstOrDefaultAsync();
+        if (promotion != null && TryReadLegacyId(promotion.Code, out var legacyId) &&
+            await _dbContext.Combos.AnyAsync(combo => combo.Id == legacyId))
+            return legacyId;
+        return promotionId;
+    }
+
+    private static bool TryReadLegacyId(string? code, out int id)
+    {
+        id = 0;
+        return code != null && code.StartsWith("combo:", StringComparison.OrdinalIgnoreCase) &&
+            int.TryParse(code["combo:".Length..], out id) && id > 0;
     }
 
     private static string GenerateSlug(string name)

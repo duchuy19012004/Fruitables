@@ -1,7 +1,9 @@
 using System.Text.RegularExpressions;
+using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Communications;
+using Fruitables.Services.Infrastructure.Json;
 using Fruitables.ViewModels;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -18,19 +20,25 @@ public class ProductAdminService : IProductAdminService
     private readonly IIndexingService _indexing;
     private readonly ILogger<ProductAdminService> _logger;
     private readonly IRealtimeNotifier? _notifier;
+    private readonly ApplicationDbContext? _dbContext;
+    private readonly IJsonDocumentSerializer _serializer;
 
     public ProductAdminService(
         IUnitOfWork unitOfWork,
         IImageUploadService imageUploadService,
         IIndexingService indexing,
         ILogger<ProductAdminService> logger,
-        IRealtimeNotifier? notifier = null)
+        IRealtimeNotifier? notifier = null,
+        ApplicationDbContext? dbContext = null,
+        IJsonDocumentSerializer? serializer = null)
     {
         _unitOfWork = unitOfWork;
         _imageUploadService = imageUploadService;
         _indexing = indexing;
         _logger = logger;
         _notifier = notifier;
+        _dbContext = dbContext;
+        _serializer = serializer ?? new VersionedJsonSerializer();
     }
 
     private async Task TryIndexProductAsync(int productId)
@@ -82,7 +90,7 @@ public class ProductAdminService : IProductAdminService
 
     public async Task<ProductListResult> GetProductsAsync(ProductListRequest request)
     {
-        var query = _unitOfWork.Products.Query();
+        var query = _unitOfWork.Products.Query().AsNoTracking();
 
         // Filter by deleted status
         if (!request.IncludeDeleted)
@@ -122,10 +130,11 @@ public class ProductAdminService : IProductAdminService
         // Pagination
         var products = await query
             .Include(p => p.Category)
-            .Include(p => p.Images)
             .Skip((request.Page - 1) * request.PageSize)
             .Take(request.PageSize)
             .ToListAsync();
+
+        ProductAggregateJson.Hydrate(products, _serializer);
 
         return new ProductListResult
         {
@@ -139,13 +148,13 @@ public class ProductAdminService : IProductAdminService
 
     public async Task<Product?> GetProductByIdAsync(int id)
     {
-        var product = await _unitOfWork.Products.Query()
+        var product = await _unitOfWork.Products.Query().AsNoTracking()
             .Include(p => p.Category)
-            .Include(p => p.Images)
-            .Include(p => p.Tags)
             .Include(p => p.Variants)
             .FirstOrDefaultAsync(p => p.Id == id);
-        
+
+        if (product != null)
+            ProductAggregateJson.Hydrate([product], _serializer);
         return product;
     }
 
@@ -195,7 +204,9 @@ public class ProductAdminService : IProductAdminService
             IsActive = request.IsActive,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
-            IsDeleted = false
+            IsDeleted = false,
+            ImagesJson = _serializer.Serialize(new Fruitables.Models.Json.ProductImagesDocument()),
+            TagsJson = _serializer.Serialize(new Fruitables.Models.Json.ProductTagsDocument())
         };
 
         await _unitOfWork.Products.AddAsync(product);
@@ -323,7 +334,7 @@ public class ProductAdminService : IProductAdminService
             return ProductResult.Fail(ProductErrorType.HasOrders, 
                 "Không thể xóa vĩnh viễn sản phẩm đã có trong đơn hàng. Hãy sử dụng chức năng xóa mềm.");
         }
-        if (await _unitOfWork.PriceSchedules.AnyAsync(schedule => schedule.ProductId == id))
+        if ((await GetPriceSchedulesAsync()).Any(schedule => schedule.ProductId == id))
             return ProductResult.Fail(ProductErrorType.ValidationError,
                 "Không thể xóa vĩnh viễn sản phẩm đã có lịch sử giá. Hãy sử dụng chức năng xóa mềm.");
         if (await _unitOfWork.CartItems.AnyAsync(item => item.ProductId == id))
@@ -331,16 +342,8 @@ public class ProductAdminService : IProductAdminService
                 "Không thể xóa vĩnh viễn sản phẩm đang nằm trong giỏ hàng. Hãy sử dụng chức năng xóa mềm.");
 
         // Delete related data
-        var images = await _unitOfWork.ProductImages
-            .FindAsync(pi => pi.ProductId == id);
-        var imageUrls = images.Select(image => image.ImageUrl).ToList();
-        foreach (var image in images)
-        {
-            _unitOfWork.ProductImages.Remove(image);
-        }
-
-        // Clear tags (many-to-many relationship)
-        product.Tags.Clear();
+        var imageUrls = ProductAggregateJson.ReadImages(product.ImagesJson, _serializer)
+            .Images.Select(image => image.Url).ToList();
 
         var variants = await _unitOfWork.ProductVariants
             .FindAsync(pv => pv.ProductId == id);
@@ -377,7 +380,6 @@ public class ProductAdminService : IProductAdminService
 
     public async Task<ProductResult> AddImagesAsync(int productId, List<IFormFile> files)
     {
-        // Check product exists
         var products = await _unitOfWork.Products
             .FindAsync(p => p.Id == productId);
         var product = products.FirstOrDefault();
@@ -398,12 +400,13 @@ public class ProductAdminService : IProductAdminService
                 return ProductResult.Fail(ProductErrorType.FileTooLarge, "File vượt quá kích thước cho phép (5MB)");
         }
 
-        // Get current max sort order
-        var existingImages = await _unitOfWork.ProductImages
-            .FindAsync(pi => pi.ProductId == productId);
+        var existingImages = ProductAggregateJson.ReadImageModels(product, _serializer)
+            .OrderBy(image => image.SortOrder)
+            .ToList();
         var maxSortOrder = existingImages.Any() ? existingImages.Max(i => i.SortOrder) : -1;
 
         var uploadedUrls = new List<string>();
+        await using var transaction = await BeginProductWriteAsync();
         try
         {
             foreach (var file in files)
@@ -411,21 +414,24 @@ public class ProductAdminService : IProductAdminService
                 var imageUrl = await _imageUploadService.UploadProductImageAsync(file);
                 uploadedUrls.Add(imageUrl);
 
-                var productImage = new ProductImage
+                existingImages.Add(new ProductImage
                 {
                     ProductId = productId,
                     ImageUrl = imageUrl,
                     IsPrimary = !existingImages.Any() && maxSortOrder == -1,
                     SortOrder = ++maxSortOrder
-                };
-
-                await _unitOfWork.ProductImages.AddAsync(productImage);
+                });
             }
 
+            product.ImagesJson = ProductAggregateJson.SerializeImages(existingImages, _serializer);
             await _unitOfWork.SaveChangesAsync();
+            if (transaction != null)
+                await transaction.CommitAsync();
         }
         catch (Exception exception)
         {
+            if (transaction != null)
+                await transaction.RollbackAsync();
             foreach (var uploadedUrl in uploadedUrls)
             {
                 try
@@ -455,9 +461,7 @@ public class ProductAdminService : IProductAdminService
         if (product == null)
             return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy sản phẩm với ID {productId}");
 
-        // Get all images for this product
-        var images = await _unitOfWork.ProductImages
-            .FindAsync(pi => pi.ProductId == productId);
+        var images = ProductAggregateJson.ReadImageModels(product, _serializer);
 
         // Check if target image exists
         var targetImage = images.FirstOrDefault(i => i.Id == imageId);
@@ -473,7 +477,11 @@ public class ProductAdminService : IProductAdminService
         // Set target image as primary
         targetImage.IsPrimary = true;
 
+        product.ImagesJson = ProductAggregateJson.SerializeImages(images, _serializer);
+        await using var transaction = await BeginProductWriteAsync();
         await _unitOfWork.SaveChangesAsync();
+        if (transaction != null)
+            await transaction.CommitAsync();
 
         return ProductResult.Ok(product);
     }
@@ -488,28 +496,31 @@ public class ProductAdminService : IProductAdminService
         if (product == null)
             return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy sản phẩm với ID {productId}");
 
-        // Get image
-        var images = await _unitOfWork.ProductImages
-            .FindAsync(pi => pi.Id == imageId && pi.ProductId == productId);
-        var image = images.FirstOrDefault();
+        var image = ProductAggregateJson.ReadImageModels(product, _serializer)
+            .FirstOrDefault(candidate => candidate.Id == imageId);
 
         if (image == null)
             return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy ảnh với ID {imageId}");
 
         var wasPrimary = image.IsPrimary;
-        _unitOfWork.ProductImages.Remove(image);
+        var remainingImages = ProductAggregateJson.ReadImageModels(product, _serializer)
+            .Where(candidate => candidate.Id != imageId)
+            .ToList();
 
         if (wasPrimary)
         {
-            var replacement = (await _unitOfWork.ProductImages
-                    .FindAsync(pi => pi.ProductId == productId && pi.Id != imageId))
+            var replacement = remainingImages
                 .OrderBy(pi => pi.SortOrder)
                 .FirstOrDefault();
             if (replacement != null)
                 replacement.IsPrimary = true;
         }
 
+        product.ImagesJson = ProductAggregateJson.SerializeImages(remainingImages, _serializer);
+        await using var transaction = await BeginProductWriteAsync();
         await _unitOfWork.SaveChangesAsync();
+        if (transaction != null)
+            await transaction.CommitAsync();
         try
         {
             await _imageUploadService.DeleteImageAsync(image.ImageUrl);
@@ -532,21 +543,25 @@ public class ProductAdminService : IProductAdminService
         if (product == null)
             return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy sản phẩm với ID {productId}");
 
-        // Get all images for this product
-        var images = await _unitOfWork.ProductImages
-            .FindAsync(pi => pi.ProductId == productId);
+        var images = ProductAggregateJson.ReadImageModels(product, _serializer)
+            .OrderBy(image => image.SortOrder)
+            .ToList();
 
         // Update sort order based on new order
-        for (int i = 0; i < imageIds.Count; i++)
-        {
-            var image = images.FirstOrDefault(img => img.Id == imageIds[i]);
-            if (image != null)
-            {
-                image.SortOrder = i;
-            }
-        }
+        var ordered = imageIds
+            .Select(id => images.FirstOrDefault(image => image.Id == id))
+            .Where(image => image != null)
+            .Cast<ProductImage>()
+            .Concat(images.Where(image => !imageIds.Contains(image.Id)))
+            .ToList();
+        for (var index = 0; index < ordered.Count; index++)
+            ordered[index].SortOrder = index;
 
+        product.ImagesJson = ProductAggregateJson.SerializeImages(ordered, _serializer);
+        await using var transaction = await BeginProductWriteAsync();
         await _unitOfWork.SaveChangesAsync();
+        if (transaction != null)
+            await transaction.CommitAsync();
 
         return ProductResult.Ok(product);
     }
@@ -558,7 +573,6 @@ public class ProductAdminService : IProductAdminService
     public async Task<ProductResult> UpdateTagsAsync(int productId, List<string> tagNames)
     {
         var product = await _unitOfWork.Products.Query()
-            .Include(p => p.Tags)
             .FirstOrDefaultAsync(p => p.Id == productId);
 
         if (product == null)
@@ -574,40 +588,19 @@ public class ProductAdminService : IProductAdminService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        // Clear existing tags for this product
-        product.Tags.Clear();
-
-        // Query all existing tags at once
-        var lowercaseTagNames = tagNames.Select(t => t.ToLowerInvariant()).ToList();
-        var existingTags = await _unitOfWork.ProductTags.Query()
-            .Where(t => lowercaseTagNames.Contains(t.Name.ToLower()))
-            .ToListAsync();
-
-        var existingTagsDict = existingTags
-            .GroupBy(t => t.Name.ToLowerInvariant())
-            .ToDictionary(g => g.Key, g => g.First());
-
-        // Add new tags
-        foreach (var tagName in tagNames)
-        {
-            var key = tagName.ToLowerInvariant();
-            if (!existingTagsDict.TryGetValue(key, out var tag))
+        product.TagsJson = ProductAggregateJson.SerializeTags(
+            tagNames.Select((tagName, index) => new ProductTag
             {
-                // Create new tag
-                tag = new ProductTag
-                {
-                    Name = tagName,
-                    Slug = GenerateSlug(tagName)
-                };
-                await _unitOfWork.ProductTags.AddAsync(tag);
-                existingTagsDict[key] = tag;
-            }
+                Id = index + 1,
+                Name = tagName,
+                Slug = GenerateSlug(tagName)
+            }),
+            _serializer);
 
-            // Add tag to product
-            product.Tags.Add(tag);
-        }
-
+        await using var transaction = await BeginProductWriteAsync();
         await _unitOfWork.SaveChangesAsync();
+        if (transaction != null)
+            await transaction.CommitAsync();
 
         return ProductResult.Ok(product);
     }
@@ -745,7 +738,7 @@ public class ProductAdminService : IProductAdminService
         var wasActive = variant.IsActive;
 
         if (await _unitOfWork.OrderItems.AnyAsync(i => i.ProductVariantId == variantId) ||
-            await _unitOfWork.PriceSchedules.AnyAsync(schedule => schedule.ProductVariantId == variantId) ||
+            (await GetPriceSchedulesAsync()).Any(schedule => schedule.ProductVariantId == variantId) ||
             await _unitOfWork.CartItems.AnyAsync(item => item.ProductVariantId == variantId))
             variant.IsActive = false;
         else
@@ -777,10 +770,11 @@ public class ProductAdminService : IProductAdminService
     private static bool IsValidStock(string? unit, decimal quantity) =>
         quantity >= 0 && (quantity == 0 || QuantityRules.IsValid(unit, quantity, MinimumStep(unit)));
 
-    private Task<bool> CanEnableVariantAsync(int productId)
+    private async Task<bool> CanEnableVariantAsync(int productId)
     {
         var now = DateTimeOffset.UtcNow;
-        return _unitOfWork.PriceSchedules.Query().AllAsync(s =>
+        var schedules = await GetPriceSchedulesAsync();
+        return schedules.All(s =>
             s.ProductId != productId || s.ProductVariantId != null || s.IsCancelled ||
             (s.EndsAt.HasValue && s.EndsAt <= now));
     }
@@ -796,8 +790,7 @@ public class ProductAdminService : IProductAdminService
             return null;
 
         var now = DateTimeOffset.UtcNow;
-        var hasActiveOrUpcomingVariantSchedule = await _unitOfWork.PriceSchedules.Query()
-            .AnyAsync(schedule =>
+        var hasActiveOrUpcomingVariantSchedule = (await GetPriceSchedulesAsync()).Any(schedule =>
                 schedule.ProductId == variant.ProductId &&
                 schedule.ProductVariantId != null &&
                 !schedule.IsCancelled &&
@@ -822,6 +815,45 @@ public class ProductAdminService : IProductAdminService
         if ((_unitOfWork.DatabaseProviderName ?? string.Empty).Contains("InMemory", StringComparison.OrdinalIgnoreCase))
             return null;
         return await _unitOfWork.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+    }
+
+    private async Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction?> BeginProductWriteAsync()
+    {
+        if ((_unitOfWork.DatabaseProviderName ?? string.Empty).Contains("InMemory", StringComparison.OrdinalIgnoreCase))
+            return null;
+        return await _unitOfWork.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+    }
+
+    private async Task<List<PriceSchedule>> GetPriceSchedulesAsync()
+    {
+        if (_dbContext == null)
+            return [];
+
+        var promotions = await _dbContext.Promotions.AsNoTracking()
+            .Where(promotion => promotion.Type == "price-schedule")
+            .ToListAsync();
+        return promotions.Select(promotion =>
+        {
+            var payload = _serializer.Deserialize<Fruitables.Models.Json.PriceSchedulePayload>(promotion.PayloadJson);
+            return new PriceSchedule
+            {
+                Id = promotion.Id,
+                ProductId = payload.ProductId,
+                ProductVariantId = payload.ProductVariantId,
+                DiscountType = payload.DiscountType,
+                Value = payload.Value,
+                StartsAt = payload.StartsAt,
+                EndsAt = payload.EndsAt,
+                IsCancelled = payload.IsCancelled,
+                CancelledAt = payload.CancelledAt,
+                CancelledByAdminId = payload.CancelledByAdminId,
+                CancellationReason = payload.CancellationReason,
+                Revision = payload.Revision,
+                CreatedByAdminId = payload.CreatedByAdminId,
+                CreatedAt = payload.CreatedAt,
+                UpdatedAt = payload.UpdatedAt
+            };
+        }).ToList();
     }
 
     public async Task<Dictionary<int, ProductSentimentSummary>> GetSentimentSummariesAsync(IReadOnlyList<int> productIds)

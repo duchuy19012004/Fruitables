@@ -1,180 +1,86 @@
+using System.Text.Json;
 using Fruitables.Models;
 using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Communications;
+using Fruitables.Services.Infrastructure.Auditing;
 
 namespace Fruitables.Services.Catalog.Products;
 
 public class ProductLogService : IProductLogService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IAuditLogWriter? _auditLogWriter;
 
-    public ProductLogService(IUnitOfWork unitOfWork)
+    public ProductLogService(IUnitOfWork unitOfWork, IAuditLogWriter? auditLogWriter = null)
     {
         _unitOfWork = unitOfWork;
+        _auditLogWriter = auditLogWriter;
     }
 
     public async Task LogCreateAsync(int productId, int adminId, string productName)
     {
-        var log = new ProductLog
-        {
-            ProductId = productId,
-            AdminId = adminId,
-            Action = ProductLogActions.Create,
-            Details = $"Tạo sản phẩm: {productName}",
-            CreatedAt = DateTime.UtcNow
-        };
-
-        await _unitOfWork.ProductLogs.AddAsync(log);
-        await _unitOfWork.SaveChangesAsync();
+        await WriteAsync(ProductLogActions.Create, productId, adminId, $"Tạo sản phẩm: {productName}");
     }
 
     public async Task LogUpdateAsync(int productId, int adminId, string changes)
     {
-        var log = new ProductLog
-        {
-            ProductId = productId,
-            AdminId = adminId,
-            Action = ProductLogActions.Update,
-            Details = $"Cập nhật sản phẩm: {changes}",
-            CreatedAt = DateTime.UtcNow
-        };
-
-        await _unitOfWork.ProductLogs.AddAsync(log);
-        await _unitOfWork.SaveChangesAsync();
+        await WriteAsync(ProductLogActions.Update, productId, adminId, $"Cập nhật sản phẩm: {changes}");
     }
 
     public async Task LogDeleteAsync(int productId, int adminId, bool isHardDelete)
     {
-        var log = new ProductLog
-        {
-            ProductId = productId,
-            AdminId = adminId,
-            Action = isHardDelete ? ProductLogActions.HardDelete : ProductLogActions.SoftDelete,
-            Details = isHardDelete ? "Xóa vĩnh viễn sản phẩm" : "Chuyển sản phẩm vào thùng rác",
-            CreatedAt = DateTime.UtcNow
-        };
-
-        await _unitOfWork.ProductLogs.AddAsync(log);
-        await _unitOfWork.SaveChangesAsync();
+        await WriteAsync(
+            isHardDelete ? ProductLogActions.HardDelete : ProductLogActions.SoftDelete,
+            productId,
+            adminId,
+            isHardDelete ? "Xóa vĩnh viễn sản phẩm" : "Chuyển sản phẩm vào thùng rác");
     }
 
     public async Task LogRestoreAsync(int productId, int adminId)
     {
-        var log = new ProductLog
-        {
-            ProductId = productId,
-            AdminId = adminId,
-            Action = ProductLogActions.Restore,
-            Details = "Khôi phục sản phẩm từ thùng rác",
-            CreatedAt = DateTime.UtcNow
-        };
-
-        await _unitOfWork.ProductLogs.AddAsync(log);
-        await _unitOfWork.SaveChangesAsync();
+        await WriteAsync(ProductLogActions.Restore, productId, adminId, "Khôi phục sản phẩm từ thùng rác");
     }
 
     public async Task LogImageUploadAsync(int productId, int adminId, string fileName)
     {
-        var log = new ProductLog
-        {
-            ProductId = productId,
-            AdminId = adminId,
-            Action = ProductLogActions.ImageUpload,
-            Details = $"Upload ảnh: {fileName}",
-            CreatedAt = DateTime.UtcNow
-        };
-
-        await _unitOfWork.ProductLogs.AddAsync(log);
-        await _unitOfWork.SaveChangesAsync();
+        await WriteAsync(ProductLogActions.ImageUpload, productId, adminId, $"Upload ảnh: {fileName}");
     }
 
     public async Task LogImageDeleteAsync(int productId, int adminId, string fileName)
     {
-        var log = new ProductLog
-        {
-            ProductId = productId,
-            AdminId = adminId,
-            Action = ProductLogActions.ImageDelete,
-            Details = $"Xóa ảnh: {fileName}",
-            CreatedAt = DateTime.UtcNow
-        };
-
-        await _unitOfWork.ProductLogs.AddAsync(log);
-        await _unitOfWork.SaveChangesAsync();
+        await WriteAsync(ProductLogActions.ImageDelete, productId, adminId, $"Xóa ảnh: {fileName}");
     }
 
     public async Task LogTagUpdateAsync(int productId, int adminId, string tagNames)
     {
-        var log = new ProductLog
-        {
-            ProductId = productId,
-            AdminId = adminId,
-            Action = ProductLogActions.TagUpdate,
-            Details = $"Cập nhật tags: {tagNames}",
-            CreatedAt = DateTime.UtcNow
-        };
-
-        await _unitOfWork.ProductLogs.AddAsync(log);
-        await _unitOfWork.SaveChangesAsync();
+        await WriteAsync(ProductLogActions.TagUpdate, productId, adminId, $"Cập nhật tags: {tagNames}");
     }
 
     public async Task LogVariantCreateAsync(int productId, int adminId, string variantName)
     {
-        var log = new ProductLog
-        {
-            ProductId = productId,
-            AdminId = adminId,
-            Action = ProductLogActions.VariantCreate,
-            Details = $"Tạo biến thể: {variantName}",
-            CreatedAt = DateTime.UtcNow
-        };
-
-        await _unitOfWork.ProductLogs.AddAsync(log);
-        await _unitOfWork.SaveChangesAsync();
+        await WriteAsync(ProductLogActions.VariantCreate, productId, adminId, $"Tạo biến thể: {variantName}");
     }
 
     public async Task LogVariantUpdateAsync(int productId, int adminId, string variantName)
     {
-        var log = new ProductLog
-        {
-            ProductId = productId,
-            AdminId = adminId,
-            Action = ProductLogActions.VariantUpdate,
-            Details = $"Cập nhật biến thể: {variantName}",
-            CreatedAt = DateTime.UtcNow
-        };
-
-        await _unitOfWork.ProductLogs.AddAsync(log);
-        await _unitOfWork.SaveChangesAsync();
+        await WriteAsync(ProductLogActions.VariantUpdate, productId, adminId, $"Cập nhật biến thể: {variantName}");
     }
 
     public async Task LogVariantDeleteAsync(int productId, int adminId, string variantName)
     {
-        var log = new ProductLog
-        {
-            ProductId = productId,
-            AdminId = adminId,
-            Action = ProductLogActions.VariantDelete,
-            Details = $"Xóa biến thể: {variantName}",
-            CreatedAt = DateTime.UtcNow
-        };
-
-        await _unitOfWork.ProductLogs.AddAsync(log);
-        await _unitOfWork.SaveChangesAsync();
+        await WriteAsync(ProductLogActions.VariantDelete, productId, adminId, $"Xóa biến thể: {variantName}");
     }
 
     public async Task LogErrorAsync(string action, int? productId, Exception ex)
     {
-        var log = new ProductLog
-        {
-            ProductId = productId,
-            AdminId = 0, // System error
-            Action = ProductLogActions.Error,
-            Details = $"Lỗi khi {action}: {ex.Message}",
-            CreatedAt = DateTime.UtcNow
-        };
-
-        await _unitOfWork.ProductLogs.AddAsync(log);
-        await _unitOfWork.SaveChangesAsync();
+        await WriteAsync(ProductLogActions.Error, productId ?? 0, 0, $"Lỗi khi {action}: {ex.Message}");
     }
+
+    private Task WriteAsync(string action, int entityId, int adminId, string details) =>
+        _auditLogWriter?.WriteAsync(
+            action,
+            "Product",
+            entityId,
+            adminId,
+            newValue: JsonSerializer.Serialize(new { details })) ?? Task.CompletedTask;
 }

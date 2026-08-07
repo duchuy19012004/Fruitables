@@ -1,6 +1,10 @@
 using Fruitables.Models;
+using Fruitables.Models.Json;
+using Fruitables.Data;
 using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Communications;
+using Fruitables.Services.Infrastructure.Auditing;
+using Fruitables.Services.Infrastructure.Json;
 using Fruitables.ViewModels;
 using Microsoft.EntityFrameworkCore;
 using Fruitables.Services.Chat.Knowledge;
@@ -14,16 +18,25 @@ public sealed class PriceManagementService : IPriceManagementService
     private readonly IRealtimeNotifier? _notifier;
     private readonly IIndexingService? _indexing;
     private readonly ILogger<PriceManagementService>? _logger;
+    private readonly ApplicationDbContext? _dbContext;
+    private readonly IJsonDocumentSerializer _serializer;
+    private readonly IAuditLogWriter? _auditLogWriter;
 
     public PriceManagementService(IUnitOfWork unitOfWork, TimeProvider timeProvider,
         IRealtimeNotifier? notifier = null, IIndexingService? indexing = null,
-        ILogger<PriceManagementService>? logger = null)
+        ILogger<PriceManagementService>? logger = null,
+        ApplicationDbContext? dbContext = null,
+        IJsonDocumentSerializer? serializer = null,
+        IAuditLogWriter? auditLogWriter = null)
     {
         _unitOfWork = unitOfWork;
         _timeProvider = timeProvider;
         _notifier = notifier;
         _indexing = indexing;
         _logger = logger;
+        _dbContext = dbContext;
+        _serializer = serializer ?? new VersionedJsonSerializer();
+        _auditLogWriter = auditLogWriter ?? (dbContext == null ? null : new AuditLogWriter(dbContext));
     }
 
     public async Task<PriceManagementViewModel> GetDashboardAsync(PriceDashboardQuery q)
@@ -31,24 +44,34 @@ public sealed class PriceManagementService : IPriceManagementService
         var now = _timeProvider.GetUtcNow();
         IQueryable<Product> query = _unitOfWork.Products.Query()
             .Where(p => !p.IsDeleted)
-            .Include(p => p.Variants).ThenInclude(v => v.PriceSchedules)
-            .Include(p => p.PriceSchedules);
+            .Include(p => p.Variants);
         if (!string.IsNullOrWhiteSpace(q.Search))
             query = query.Where(p => p.Name.Contains(q.Search) || p.Variants.Any(v => v.SKU.Contains(q.Search)));
 
         var products = await query.ToListAsync();
+        var allProducts = await _unitOfWork.Products.Query()
+            .Where(product => !product.IsDeleted)
+            .Include(product => product.Variants)
+            .ToListAsync();
+        var schedules = await GetSchedulesAsync();
         var rows = new List<PriceManagementRow>();
         foreach (var product in products)
         {
             var activeVariants = product.Variants.Where(v => v.IsActive).OrderBy(v => v.Name).ToList();
             if (activeVariants.Count == 0)
             {
-                rows.Add(BuildRow(product, null, product.Price, product.PriceRevision, product.StockQuantity, product.PriceSchedules, now));
+                rows.Add(BuildRow(product, null, product.Price, product.PriceRevision,
+                    product.StockQuantity,
+                    schedules.Where(schedule => schedule.ProductId == product.Id && schedule.ProductVariantId == null),
+                    now));
                 continue;
             }
 
             foreach (var variant in activeVariants)
-                rows.Add(BuildRow(product, variant, variant.Price, variant.PriceRevision, variant.StockQuantity, variant.PriceSchedules, now));
+                rows.Add(BuildRow(product, variant, variant.Price, variant.PriceRevision,
+                    variant.StockQuantity,
+                    schedules.Where(schedule => schedule.ProductId == product.Id && schedule.ProductVariantId == variant.Id),
+                    now));
         }
         var statTotal = rows.Count;
         var statActive = rows.Count(row => row.CurrentSchedule != null);
@@ -89,11 +112,7 @@ public sealed class PriceManagementService : IPriceManagementService
             .ToList();
 
         // Combobox đối tượng lịch: mọi sản phẩm/biến thể (không phụ thuộc trang/lọc hiện tại)
-        var targetProducts = await _unitOfWork.Products.Query()
-            .Where(p => !p.IsDeleted)
-            .Include(p => p.Variants)
-            .OrderBy(p => p.Name)
-            .ToListAsync();
+        var targetProducts = allProducts.OrderBy(p => p.Name).ToList();
         var targets = new List<ScheduleTargetItem>();
         foreach (var p in targetProducts)
         {
@@ -111,60 +130,72 @@ public sealed class PriceManagementService : IPriceManagementService
                 });
         }
 
-        // Tab Lịch giảm giá: lọc trạng thái + tìm kiếm + phân trang ở SQL.
-        IQueryable<PriceSchedule> schQuery = _unitOfWork.PriceSchedules.Query()
-            .Include(s => s.Product).Include(s => s.ProductVariant);
+        // Tab Lịch giảm giá: JSON payloads are materialized once and filtered in memory.
+        var productById = allProducts.ToDictionary(product => product.Id);
+        var scheduleRows = schedules
+            .Select(schedule => new
+            {
+                Schedule = schedule,
+                Product = productById.GetValueOrDefault(schedule.ProductId),
+                Variant = productById.GetValueOrDefault(schedule.ProductId)?.Variants
+                    .FirstOrDefault(variant => variant.Id == schedule.ProductVariantId)
+            })
+            .Where(row => row.Product != null)
+            .ToList();
+        foreach (var row in scheduleRows)
+        {
+            row.Schedule.Product = row.Product!;
+            row.Schedule.ProductVariant = row.Variant;
+        }
         if (!string.IsNullOrWhiteSpace(q.ScheduleSearch))
-            schQuery = schQuery.Where(s => s.Product.Name.Contains(q.ScheduleSearch) ||
-                (s.ProductVariant != null &&
-                    (s.ProductVariant.Name.Contains(q.ScheduleSearch) || s.ProductVariant.SKU.Contains(q.ScheduleSearch))));
+        {
+            scheduleRows = scheduleRows.Where(row =>
+                row.Product!.Name.Contains(q.ScheduleSearch, StringComparison.OrdinalIgnoreCase) ||
+                (row.Variant != null &&
+                    (row.Variant.Name.Contains(q.ScheduleSearch, StringComparison.OrdinalIgnoreCase) ||
+                     row.Variant.SKU.Contains(q.ScheduleSearch, StringComparison.OrdinalIgnoreCase))))
+                .ToList();
+        }
 
-        // Đếm theo trạng thái (1 query projection, đếm in-memory). Thứ tự ưu tiên trạng thái
-        // PHẢI khớp PriceSchedule.GetStatus: cancelled → scheduled → ended → active.
-        var statusFacts = await schQuery
-            .Select(s => new { s.IsCancelled, s.CancelledAt, s.StartsAt, s.EndsAt })
-            .ToListAsync();
         var statusCounts = new Dictionary<string, int>
         {
-            ["all"] = statusFacts.Count,
+            ["all"] = scheduleRows.Count,
             ["active"] = 0,
             ["scheduled"] = 0,
             ["ended"] = 0,
             ["cancelled"] = 0,
             ["stopped"] = 0
         };
-        foreach (var s in statusFacts)
+        foreach (var row in scheduleRows)
         {
-            var key = s.IsCancelled
-                ? s.CancelledAt.HasValue && s.CancelledAt.Value > s.StartsAt ? "stopped" : "cancelled"
-                : s.StartsAt > now ? "scheduled"
-                : s.EndsAt.HasValue && s.EndsAt.Value <= now ? "ended"
-                : "active";
+            var key = row.Schedule.GetStatus(now) switch
+            {
+                PriceScheduleStatus.Scheduled => "scheduled",
+                PriceScheduleStatus.Ended => "ended",
+                PriceScheduleStatus.Cancelled => "cancelled",
+                PriceScheduleStatus.StoppedEarly => "stopped",
+                _ => "active"
+            };
             statusCounts[key]++;
         }
 
-        // Mirror SQL của PriceSchedule.GetStatus — giữ đồng bộ khi sửa model.
-        schQuery = q.ScheduleStatus switch
+        var filteredScheduleRows = q.ScheduleStatus switch
         {
-            "active" => schQuery.Where(s => !s.IsCancelled && s.StartsAt <= now && (!s.EndsAt.HasValue || s.EndsAt > now)),
-            "scheduled" => schQuery.Where(s => !s.IsCancelled && s.StartsAt > now),
-            "ended" => schQuery.Where(s => !s.IsCancelled && s.EndsAt.HasValue && s.EndsAt <= now),
-            "stopped" => schQuery.Where(s =>
-                s.IsCancelled &&
-                s.CancelledAt.HasValue &&
-                s.CancelledAt.Value > s.StartsAt),
-            "cancelled" => schQuery.Where(s =>
-                s.IsCancelled &&
-                (!s.CancelledAt.HasValue || s.CancelledAt.Value <= s.StartsAt)),
-            _ => schQuery
+            "active" => scheduleRows.Where(row => row.Schedule.GetStatus(now) == PriceScheduleStatus.Active).ToList(),
+            "scheduled" => scheduleRows.Where(row => row.Schedule.GetStatus(now) == PriceScheduleStatus.Scheduled).ToList(),
+            "ended" => scheduleRows.Where(row => row.Schedule.GetStatus(now) == PriceScheduleStatus.Ended).ToList(),
+            "stopped" => scheduleRows.Where(row => row.Schedule.GetStatus(now) == PriceScheduleStatus.StoppedEarly).ToList(),
+            "cancelled" => scheduleRows.Where(row => row.Schedule.GetStatus(now) == PriceScheduleStatus.Cancelled).ToList(),
+            _ => scheduleRows
         };
-        var schTotal = await schQuery.CountAsync();
+        var schTotal = filteredScheduleRows.Count;
         var schPage = Math.Max(1, q.SchedulePage);
-        var schItems = await schQuery
-            .OrderByDescending(s => s.StartsAt)
+        var schItems = filteredScheduleRows
+            .OrderByDescending(row => row.Schedule.StartsAt)
             .Skip((schPage - 1) * q.SchedulePageSize)
             .Take(q.SchedulePageSize)
-            .ToListAsync();
+            .Select(row => row.Schedule)
+            .ToList();
 
         return new PriceManagementViewModel
         {
@@ -199,10 +230,14 @@ public sealed class PriceManagementService : IPriceManagementService
     {
         var result = await RunSerializedWriteAsync(async () =>
         {
+            if (_dbContext == null)
+                return PriceManagementResult.Fail("Dịch vụ lịch giá chưa được cấu hình.");
+
             var validation = await ValidateScheduleAsync(request, null);
             if (validation != null) return PriceManagementResult.Fail(validation);
 
-            var schedule = new PriceSchedule
+            var now = _timeProvider.GetUtcNow();
+            var payload = new PriceSchedulePayload
             {
                 ProductId = request.ProductId,
                 ProductVariantId = request.ProductVariantId,
@@ -211,13 +246,27 @@ public sealed class PriceManagementService : IPriceManagementService
                 StartsAt = request.StartsAt.ToUniversalTime(),
                 EndsAt = request.EndsAt?.ToUniversalTime(),
                 CreatedByAdminId = adminId,
-                CreatedAt = _timeProvider.GetUtcNow(),
-                UpdatedAt = _timeProvider.GetUtcNow()
+                CreatedAt = now,
+                UpdatedAt = now
             };
-            await _unitOfWork.PriceSchedules.AddAsync(schedule);
-            await AddLogAsync(request.ProductId, adminId, "PriceScheduleCreate", $"Tạo lịch giảm giá từ {schedule.StartsAt:O}");
-            await _unitOfWork.SaveChangesAsync();
-            return PriceManagementResult.Ok();
+            var promotion = new Promotion
+            {
+                Type = "price-schedule",
+                Code = $"price-schedule:new-{Guid.NewGuid():N}",
+                PayloadJson = _serializer.Serialize(payload),
+                IsActive = true,
+                StartsAt = payload.StartsAt,
+                EndsAt = payload.EndsAt,
+                Revision = payload.Revision,
+                CreatedAt = now.UtcDateTime,
+                UpdatedAt = now.UtcDateTime
+            };
+            _dbContext.Promotions.Add(promotion);
+            await _dbContext.SaveChangesAsync();
+            promotion.Code = $"price-schedule:{promotion.Id}";
+            await _dbContext.SaveChangesAsync();
+            await AddLogAsync(request.ProductId, adminId, "PriceScheduleCreate", $"Tạo lịch giảm giá từ {payload.StartsAt:O}");
+            return PriceManagementResult.Ok(promotion.Revision);
         });
         if (result.Success) await PublishPriceChangeAsync(request.ProductId, request.ProductVariantId);
         return result;
@@ -227,8 +276,12 @@ public sealed class PriceManagementService : IPriceManagementService
     {
         var result = await RunSerializedWriteAsync(async () =>
         {
-            var schedule = await _unitOfWork.PriceSchedules.GetByIdAsync(id);
-            if (schedule == null) return PriceManagementResult.Fail("Không tìm thấy lịch giá.");
+            if (_dbContext == null)
+                return PriceManagementResult.Fail("Dịch vụ lịch giá chưa được cấu hình.");
+
+            var found = await GetScheduleAsync(id);
+            if (found == null) return PriceManagementResult.Fail("Không tìm thấy lịch giá.");
+            var (promotion, schedule) = found.Value;
             if (request.ExpectedRevision <= 0 || schedule.Revision != request.ExpectedRevision)
                 return PriceManagementResult.Fail("Lịch giá đã thay đổi bởi người khác. Vui lòng tải lại trang.");
             if (schedule.GetStatus(_timeProvider.GetUtcNow()) != PriceScheduleStatus.Scheduled)
@@ -244,8 +297,13 @@ public sealed class PriceManagementService : IPriceManagementService
             schedule.EndsAt = request.EndsAt?.ToUniversalTime();
             schedule.UpdatedAt = _timeProvider.GetUtcNow();
             schedule.Revision++;
+            promotion.PayloadJson = _serializer.Serialize(ToPayload(schedule));
+            promotion.StartsAt = schedule.StartsAt;
+            promotion.EndsAt = schedule.EndsAt;
+            promotion.Revision = schedule.Revision;
+            promotion.UpdatedAt = schedule.UpdatedAt.UtcDateTime;
             await AddLogAsync(request.ProductId, adminId, "PriceScheduleUpdate", $"Cập nhật lịch giá #{id}");
-            await _unitOfWork.SaveChangesAsync();
+            await _dbContext.SaveChangesAsync();
             return PriceManagementResult.Ok(schedule.Revision);
         });
         if (result.Success) await PublishPriceChangeAsync(request.ProductId, request.ProductVariantId);
@@ -262,9 +320,13 @@ public sealed class PriceManagementService : IPriceManagementService
 
         var result = await RunSerializedWriteAsync(async () =>
         {
-            var schedule = await _unitOfWork.PriceSchedules.GetByIdAsync(id);
-            if (schedule == null)
+            if (_dbContext == null)
+                return PriceManagementResult.Fail("Dịch vụ lịch giá chưa được cấu hình.");
+
+            var found = await GetScheduleAsync(id);
+            if (found == null)
                 return PriceManagementResult.Fail("Không tìm thấy lịch giá.");
+            var (promotion, schedule) = found.Value;
 
             if (request.ExpectedRevision <= 0 || schedule.Revision != request.ExpectedRevision)
                 return PriceManagementResult.Fail("Lịch giá đã thay đổi bởi người khác. Vui lòng tải lại trang.");
@@ -284,6 +346,10 @@ public sealed class PriceManagementService : IPriceManagementService
             schedule.CancellationReason = string.IsNullOrWhiteSpace(reason) ? null : reason;
             schedule.UpdatedAt = now;
             schedule.Revision++;
+            promotion.PayloadJson = _serializer.Serialize(ToPayload(schedule));
+            promotion.IsActive = false;
+            promotion.UpdatedAt = now.UtcDateTime;
+            promotion.Revision = schedule.Revision;
 
             productId = schedule.ProductId;
             variantId = schedule.ProductVariantId;
@@ -293,7 +359,7 @@ public sealed class PriceManagementService : IPriceManagementService
                 : "PriceScheduleCancel";
             var detail = $"{action} #{id}; reason={schedule.CancellationReason ?? "không có"}; cancelledAt={now:O}";
             await AddLogAsync(schedule.ProductId, adminId, action, detail);
-            await _unitOfWork.SaveChangesAsync();
+            await _dbContext.SaveChangesAsync();
 
             return PriceManagementResult.Ok(schedule.Revision);
         });
@@ -546,10 +612,13 @@ public sealed class PriceManagementService : IPriceManagementService
 
         var start = request.StartsAt.ToUniversalTime();
         var end = request.EndsAt?.ToUniversalTime();
-        var overlaps = await _unitOfWork.PriceSchedules.Query().AnyAsync(s =>
-            s.Id != excludingId && !s.IsCancelled && s.ProductId == request.ProductId &&
-            s.ProductVariantId == request.ProductVariantId &&
-            (!s.EndsAt.HasValue || start < s.EndsAt.Value) && (!end.HasValue || s.StartsAt < end.Value));
+        var overlaps = (await GetSchedulesAsync())
+            .Where(schedule => schedule.Id != excludingId)
+            .Any(schedule => schedule.ProductId == request.ProductId &&
+                schedule.ProductVariantId == request.ProductVariantId &&
+                !schedule.IsCancelled &&
+                (!schedule.EndsAt.HasValue || start < schedule.EndsAt.Value) &&
+                (!end.HasValue || schedule.StartsAt < end.Value));
         return overlaps ? "Khoảng thời gian bị trùng với một lịch giá khác." : null;
     }
 
@@ -561,9 +630,13 @@ public sealed class PriceManagementService : IPriceManagementService
         }
         if (!(await GetBasePriceAsync(target)).HasValue) return "Không tìm thấy sản phẩm hoặc biến thể.";
         var now = _timeProvider.GetUtcNow();
-        var invalidFixed = await _unitOfWork.PriceSchedules.Query().AnyAsync(s =>
-            s.ProductId == target.ProductId && s.ProductVariantId == target.ProductVariantId && !s.IsCancelled &&
-            (!s.EndsAt.HasValue || s.EndsAt > now) && s.DiscountType == DiscountType.FixedPrice && s.Value >= newPrice);
+        var invalidFixed = (await GetSchedulesAsync()).Any(schedule =>
+            schedule.ProductId == target.ProductId &&
+            schedule.ProductVariantId == target.ProductVariantId &&
+            !schedule.IsCancelled &&
+            (!schedule.EndsAt.HasValue || schedule.EndsAt > now) &&
+            schedule.DiscountType == DiscountType.FixedPrice &&
+            schedule.Value >= newPrice);
         return invalidFixed ? "Giá mới làm lịch giảm giá cố định đang chạy hoặc sắp tới không còn hợp lệ." : null;
     }
 
@@ -577,12 +650,13 @@ public sealed class PriceManagementService : IPriceManagementService
             .Select(p => (decimal?)p.Price).FirstOrDefaultAsync();
     }
 
-    private async Task AddLogAsync(int productId, int adminId, string action, string details) =>
-        await _unitOfWork.ProductLogs.AddAsync(new ProductLog
-        {
-            ProductId = productId, AdminId = adminId, Action = action, Details = details,
-            CreatedAt = _timeProvider.GetUtcNow().UtcDateTime
-        });
+    private Task AddLogAsync(int productId, int adminId, string action, string details) =>
+        _auditLogWriter?.WriteAsync(
+            action,
+            "Product",
+            productId,
+            adminId,
+            newValue: System.Text.Json.JsonSerializer.Serialize(new { details })) ?? Task.CompletedTask;
 
     private async Task PublishPriceChangeAsync(int productId, int? variantId)
     {
@@ -633,4 +707,68 @@ public sealed class PriceManagementService : IPriceManagementService
             Schedules = schedules.OrderBy(schedule => schedule.StartsAt).ThenBy(schedule => schedule.Id).ToList()
         };
     }
+
+    private async Task<List<PriceSchedule>> GetSchedulesAsync()
+    {
+        if (_dbContext == null)
+            return [];
+
+        var promotions = await _dbContext.Promotions.AsNoTracking()
+            .Where(promotion => promotion.Type == "price-schedule")
+            .ToListAsync();
+        return promotions.Select(ToSchedule).ToList();
+    }
+
+    private async Task<(Promotion Promotion, PriceSchedule Schedule)?> GetScheduleAsync(int id)
+    {
+        if (_dbContext == null)
+            return null;
+
+        var promotion = await _dbContext.Promotions
+            .FirstOrDefaultAsync(item => item.Id == id && item.Type == "price-schedule");
+        if (promotion == null)
+            return null;
+        return (promotion, ToSchedule(promotion));
+    }
+
+    private PriceSchedule ToSchedule(Promotion promotion)
+    {
+        var payload = _serializer.Deserialize<PriceSchedulePayload>(promotion.PayloadJson);
+        return new PriceSchedule
+        {
+            Id = promotion.Id,
+            ProductId = payload.ProductId,
+            ProductVariantId = payload.ProductVariantId,
+            DiscountType = payload.DiscountType,
+            Value = payload.Value,
+            StartsAt = payload.StartsAt,
+            EndsAt = payload.EndsAt,
+            IsCancelled = payload.IsCancelled,
+            CancelledAt = payload.CancelledAt,
+            CancelledByAdminId = payload.CancelledByAdminId,
+            CancellationReason = payload.CancellationReason,
+            Revision = payload.Revision,
+            CreatedByAdminId = payload.CreatedByAdminId,
+            CreatedAt = payload.CreatedAt,
+            UpdatedAt = payload.UpdatedAt
+        };
+    }
+
+    private static PriceSchedulePayload ToPayload(PriceSchedule schedule) => new()
+    {
+        ProductId = schedule.ProductId,
+        ProductVariantId = schedule.ProductVariantId,
+        DiscountType = schedule.DiscountType,
+        Value = schedule.Value,
+        StartsAt = schedule.StartsAt,
+        EndsAt = schedule.EndsAt,
+        IsCancelled = schedule.IsCancelled,
+        CancelledAt = schedule.CancelledAt,
+        CancelledByAdminId = schedule.CancelledByAdminId,
+        CancellationReason = schedule.CancellationReason,
+        Revision = schedule.Revision,
+        CreatedByAdminId = schedule.CreatedByAdminId,
+        CreatedAt = schedule.CreatedAt,
+        UpdatedAt = schedule.UpdatedAt
+    };
 }

@@ -1,12 +1,15 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Fruitables.Data;
+using Fruitables.Models.Json;
 using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using Fruitables.Services.Catalog.Combos;
 using Fruitables.Services.Catalog.Products;
+using Fruitables.Services.Infrastructure.Json;
 
 namespace Fruitables.Areas.Admin.Controllers;
 
@@ -18,13 +21,23 @@ public class ComboController : Controller
     private readonly IImageUploadService _imageUploadService;
     private readonly Fruitables.Repositories.Interfaces.IUnitOfWork _unitOfWork;
     private readonly ILogger<ComboController> _logger;
+    private readonly ApplicationDbContext? _dbContext;
+    private readonly IJsonDocumentSerializer _serializer;
 
-    public ComboController(IComboService comboService, IImageUploadService imageUploadService, Fruitables.Repositories.Interfaces.IUnitOfWork unitOfWork, ILogger<ComboController> logger)
+    public ComboController(
+        IComboService comboService,
+        IImageUploadService imageUploadService,
+        Fruitables.Repositories.Interfaces.IUnitOfWork unitOfWork,
+        ILogger<ComboController> logger,
+        ApplicationDbContext? dbContext = null,
+        IJsonDocumentSerializer? serializer = null)
     {
         _comboService = comboService;
         _imageUploadService = imageUploadService;
         _unitOfWork = unitOfWork;
         _logger = logger;
+        _dbContext = dbContext;
+        _serializer = serializer ?? new VersionedJsonSerializer();
     }
 
     public async Task<IActionResult> Index()
@@ -40,13 +53,22 @@ public class ComboController : Controller
         var warnings = new Dictionary<int, List<string>>();
         try
         {
-            var combos = await _unitOfWork.Combos.Query()
-                .Include(c => c.Items)
-                .Where(c => !c.IsActive || c.Items.Any())
-                .ToListAsync();
+            if (_dbContext == null)
+                return warnings;
 
-            var productIds = combos.SelectMany(c => c.Items.Select(i => i.ProductId)).Distinct().ToList();
+            var combos = await _dbContext.Promotions.AsNoTracking()
+                .Where(promotion => promotion.Type == "combo")
+                .ToListAsync();
+            var payloads = combos
+                .Select(promotion => (Promotion: promotion, Payload: _serializer.Deserialize<ComboPayload>(promotion.PayloadJson)))
+                .Where(item => !item.Payload.IsActive || item.Payload.Items.Count > 0)
+                .ToList();
+
+            var productIds = payloads.SelectMany(c => c.Payload.Items.Select(i => i.ProductId)).Distinct().ToList();
             if (productIds.Count == 0) return warnings;
+            var products = await _unitOfWork.Products.Query()
+                .Where(product => productIds.Contains(product.Id))
+                .ToDictionaryAsync(product => product.Id);
 
             var sentiments = await (
                 from r in _unitOfWork.Reviews.Query()
@@ -60,21 +82,21 @@ public class ComboController : Controller
                     Total = g.Count()
                 }).ToListAsync();
 
-            foreach (var combo in combos)
+            foreach (var combo in payloads)
             {
                 var comboWarnings = new List<string>();
-                foreach (var item in combo.Items)
+                foreach (var item in combo.Payload.Items)
                 {
                     var stat = sentiments.FirstOrDefault(s => s.ProductId == item.ProductId);
                     if (stat is null) continue;
                     var rate = stat.Total == 0 ? 0 : (float)Math.Round(stat.Negative * 100f / stat.Total, 1);
                     if (stat.Negative >= 2 || rate >= 40)
                     {
-                        comboWarnings.Add($"{item.Product?.Name ?? $"Sản phẩm #{item.ProductId}"}: {stat.Negative} review tiêu cực ({rate.ToString("0.0")}%)");
+                        comboWarnings.Add($"{products.GetValueOrDefault(item.ProductId)?.Name ?? $"Sản phẩm #{item.ProductId}"}: {stat.Negative} review tiêu cực ({rate.ToString("0.0")}%)");
                     }
                 }
                 if (comboWarnings.Count > 0)
-                    warnings[combo.Id] = comboWarnings;
+                    warnings[combo.Promotion.Id] = comboWarnings;
             }
         }
         catch (Exception ex)

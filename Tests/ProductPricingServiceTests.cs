@@ -1,6 +1,8 @@
 using Fruitables.Data;
 using Fruitables.Models;
+using Fruitables.Models.Json;
 using Fruitables.Repositories;
+using Fruitables.Services.Infrastructure.Json;
 using Fruitables.Services.Communications;
 using Fruitables.Services.Pricing.ProductPricing;
 using Microsoft.EntityFrameworkCore;
@@ -61,22 +63,33 @@ public class ProductPricingServiceTests
             .Options;
 
         await using var context = new ApplicationDbContext(options);
+        var serializer = new VersionedJsonSerializer();
         var product = new Product { Id = 1, Name = "Táo", Slug = "tao", Price = 100_000 };
         var variant = new ProductVariant { Id = 2, ProductId = 1, Name = "Hộp 2kg", SKU = "TAO-2", Price = 180_000 };
         context.Products.Add(product);
         context.ProductVariants.Add(variant);
-        context.PriceSchedules.Add(new PriceSchedule
+        context.Promotions.Add(new Promotion
         {
-            ProductId = 1,
-            ProductVariantId = 2,
-            DiscountType = DiscountType.Percentage,
-            Value = 10,
-            StartsAt = Now.AddDays(-1),
-            EndsAt = null
+            Id = 2,
+            Type = "price-schedule",
+            Code = "price-schedule:2",
+            PayloadJson = serializer.Serialize(new PriceSchedulePayload
+            {
+                ProductId = 1,
+                ProductVariantId = 2,
+                DiscountType = DiscountType.Percentage,
+                Value = 10,
+                StartsAt = Now.AddDays(-1),
+                Revision = 1,
+                CreatedAt = Now.AddDays(-1),
+                UpdatedAt = Now.AddDays(-1)
+            }),
+            IsActive = true,
+            StartsAt = Now.AddDays(-1)
         });
         await context.SaveChangesAsync();
 
-        var service = new ProductPricingService(new UnitOfWork(context), new FixedTimeProvider(Now));
+        var service = new ProductPricingService(new UnitOfWork(context), new FixedTimeProvider(Now), context, serializer);
         var quote = await service.GetQuoteAsync(1, 2);
 
         Assert.NotNull(quote);
@@ -91,6 +104,7 @@ public class ProductPricingServiceTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
         await using var context = new ApplicationDbContext(options);
+        var serializer = new VersionedJsonSerializer();
         context.Products.AddRange(
             new Product
             {
@@ -99,17 +113,7 @@ public class ProductPricingServiceTests
                 Slug = "tao",
                 Price = 100_000,
                 IsActive = true,
-                PriceSchedules =
-                [
-                    new PriceSchedule
-                    {
-                        ProductId = 1,
-                        DiscountType = DiscountType.FixedPrice,
-                        Value = 80_000,
-                        StartsAt = Now.AddHours(-1),
-                        EndsAt = Now.AddHours(1)
-                    }
-                ]
+                PriceSchedules = []
             },
             new Product
             {
@@ -128,18 +132,7 @@ public class ProductPricingServiceTests
                         SKU = "CAM-1",
                         Price = 120_000,
                         IsActive = true,
-                        PriceSchedules =
-                        [
-                            new PriceSchedule
-                            {
-                                ProductId = 2,
-                                ProductVariantId = 3,
-                                DiscountType = DiscountType.Percentage,
-                                Value = 25,
-                                StartsAt = Now.AddHours(-1),
-                                EndsAt = Now.AddHours(1)
-                            }
-                        ]
+                         PriceSchedules = []
                     },
                     new ProductVariant
                     {
@@ -152,9 +145,49 @@ public class ProductPricingServiceTests
                     }
                 ]
             });
+        context.Promotions.AddRange(
+            new Promotion
+            {
+                Id = 1,
+                Type = "price-schedule",
+                Code = "price-schedule:1",
+                PayloadJson = serializer.Serialize(new PriceSchedulePayload
+                {
+                    ProductId = 1,
+                    DiscountType = DiscountType.FixedPrice,
+                    Value = 80_000,
+                    StartsAt = Now.AddHours(-1),
+                    EndsAt = Now.AddHours(1),
+                    CreatedAt = Now.AddDays(-1),
+                    UpdatedAt = Now.AddDays(-1)
+                }),
+                IsActive = true,
+                StartsAt = Now.AddHours(-1),
+                EndsAt = Now.AddHours(1)
+            },
+            new Promotion
+            {
+                Id = 2,
+                Type = "price-schedule",
+                Code = "price-schedule:2",
+                PayloadJson = serializer.Serialize(new PriceSchedulePayload
+                {
+                    ProductId = 2,
+                    ProductVariantId = 3,
+                    DiscountType = DiscountType.Percentage,
+                    Value = 25,
+                    StartsAt = Now.AddHours(-1),
+                    EndsAt = Now.AddHours(1),
+                    CreatedAt = Now.AddDays(-1),
+                    UpdatedAt = Now.AddDays(-1)
+                }),
+                IsActive = true,
+                StartsAt = Now.AddHours(-1),
+                EndsAt = Now.AddHours(1)
+            });
         await context.SaveChangesAsync();
 
-        var service = new ProductPricingService(new UnitOfWork(context), new FixedTimeProvider(Now));
+        var service = new ProductPricingService(new UnitOfWork(context), new FixedTimeProvider(Now), context, serializer);
 
         var projections = service.ProjectCatalogPrices(context.Products.Where(p => p.IsActive))
             .OrderBy(p => p.ProductId)

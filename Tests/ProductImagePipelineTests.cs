@@ -1,5 +1,6 @@
 using Fruitables.Data;
 using Fruitables.Models;
+using Fruitables.Models.Json;
 using Fruitables.Repositories;
 using Fruitables.Services.Communications;
 using Microsoft.AspNetCore.Hosting;
@@ -13,6 +14,7 @@ using SixLabors.ImageSharp.PixelFormats;
 using Xunit;
 using Fruitables.Services.Catalog.Products;
 using Fruitables.Services.Chat.Knowledge;
+using Fruitables.Services.Infrastructure.Json;
 
 namespace Fruitables.Tests;
 
@@ -129,20 +131,34 @@ public sealed class ProductImagePipelineTests : IDisposable
     public async Task DeleteImageAsync_PromotesNextImageWhenPrimaryIsDeleted()
     {
         await using var context = CreateContext();
-        context.Products.Add(new Product { Id = 1, Name = "Táo", Slug = "tao", Price = 50_000 });
-        context.ProductImages.AddRange(
-            new ProductImage { Id = 10, ProductId = 1, ImageUrl = "/uploads/products/one.webp", IsPrimary = true, SortOrder = 0 },
-            new ProductImage { Id = 11, ProductId = 1, ImageUrl = "/uploads/products/two.webp", SortOrder = 1 });
+        var serializer = new VersionedJsonSerializer();
+        context.Products.Add(new Product
+        {
+            Id = 1,
+            Name = "Táo",
+            Slug = "tao",
+            Price = 50_000,
+            ImagesJson = serializer.Serialize(new ProductImagesDocument
+            {
+                Images =
+                [
+                    new ProductImageDocument { Url = "/uploads/products/one.webp", StorageKey = "uploads/products/one.webp", IsPrimary = true, SortOrder = 0 },
+                    new ProductImageDocument { Url = "/uploads/products/two.webp", StorageKey = "uploads/products/two.webp", SortOrder = 1 }
+                ]
+            })
+        });
         await context.SaveChangesAsync();
 
         var imageService = new Mock<IImageUploadService>();
         var service = CreateProductAdminService(context, imageService.Object);
 
-        var result = await service.DeleteImageAsync(1, 10);
+        var result = await service.DeleteImageAsync(1, 1);
 
         Assert.True(result.Success);
-        Assert.Null(await context.ProductImages.FindAsync(10));
-        Assert.True((await context.ProductImages.FindAsync(11))!.IsPrimary);
+        var updated = await context.Products.FindAsync(1);
+        var images = serializer.Deserialize<ProductImagesDocument>(updated!.ImagesJson).Images;
+        Assert.DoesNotContain(images, image => image.Url.EndsWith("one.webp"));
+        Assert.True(Assert.Single(images).IsPrimary);
         imageService.Verify(
             candidate => candidate.DeleteImageAsync("/uploads/products/one.webp"),
             Times.Once);

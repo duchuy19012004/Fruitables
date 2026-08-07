@@ -1,7 +1,11 @@
 using Microsoft.EntityFrameworkCore;
+using Fruitables.Data;
 using Fruitables.Models;
+using Fruitables.Models.Json;
 using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Communications;
+using Fruitables.Services.Infrastructure.Json;
+using Fruitables.Services.Infrastructure.Auditing;
 using Fruitables.ViewModels;
 
 namespace Fruitables.Services.Pricing.Coupons;
@@ -9,29 +13,44 @@ namespace Fruitables.Services.Pricing.Coupons;
 public class CouponService : ICouponService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ApplicationDbContext? _dbContext;
+    private readonly IJsonDocumentSerializer _serializer;
+    private readonly IAuditLogWriter? _auditLogWriter;
 
-    public CouponService(IUnitOfWork unitOfWork)
+    public CouponService(
+        IUnitOfWork unitOfWork,
+        ApplicationDbContext? dbContext = null,
+        IJsonDocumentSerializer? serializer = null,
+        IAuditLogWriter? auditLogWriter = null)
     {
         _unitOfWork = unitOfWork;
+        _dbContext = dbContext;
+        _serializer = serializer ?? new VersionedJsonSerializer();
+        _auditLogWriter = auditLogWriter ?? (dbContext == null ? null : new AuditLogWriter(dbContext));
     }
 
     public async Task<List<Coupon>> GetAllAsync()
     {
-        return await _unitOfWork.Coupons.Query()
-            .OrderByDescending(c => c.Id)
-            .ToListAsync();
+        return await LoadCouponsAsync();
     }
 
     public async Task<Coupon?> GetByIdAsync(int id)
     {
-        return await _unitOfWork.Coupons.GetByIdAsync(id);
+        if (_dbContext == null)
+            return null;
+
+        var promotion = await _dbContext.Promotions.AsNoTracking()
+            .FirstOrDefaultAsync(item => item.Id == id && item.Type == "coupon");
+        return promotion == null ? null : ToCoupon(promotion);
     }
 
     public async Task<(bool Success, string? Error)> CreateAsync(CreateCouponRequest request)
     {
-        var codeUpper = request.Code.ToUpper();
-        var exists = await _unitOfWork.Coupons.Query()
-            .AnyAsync(c => c.Code == codeUpper);
+        if (_dbContext == null)
+            return (false, "Dịch vụ coupon chưa được cấu hình.");
+
+        var codeUpper = request.Code.ToUpperInvariant();
+        var exists = (await LoadCouponsAsync()).Any(coupon => coupon.Code == codeUpper);
         if (exists)
             return (false, $"Mã giảm giá '{codeUpper}' đã tồn tại");
 
@@ -40,7 +59,7 @@ public class CouponService : ICouponService
         if (request.MinQuantity <= 0)
             return (false, "Số lượng tối thiểu phải lớn hơn 0");
 
-        var coupon = new Coupon
+        var payload = new CouponPayload
         {
             Code           = codeUpper,
             Type           = request.Type,
@@ -53,20 +72,40 @@ public class CouponService : ICouponService
             IsActive       = request.IsActive
         };
 
-        await _unitOfWork.Coupons.AddAsync(coupon);
-        await _unitOfWork.SaveChangesAsync();
+        var promotion = new Promotion
+        {
+            Type = "coupon",
+            Code = $"coupon:new-{Guid.NewGuid():N}",
+            PayloadJson = _serializer.Serialize(payload),
+            IsActive = payload.IsActive,
+            StartsAt = ToOffset(payload.StartDate),
+            EndsAt = ToOffset(payload.EndDate),
+            Revision = 1,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        _dbContext.Promotions.Add(promotion);
+        await _dbContext.SaveChangesAsync();
+        promotion.Code = $"coupon:{promotion.Id}";
+        await _dbContext.SaveChangesAsync();
+        await WriteAuditAsync("Create", promotion.Id, 0, payload);
         return (true, null);
     }
 
     public async Task<(bool Success, string? Error)> UpdateAsync(int id, UpdateCouponRequest request)
     {
-        var coupon = await _unitOfWork.Coupons.GetByIdAsync(id);
-        if (coupon == null)
+        if (_dbContext == null)
+            return (false, "Dịch vụ coupon chưa được cấu hình.");
+
+        var promotion = await _dbContext.Promotions
+            .FirstOrDefaultAsync(item => item.Id == id && item.Type == "coupon");
+        if (promotion == null)
             return (false, "Không tìm thấy mã giảm giá");
 
-        var codeUpper = request.Code.ToUpper();
-        var exists = await _unitOfWork.Coupons.Query()
-            .AnyAsync(c => c.Code == codeUpper && c.Id != id);
+        var current = ToCouponPayload(promotion);
+
+        var codeUpper = request.Code.ToUpperInvariant();
+        var exists = (await LoadCouponsAsync()).Any(coupon => coupon.Id != id && coupon.Code == codeUpper);
         if (exists)
             return (false, $"Mã giảm giá '{codeUpper}' đã tồn tại");
 
@@ -75,28 +114,43 @@ public class CouponService : ICouponService
         if (request.MinQuantity <= 0)
             return (false, "Số lượng tối thiểu phải lớn hơn 0");
 
-        coupon.Code           = codeUpper;
-        coupon.Type           = request.Type;
-        coupon.Value          = request.Value;
-        coupon.MinOrderAmount = request.MinOrderAmount;
-        coupon.MinQuantity    = request.MinQuantity;
-        coupon.MaxUses        = request.MaxUses;
-        coupon.StartDate      = request.StartDate;
-        coupon.EndDate        = request.EndDate;
-        coupon.IsActive       = request.IsActive;
-
-        await _unitOfWork.SaveChangesAsync();
+        var payload = new CouponPayload
+        {
+            Code = codeUpper,
+            Type = request.Type,
+            Value = request.Value,
+            MinOrderAmount = request.MinOrderAmount,
+            MinQuantity = request.MinQuantity,
+            MaxUses = request.MaxUses,
+            UsedCount = current.UsedCount,
+            StartDate = request.StartDate,
+            EndDate = request.EndDate,
+            IsActive = request.IsActive
+        };
+        promotion.PayloadJson = _serializer.Serialize(payload);
+        promotion.IsActive = payload.IsActive;
+        promotion.StartsAt = ToOffset(payload.StartDate);
+        promotion.EndsAt = ToOffset(payload.EndDate);
+        promotion.Revision++;
+        promotion.UpdatedAt = DateTime.UtcNow;
+        await _dbContext.SaveChangesAsync();
+        await WriteAuditAsync("Update", promotion.Id, 0, payload);
         return (true, null);
     }
 
     public async Task<(bool Success, string? Error)> DeleteAsync(int id)
     {
-        var coupon = await _unitOfWork.Coupons.GetByIdAsync(id);
-        if (coupon == null)
+        if (_dbContext == null)
+            return (false, "Dịch vụ coupon chưa được cấu hình.");
+
+        var promotion = await _dbContext.Promotions
+            .FirstOrDefaultAsync(item => item.Id == id && item.Type == "coupon");
+        if (promotion == null)
             return (false, "Không tìm thấy mã giảm giá");
 
-        _unitOfWork.Coupons.Remove(coupon);
-        await _unitOfWork.SaveChangesAsync();
+        _dbContext.Promotions.Remove(promotion);
+        await _dbContext.SaveChangesAsync();
+        await WriteAuditAsync("Delete", id, 0, null);
         return (true, null);
     }
 
@@ -104,8 +158,7 @@ public class CouponService : ICouponService
     {
         var codeUpper = code.Trim().ToUpper();
 
-        var coupon = await _unitOfWork.Coupons.Query()
-            .FirstOrDefaultAsync(c => c.Code == codeUpper);
+        var coupon = (await LoadCouponsAsync()).FirstOrDefault(c => c.Code == codeUpper);
 
         if (coupon == null)
             return Fail("Mã giảm giá không tồn tại");
@@ -155,13 +208,13 @@ public class CouponService : ICouponService
     {
         var now = DateTime.UtcNow.AddHours(7);
 
-        var coupons = await _unitOfWork.Coupons.Query()
+        var coupons = (await LoadCouponsAsync())
             .Where(c => c.IsActive
                 && (c.StartDate == null || c.StartDate <= now)
                 && (c.EndDate == null || c.EndDate >= now)
                 && (c.MaxUses == null || c.UsedCount < c.MaxUses))
             .OrderByDescending(c => c.Id)
-            .ToListAsync();
+            .ToList();
 
         var result = new List<CouponEligibilityResult>();
 
@@ -200,4 +253,51 @@ public class CouponService : ICouponService
 
         return result;
     }
+
+    private async Task<List<Coupon>> LoadCouponsAsync()
+    {
+        if (_dbContext == null)
+            return [];
+
+        var promotions = await _dbContext.Promotions.AsNoTracking()
+            .Where(item => item.Type == "coupon")
+            .OrderByDescending(item => item.Id)
+            .ToListAsync();
+        return promotions.Select(ToCoupon).ToList();
+    }
+
+    private Coupon ToCoupon(Promotion promotion)
+    {
+        var payload = ToCouponPayload(promotion);
+        return new Coupon
+        {
+            Id = promotion.Id,
+            Code = payload.Code,
+            Type = payload.Type,
+            Value = payload.Value,
+            MinOrderAmount = payload.MinOrderAmount,
+            MinQuantity = payload.MinQuantity,
+            MaxUses = payload.MaxUses,
+            UsedCount = payload.UsedCount,
+            StartDate = payload.StartDate,
+            EndDate = payload.EndDate,
+            IsActive = payload.IsActive
+        };
+    }
+
+    private CouponPayload ToCouponPayload(Promotion promotion) =>
+        _serializer.Deserialize<CouponPayload>(promotion.PayloadJson);
+
+    private static DateTimeOffset? ToOffset(DateTime? value) =>
+        value.HasValue ? new DateTimeOffset(value.Value) : null;
+
+    private Task WriteAuditAsync(string action, int entityId, int adminId, CouponPayload? payload) =>
+        _auditLogWriter == null
+            ? Task.CompletedTask
+            : _auditLogWriter.WriteAsync(
+                action,
+                "Coupon",
+                entityId,
+                adminId,
+                newValue: payload == null ? null : _serializer.Serialize(payload));
 }
