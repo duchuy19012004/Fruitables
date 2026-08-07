@@ -1,11 +1,9 @@
 using ClosedXML.Excel;
 using Fruitables.Models;
-using Fruitables.Models.Json;
 using Fruitables.Models.Returns;
 using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Analytics.Common;
 using Fruitables.Services.Communications;
-using Fruitables.Services.Infrastructure.Json;
 using Fruitables.ViewModels;
 using Microsoft.EntityFrameworkCore;
 
@@ -49,12 +47,10 @@ public class SalesAnalyticsService : ISalesAnalyticsService
                     o.PaymentStatus,
                     o.Status,
                     o.CancelReason,
-                    o.ReturnCase != null && o.ReturnCase.Status == ReturnRequestStatus.Refunded
-                        ? o.ReturnCase.ApprovedAmount + o.ReturnCase.ApprovedShippingFeeAmount
-                        : o.ReturnRequest != null && o.ReturnRequest.Refund != null &&
-                          o.ReturnRequest.Refund.Status == RefundStatus.Succeeded
-                            ? o.ReturnRequest.Refund.Amount
-                            : 0m))
+                    o.ReturnRequest != null && o.ReturnRequest.Refund != null &&
+                    o.ReturnRequest.Refund.Status == RefundStatus.Succeeded
+                        ? o.ReturnRequest.Refund.Amount
+                        : 0m))
                 .ToListAsync();
 
             var cur = rows
@@ -487,33 +483,16 @@ public class SalesAnalyticsService : ISalesAnalyticsService
             return rows;
 
         var orderItemIds = rows.Select(row => row.OrderItemId).ToArray();
-        Dictionary<int, decimal> refundsByItem;
-        if (_uow is Repositories.UnitOfWork concrete && concrete.Context.Database.IsSqlServer())
-        {
-            var orderIds = rows.Select(row => row.OrderId).Distinct().ToArray();
-            var serializer = new VersionedJsonSerializer();
-            var returnCases = await concrete.Context.Returns.AsNoTracking()
-                .Where(item => orderIds.Contains(item.OrderId) && item.Status == ReturnRequestStatus.Refunded)
-                .Select(item => item.DetailsJson)
-                .ToListAsync();
-            refundsByItem = returnCases
-                .SelectMany(json => serializer.Deserialize<ReturnDetailsDocument>(json).Items)
-                .GroupBy(item => item.OrderItemId)
-                .ToDictionary(group => group.Key, group => group.Sum(item => item.ApprovedAmount));
-        }
-        else
-        {
-            var refundRows = await _uow.OrderItems.Query().AsNoTracking()
-                .Where(item => orderItemIds.Contains(item.Id))
-                .SelectMany(item => item.ReturnRequestItems)
-                .Where(item => item.ReturnRequest.Refund != null &&
-                    item.ReturnRequest.Refund.Status == RefundStatus.Succeeded)
-                .Select(item => new { item.OrderItemId, item.ApprovedAmount })
-                .ToListAsync();
-            refundsByItem = refundRows
-                .GroupBy(item => item.OrderItemId)
-                .ToDictionary(group => group.Key, group => group.Sum(item => item.ApprovedAmount));
-        }
+        var refundRows = await _uow.OrderItems.Query().AsNoTracking()
+            .Where(item => orderItemIds.Contains(item.Id))
+            .SelectMany(item => item.ReturnRequestItems)
+            .Where(item => item.ReturnRequest.Refund != null &&
+                item.ReturnRequest.Refund.Status == RefundStatus.Succeeded)
+            .Select(item => new { item.OrderItemId, item.ApprovedAmount })
+            .ToListAsync();
+        var refundsByItem = refundRows
+            .GroupBy(item => item.OrderItemId)
+            .ToDictionary(group => group.Key, group => group.Sum(item => item.ApprovedAmount));
 
         return rows.Select(row => row with
         {

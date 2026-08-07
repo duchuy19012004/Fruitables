@@ -1,7 +1,5 @@
 using Fruitables.Data;
-using Fruitables.Models.Json;
 using Fruitables.Services.Communications;
-using Fruitables.Services.Infrastructure.Json;
 using Microsoft.EntityFrameworkCore;
 using Fruitables.Services.Chat.Knowledge;
 
@@ -12,18 +10,12 @@ public sealed class PriceScheduleWorker : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<PriceScheduleWorker> _logger;
-    private readonly IJsonDocumentSerializer _serializer;
 
-    public PriceScheduleWorker(
-        IServiceScopeFactory scopeFactory,
-        TimeProvider timeProvider,
-        ILogger<PriceScheduleWorker> logger,
-        IJsonDocumentSerializer? serializer = null)
+    public PriceScheduleWorker(IServiceScopeFactory scopeFactory, TimeProvider timeProvider, ILogger<PriceScheduleWorker> logger)
     {
         _scopeFactory = scopeFactory;
         _timeProvider = timeProvider;
         _logger = logger;
-        _serializer = serializer ?? new VersionedJsonSerializer();
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -41,19 +33,12 @@ public sealed class PriceScheduleWorker : BackgroundService
                 var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
                 var notifier = scope.ServiceProvider.GetRequiredService<IRealtimeNotifier>();
                 var indexing = scope.ServiceProvider.GetRequiredService<IIndexingService>();
-                var promotions = await db.Promotions.AsNoTracking()
-                    .Where(promotion => promotion.Type == "price-schedule")
-                    .ToListAsync(stoppingToken);
-                var transitions = promotions
-                    .Select(promotion => _serializer.Deserialize<PriceSchedulePayload>(promotion.PayloadJson))
-                    .Where(schedule =>
-                        (!schedule.IsCancelled &&
-                            ((schedule.StartsAt > lastCheck && schedule.StartsAt <= now) ||
-                             (schedule.EndsAt.HasValue && schedule.EndsAt > lastCheck && schedule.EndsAt <= now))) ||
-                        (schedule.IsCancelled && schedule.CancelledAt.HasValue &&
-                            schedule.CancelledAt > lastCheck && schedule.CancelledAt <= now))
-                    .Select(schedule => new { schedule.ProductId, schedule.ProductVariantId })
-                    .Distinct().ToList();
+                var transitions = await db.PriceSchedules.AsNoTracking()
+                    .Where(s => !s.IsCancelled &&
+                        ((s.StartsAt > lastCheck && s.StartsAt <= now) ||
+                         (s.EndsAt.HasValue && s.EndsAt > lastCheck && s.EndsAt <= now)))
+                    .Select(s => new { s.ProductId, s.ProductVariantId })
+                    .Distinct().ToListAsync(stoppingToken);
                 foreach (var transition in transitions)
                 {
                     await notifier.NotifyPriceChangedAsync(transition.ProductId, transition.ProductVariantId);

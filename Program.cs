@@ -26,9 +26,6 @@ using Fruitables.Services.Identity.Profiles;
 using Fruitables.Services.Identity.Rbac;
 using Fruitables.Services.Identity.Users;
 using Fruitables.Services.Infrastructure;
-using Fruitables.Services.Infrastructure.Auditing;
-using Fruitables.Services.Infrastructure.DatabaseConsolidation;
-using Fruitables.Services.Infrastructure.Json;
 using Fruitables.Services.Orders.Cart;
 using Fruitables.Services.Orders.OrderManagement;
 using Fruitables.Services.Returns;
@@ -39,12 +36,6 @@ using Fruitables.Services.Reviews;
 using Fruitables.Services.Shipping.Address;
 using Fruitables.Services.Shipping.Delivery;
 using Fruitables.Services.Shipping.Providers;
-
-if (args.Any(argument => argument.Equals("--database-consolidation-backfill", StringComparison.OrdinalIgnoreCase) ||
-                         argument.Equals("--database-consolidation-verify", StringComparison.OrdinalIgnoreCase)))
-{
-    ApplicationDbContext.EnableLegacySchemaForExpansion = true;
-}
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -78,15 +69,9 @@ builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<ICartService, CartService>();
 builder.Services.AddScoped<IOrderService, OrderService>();
-builder.Services.AddScoped<IContactService>(serviceProvider =>
-    new ContactService(
-        serviceProvider.GetRequiredService<ApplicationDbContext>(),
-        serviceProvider.GetRequiredService<IJsonDocumentSerializer>()));
+builder.Services.AddScoped<IContactService, ContactService>();
 builder.Services.AddScoped<IReviewService, ReviewService>();
-builder.Services.AddScoped<ITestimonialService>(serviceProvider =>
-    new TestimonialService(
-        serviceProvider.GetRequiredService<ApplicationDbContext>(),
-        serviceProvider.GetRequiredService<IJsonDocumentSerializer>()));
+builder.Services.AddScoped<ITestimonialService, TestimonialService>();
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 builder.Services.AddScoped<ISettingsService, SettingsService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
@@ -174,9 +159,6 @@ builder.Services.AddScoped<IRealtimeNotifier, SignalRRealtimeNotifier>();
 // Add RBAC Services
 builder.Services.AddScoped<IRbacService, RbacService>();
 builder.Services.AddScoped<IMigrationService, MigrationService>();
-builder.Services.AddSingleton<IJsonDocumentSerializer, VersionedJsonSerializer>();
-builder.Services.AddScoped<IAuditLogWriter, AuditLogWriter>();
-builder.Services.AddScoped<IDatabaseConsolidationService, DatabaseConsolidationService>();
 
 // Named HttpClient for AddressKit API (used by MigrationService for data conversion)
 builder.Services.AddHttpClient("AddressKit", client =>
@@ -272,36 +254,6 @@ if (args.Contains("--normalize-product-images", StringComparer.OrdinalIgnoreCase
         result.Skipped,
         result.Failed,
         result.BackupPath ?? "not-created");
-    return;
-}
-
-if (args.Contains("--database-consolidation-backfill", StringComparer.OrdinalIgnoreCase))
-{
-    var apply = args.Contains("--apply", StringComparer.OrdinalIgnoreCase);
-    using var consolidationScope = app.Services.CreateScope();
-    var consolidationService = consolidationScope.ServiceProvider.GetRequiredService<IDatabaseConsolidationService>();
-    var report = await consolidationService.BackfillAsync(apply, CancellationToken.None);
-    Console.WriteLine(
-        $"Database consolidation backfill ({(apply ? "apply" : "dry-run")}): " +
-        $"planned {report.Planned}, processed {report.Processed}, skipped {report.Skipped}, failed {report.Failed}.");
-    foreach (var error in report.Errors)
-        Console.WriteLine($"ERROR {error.AggregateType} {error.SourceId}: {error.Message}");
-    Environment.ExitCode = DatabaseConsolidationCli.ExitCode(report.Success);
-    return;
-}
-
-if (args.Contains("--database-consolidation-verify", StringComparer.OrdinalIgnoreCase))
-{
-    using var consolidationScope = app.Services.CreateScope();
-    var consolidationService = consolidationScope.ServiceProvider.GetRequiredService<IDatabaseConsolidationService>();
-    var report = await consolidationService.VerifyAsync(CancellationToken.None);
-    Console.WriteLine(
-        $"Database consolidation verification: " +
-        $"source groups {report.SourceCounts.Count}, target groups {report.TargetCounts.Count}, " +
-        $"ISJSON {(report.IsJsonValid ? "valid" : "invalid")}, errors {report.Errors.Count}.");
-    foreach (var error in report.Errors)
-        Console.WriteLine($"ERROR {error.AggregateType} {error.SourceId}: {error.Message}");
-    Environment.ExitCode = DatabaseConsolidationCli.ExitCode(report.Success);
     return;
 }
 

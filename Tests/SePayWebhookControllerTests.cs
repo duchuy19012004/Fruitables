@@ -72,7 +72,7 @@ public class SePayWebhookControllerTests
         Assert.IsType<OkObjectResult>(result);
         var order = await context.Orders.SingleAsync(o => o.Id == 1);
         Assert.Equal(PaymentStatus.Paid, order.PaymentStatus);
-        Assert.True(await context.Payments.AnyAsync(t => t.Provider == "SePay" && t.ProviderTransactionId == "92704" && t.Status == PaymentStatus.Paid));
+        Assert.True(await context.SePayTransactions.AnyAsync(t => t.SePayTransactionId == 92704 && t.Status == SePayTransactionStatus.Paid));
     }
 
     [Fact]
@@ -89,16 +89,14 @@ public class SePayWebhookControllerTests
             PaymentCode = "FTB7K3P9Q2",
             Total = 45000
         });
-        context.Payments.Add(new Payment
+        context.SePayTransactions.Add(new SePayTransaction
         {
-            Provider = "SePay",
-            ProviderTransactionId = "92704",
+            SePayTransactionId = 92704,
             OrderId = 1,
             PaymentCode = "FTB7K3P9Q2",
-            Amount = 45000,
-            Status = PaymentStatus.Paid,
-            ProviderEventStatus = PaymentProviderEventStatus.Accepted,
-            Message = "{}"
+            TransferAmount = 45000,
+            Status = SePayTransactionStatus.Paid,
+            Payload = "{}"
         });
         await context.SaveChangesAsync();
 
@@ -109,7 +107,7 @@ public class SePayWebhookControllerTests
         var result = await CreateController(context, body).Receive();
 
         Assert.IsType<OkObjectResult>(result);
-        Assert.Equal(1, await context.Payments.CountAsync(t => t.ProviderTransactionId == "92704"));
+        Assert.Equal(1, await context.SePayTransactions.CountAsync(t => t.SePayTransactionId == 92704));
     }
 
     [Fact]
@@ -137,7 +135,7 @@ public class SePayWebhookControllerTests
         Assert.IsType<OkObjectResult>(result);
         var order = await context.Orders.SingleAsync(o => o.Id == 1);
         Assert.Equal(PaymentStatus.Pending, order.PaymentStatus);
-        Assert.True(await context.Payments.AnyAsync(t => t.ProviderTransactionId == "92705" && t.ProviderEventStatus == PaymentProviderEventStatus.Ignored));
+        Assert.True(await context.SePayTransactions.AnyAsync(t => t.SePayTransactionId == 92705 && t.Status == SePayTransactionStatus.Ignored));
     }
 
     [Fact]
@@ -207,6 +205,6 @@ public class SePayWebhookControllerTests
         Assert.IsType<OkObjectResult>(result);
         var order = await context.Orders.SingleAsync(o => o.Id == 1);
         Assert.Equal(PaymentStatus.Pending, order.PaymentStatus);
-        Assert.True(await context.Payments.AnyAsync(t => t.ProviderTransactionId == "92706" && t.ProviderEventStatus == PaymentProviderEventStatus.Ignored));
+        Assert.True(await context.SePayTransactions.AnyAsync(t => t.SePayTransactionId == 92706 && t.Status == SePayTransactionStatus.Ignored));
     }
 }

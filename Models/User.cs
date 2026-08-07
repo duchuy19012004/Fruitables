@@ -31,8 +31,6 @@ public class User
 
     public UserRole Role { get; set; } = UserRole.Customer;
 
-    public string RoleIdsJson { get; set; } = "[]";
-
     public bool IsActive { get; set; } = true;
 
     public DateTime? LastLoginAt { get; set; }
@@ -42,9 +40,6 @@ public class User
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
-
-    [ConcurrencyCheck]
-    public byte[]? RowVersion { get; set; }
 
     // Password Reset fields
     [MaxLength(255)]
@@ -90,7 +85,6 @@ public class User
     public virtual ICollection<Order> Orders { get; set; } = new List<Order>();
     public virtual ICollection<Review> Reviews { get; set; } = new List<Review>();
     public virtual ICollection<Wishlist> Wishlists { get; set; } = new List<Wishlist>();
-    public string WishlistJson { get; set; } = "[]";
     public virtual Cart? Cart { get; set; }
     
     /// <summary>
@@ -103,7 +97,6 @@ public class User
     /// </summary>
     public virtual ICollection<UserAccountLog> AccountLogs { get; set; } = new List<UserAccountLog>();
     public virtual ICollection<ReturnRequest> ReturnRequests { get; set; } = new List<ReturnRequest>();
-    public virtual ICollection<ReturnCase> ReturnCases { get; set; } = new List<ReturnCase>();
     
     /// <summary>
     /// Vai trò RBAC của người dùng

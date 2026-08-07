@@ -13,14 +13,9 @@ namespace Fruitables.Models
         public string? Description { get; set; }
         
         public bool IsActive { get; set; } = true;
-
-        public string PermissionsJson { get; set; } = "[]";
         
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
-
-        [ConcurrencyCheck]
-        public byte[]? RowVersion { get; set; }
         
         // Navigation properties
         public virtual ICollection<UserRoleMapping> UserRoleMappings { get; set; } = new List<UserRoleMapping>();

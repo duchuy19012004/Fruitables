@@ -1,38 +1,46 @@
 using Fruitables.Data;
 using Fruitables.Models;
-using Fruitables.Models.Json;
 using Fruitables.Repositories;
-using Fruitables.Services.Identity.Rbac;
-using Fruitables.Services.Infrastructure.Json;
+using Fruitables.Services.Communications;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
+using Fruitables.Services.Identity.Rbac;
 
 namespace Fruitables.Tests;
 
 /// <summary>
 /// Shared seed/factory helpers for RBAC test classes.
-/// User IDs must be >= 1000 to avoid UNIQUE conflicts with HasData seeds.
+/// 
+/// IMPORTANT: ApplicationDbContext seeds User Id=1 (Admin) and Id=2 (SuperAdmin) via HasData().
+/// All test user IDs must be >= 1000 to avoid UNIQUE constraint failures on SQLite.
 /// </summary>
 public static class RbacTestHelper
 {
-    private static readonly VersionedJsonSerializer Serializer = new();
+    // ── Service factory ──────────────────────────────────────────────────────
 
+    /// <summary>Creates a <see cref="RbacService"/> with a real <see cref="MemoryCache"/>.</summary>
     public static RbacService CreateService(ApplicationDbContext context, IMemoryCache? cache = null)
     {
         cache ??= new MemoryCache(new MemoryCacheOptions());
         return new RbacService(
             new UnitOfWork(context),
             cache,
-            NullLogger<RbacService>.Instance,
-            Serializer);
+            NullLogger<RbacService>.Instance);
     }
 
+    // ── Context factories ────────────────────────────────────────────────────
+
+    /// <summary>SQLite in-memory context (FK + transaction support).</summary>
     public static ApplicationDbContext CreateSqliteContext()
     {
         var options = TestDbContextFactory.CreateSqliteOptions();
         return new ApplicationDbContext(options);
     }
 
+    // ── Seed helpers ─────────────────────────────────────────────────────────
+    // NOTE: Use IDs >= 1000 to avoid conflicts with seeded users (Id=1, Id=2).
+
+    /// <summary>Seeds an admin-role user. Default id=1001.</summary>
     public static User SeedAdminUser(ApplicationDbContext ctx, int id = 1001)
     {
         var user = new User
@@ -42,7 +50,6 @@ public static class RbacTestHelper
             Email = $"admin{id}@test.com",
             Password = "hashed",
             Role = UserRole.Admin,
-            RoleIdsJson = Serializer.Serialize(new UserRolesDocument { UserId = id, Roles = [] }),
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -51,6 +58,7 @@ public static class RbacTestHelper
         return user;
     }
 
+    /// <summary>Seeds a customer-role user. Default id=1100.</summary>
     public static User SeedCustomerUser(ApplicationDbContext ctx, int id = 1100)
     {
         var user = new User
@@ -60,7 +68,6 @@ public static class RbacTestHelper
             Email = $"customer{id}@test.com",
             Password = "hashed",
             Role = UserRole.Customer,
-            RoleIdsJson = Serializer.Serialize(new UserRolesDocument { UserId = id, Roles = [] }),
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -77,7 +84,6 @@ public static class RbacTestHelper
             Name = name,
             Description = description,
             IsActive = true,
-            PermissionsJson = Serializer.Serialize(new RolePermissionsDocument { RoleId = id, Permissions = [] }),
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -92,7 +98,6 @@ public static class RbacTestHelper
             Id = id,
             Name = name,
             IsActive = false,
-            PermissionsJson = Serializer.Serialize(new RolePermissionsDocument { RoleId = id, Permissions = [] }),
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -116,36 +121,6 @@ public static class RbacTestHelper
     public static UserRoleMapping SeedUserRoleMapping(
         ApplicationDbContext ctx, int id, int userId, int roleId, int assignedByAdminId = 1)
     {
-        var role = ctx.Roles.Local.FirstOrDefault(item => item.Id == roleId)
-            ?? ctx.Roles.FirstOrDefault(item => item.Id == roleId);
-        var user = ctx.Users.Local.FirstOrDefault(item => item.Id == userId)
-            ?? ctx.Users.FirstOrDefault(item => item.Id == userId);
-
-        if (user != null)
-        {
-            var document = string.IsNullOrWhiteSpace(user.RoleIdsJson) || user.RoleIdsJson.Trim() == "[]"
-                ? new UserRolesDocument { UserId = userId }
-                : Serializer.Deserialize<UserRolesDocument>(user.RoleIdsJson);
-            if (document.Roles.All(item => item.RoleId != roleId))
-            {
-                user.RoleIdsJson = Serializer.Serialize(new UserRolesDocument
-                {
-                    UserId = userId,
-                    Roles =
-                    [
-                        ..document.Roles,
-                        new UserRoleEntry
-                        {
-                            RoleId = roleId,
-                            RoleName = role?.Name ?? $"role-{roleId}",
-                            AssignedAt = DateTime.UtcNow,
-                            AssignedByAdminId = assignedByAdminId
-                        }
-                    ]
-                });
-            }
-        }
-
         var mapping = new UserRoleMapping
         {
             Id = id,
@@ -161,36 +136,6 @@ public static class RbacTestHelper
     public static RolePermission SeedRolePermission(
         ApplicationDbContext ctx, int id, int roleId, int permissionId, int assignedByAdminId = 1)
     {
-        var role = ctx.Roles.Local.FirstOrDefault(item => item.Id == roleId)
-            ?? ctx.Roles.FirstOrDefault(item => item.Id == roleId);
-        var permission = ctx.Permissions.Local.FirstOrDefault(item => item.Id == permissionId)
-            ?? ctx.Permissions.FirstOrDefault(item => item.Id == permissionId);
-
-        if (role != null)
-        {
-            var document = string.IsNullOrWhiteSpace(role.PermissionsJson) || role.PermissionsJson.Trim() == "[]"
-                ? new RolePermissionsDocument { RoleId = roleId }
-                : Serializer.Deserialize<RolePermissionsDocument>(role.PermissionsJson);
-            if (document.Permissions.All(item => item.PermissionId != permissionId))
-            {
-                role.PermissionsJson = Serializer.Serialize(new RolePermissionsDocument
-                {
-                    RoleId = roleId,
-                    Permissions =
-                    [
-                        ..document.Permissions,
-                        new RolePermissionEntry
-                        {
-                            PermissionId = permissionId,
-                            PermissionName = permission?.Name ?? $"permission-{permissionId}",
-                            AssignedAt = DateTime.UtcNow,
-                            AssignedByAdminId = assignedByAdminId
-                        }
-                    ]
-                });
-            }
-        }
-
         var rp = new RolePermission
         {
             Id = id,

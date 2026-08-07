@@ -98,8 +98,7 @@ public class FaqServiceTests
 
         await sut.SetActiveAsync(faq.Id, isActive: false);
 
-        var dbFaq = await db.ContentEntries.AsNoTracking()
-            .SingleAsync(entry => entry.Id == faq.Id && entry.EntryType == "faq");
+        var dbFaq = await db.Faqs.AsNoTracking().SingleAsync(f => f.Id == faq.Id);
         Assert.False(dbFaq.IsActive);
 
         var chunks = await db.KnowledgeChunks

@@ -1,122 +1,95 @@
-using Fruitables.Data;
+using Microsoft.EntityFrameworkCore;
 using Fruitables.Models;
 using Fruitables.Repositories.Interfaces;
-using Fruitables.Services.Infrastructure.Content;
-using Fruitables.Services.Infrastructure.Json;
-using Microsoft.EntityFrameworkCore;
+using Fruitables.Services.Communications;
 
 namespace Fruitables.Services.Reviews;
 
 public class TestimonialService : ITestimonialService
 {
-    private readonly ApplicationDbContext _db;
-    private readonly IJsonDocumentSerializer _serializer;
-
-    [Microsoft.Extensions.DependencyInjection.ActivatorUtilitiesConstructor]
-    public TestimonialService(ApplicationDbContext db, IJsonDocumentSerializer? serializer = null)
-    {
-        _db = db;
-        _serializer = serializer ?? new VersionedJsonSerializer();
-    }
+    private readonly IUnitOfWork _unitOfWork;
 
     public TestimonialService(IUnitOfWork unitOfWork)
-        : this(((Repositories.UnitOfWork)unitOfWork).Context)
     {
+        _unitOfWork = unitOfWork;
     }
 
     public async Task<List<Testimonial>> GetActiveTestimonialsAsync()
     {
-        var entries = await _db.ContentEntries.AsNoTracking()
-            .Where(entry => entry.EntryType == ContentEntryMapper.TestimonialType && entry.IsActive)
-            .OrderByDescending(entry => entry.CreatedAt)
+        return await _unitOfWork.Testimonials.Query()
+            .Where(t => t.IsActive)
+            .OrderByDescending(t => t.CreatedAt)
             .ToListAsync();
-        return entries.Select(entry => ContentEntryMapper.ToTestimonial(entry, _serializer)).ToList();
     }
 
     public async Task<Testimonial> AddTestimonialAsync(Testimonial testimonial)
     {
-        var entry = ContentEntryMapper.FromTestimonial(testimonial, _serializer);
-        _db.ContentEntries.Add(entry);
-        await _db.SaveChangesAsync();
-        entry.Key = ContentEntryMapper.Key("testimonial", entry.Id);
-        await _db.SaveChangesAsync();
-        return ContentEntryMapper.ToTestimonial(entry, _serializer);
+        await _unitOfWork.Testimonials.AddAsync(testimonial);
+        await _unitOfWork.SaveChangesAsync();
+        return testimonial;
     }
 
     public async Task<List<Testimonial>> GetAllAsync()
     {
-        var entries = await _db.ContentEntries.AsNoTracking()
-            .Where(entry => entry.EntryType == ContentEntryMapper.TestimonialType)
-            .OrderByDescending(entry => entry.CreatedAt)
+        return await _unitOfWork.Testimonials.Query()
+            .OrderByDescending(t => t.CreatedAt)
             .ToListAsync();
-        return entries.Select(entry => ContentEntryMapper.ToTestimonial(entry, _serializer)).ToList();
     }
 
+    // Tạo đề xuất testimonial từ review tích cực (IsActive=false, chờ admin duyệt).
     public async Task<Testimonial?> SuggestFromReviewAsync(int reviewId)
     {
-        var review = await _db.Reviews
-            .Include(item => item.User)
-            .FirstOrDefaultAsync(item => item.Id == reviewId && !item.IsDeleted && !item.IsHidden);
+        var review = await _unitOfWork.Reviews.Query()
+            .Include(r => r.User)
+            .FirstOrDefaultAsync(r => r.Id == reviewId && !r.IsDeleted && !r.IsHidden);
 
+        // Chỉ đề xuất review rõ ràng tích cực: 4-5 sao + có comment + có nhãn tích cực
         if (review is null || review.Rating < 4 || string.IsNullOrWhiteSpace(review.Comment))
             return null;
 
-        if (_db.Database.IsSqlServer())
-        {
-            var sentiment = ReviewAggregateJson.Read(review, _serializer).Sentiment;
-            if (sentiment is null
-                || sentiment.Sentiment != SentimentLabel.Positive
-                || sentiment.RatingSentiment != SentimentLabel.Positive
-                || sentiment.CommentSentiment != SentimentLabel.Positive
-                || sentiment.HasRatingCommentConflict
-                || sentiment.NeedsManualReview)
-                return null;
-        }
-        else
-        {
-            var sentiment = await _db.ReviewSentiments.FirstOrDefaultAsync(item => item.ReviewId == reviewId);
-            if (sentiment is null
-                || sentiment.Sentiment != SentimentLabel.Positive
-                || sentiment.RatingSentiment != SentimentLabel.Positive
-                || sentiment.CommentSentiment != SentimentLabel.Positive
-                || sentiment.HasRatingCommentConflict
-                || sentiment.NeedsManualReview)
-                return null;
-        }
+        var sentiment = await _unitOfWork.ReviewSentiments.Query()
+            .FirstOrDefaultAsync(s => s.ReviewId == reviewId);
+        if (sentiment is null
+            || sentiment.Sentiment != SentimentLabel.Positive
+            || sentiment.RatingSentiment != SentimentLabel.Positive
+            || sentiment.CommentSentiment != SentimentLabel.Positive
+            || sentiment.HasRatingCommentConflict
+            || sentiment.NeedsManualReview)
+            return null;
 
-        return await AddTestimonialAsync(new Testimonial
+        var testimonial = new Testimonial
         {
             UserId = review.UserId,
             Name = review.User?.Name ?? "Khách hàng",
             Content = review.Comment,
             Rating = review.Rating,
-            IsActive = false,
+            IsActive = false, // chờ admin duyệt
             CreatedAt = DateTime.UtcNow
-        });
+        };
+
+        await _unitOfWork.Testimonials.AddAsync(testimonial);
+        await _unitOfWork.SaveChangesAsync();
+        return testimonial;
     }
 
     public async Task<bool> SetActiveAsync(int id, bool active)
     {
-        var entry = await _db.ContentEntries.FirstOrDefaultAsync(item =>
-            item.Id == id && item.EntryType == ContentEntryMapper.TestimonialType);
-        if (entry is null)
-            return false;
+        var testimonial = await _unitOfWork.Testimonials.GetByIdAsync(id);
+        if (testimonial is null) return false;
 
-        var model = ContentEntryMapper.ToTestimonial(entry, _serializer);
-        model.IsActive = active;
-        ContentEntryMapper.FromTestimonial(model, _serializer, entry);
-        await _db.SaveChangesAsync();
+        testimonial.IsActive = active;
+        _unitOfWork.Testimonials.Update(testimonial);
+        await _unitOfWork.SaveChangesAsync();
         return true;
     }
 
     public async Task<bool> DeleteAsync(int id)
     {
-        var entry = await _db.ContentEntries.FirstOrDefaultAsync(item =>
-            item.Id == id && item.EntryType == ContentEntryMapper.TestimonialType);
-        if (entry is null)
-            return false;
-        _db.ContentEntries.Remove(entry);
-        await _db.SaveChangesAsync();
+        var testimonial = await _unitOfWork.Testimonials.GetByIdAsync(id);
+        if (testimonial is null) return false;
+
+        _unitOfWork.Testimonials.Remove(testimonial);
+        await _unitOfWork.SaveChangesAsync();
         return true;
     }
 }

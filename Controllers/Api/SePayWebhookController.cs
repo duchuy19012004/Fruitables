@@ -4,10 +4,10 @@ using System.Text.Json;
 using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Services.Communications;
-using Fruitables.Services.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Fruitables.Services.Infrastructure;
 
 namespace Fruitables.Controllers.Api;
 
@@ -48,9 +48,7 @@ public class SePayWebhookController : ControllerBase
         if (payload == null)
             return BadRequest(new { success = false, message = "Invalid payload" });
 
-        var providerTransactionId = payload.Id.ToString();
-        if (await _context.Payments.AnyAsync(payment =>
-                payment.Provider == "SePay" && payment.ProviderTransactionId == providerTransactionId))
+        if (await _context.SePayTransactions.AnyAsync(t => t.SePayTransactionId == payload.Id))
             return Ok(new { success = true });
 
         var code = payload.Code?.Trim().ToUpperInvariant();
@@ -58,34 +56,22 @@ public class SePayWebhookController : ControllerBase
             ? await _context.Orders.FirstOrDefaultAsync(o => o.PaymentCode == code)
             : null;
 
-        var payment = new Payment
+        var transaction = new SePayTransaction
         {
-            OrderId = order?.Id ?? 0,
-            Provider = "SePay",
-            ProviderTransactionId = providerTransactionId,
-            Amount = payload.TransferAmount,
+            SePayTransactionId = payload.Id,
+            OrderId = order?.Id,
             PaymentCode = code,
+            TransferAmount = payload.TransferAmount,
             ReferenceCode = payload.ReferenceCode,
-            Message = rawBody,
-            CreatedAtUtc = DateTime.UtcNow,
-            UpdatedAtUtc = DateTime.UtcNow,
-            RowVersion = Guid.NewGuid().ToByteArray()
+            Payload = rawBody,
+            CreatedAt = DateTime.UtcNow
         };
 
         if (!IsPayable(payload, code, order, out var message))
         {
-            if (order == null)
-            {
-                // Keep ignored events without inventing an order FK.
-                _logger.LogWarning("Ignored SePay transaction {TransactionId}: {Message}", payload.Id, message);
-                return Ok(new { success = true });
-            }
-
-            payment.OrderId = order.Id;
-            payment.Status = PaymentStatus.Pending;
-            payment.ProviderEventStatus = PaymentProviderEventStatus.Ignored;
-            payment.Message = message;
-            _context.Payments.Add(payment);
+            transaction.Status = SePayTransactionStatus.Ignored;
+            transaction.Message = message;
+            _context.SePayTransactions.Add(transaction);
             if (!await TrySaveChangesAsync(payload))
                 return Ok(new { success = true });
             _logger.LogWarning("Ignored SePay transaction {TransactionId}: {Message}", payload.Id, message);
@@ -93,12 +79,9 @@ public class SePayWebhookController : ControllerBase
         }
 
         order!.PaymentStatus = PaymentStatus.Paid;
-        payment.OrderId = order.Id;
-        payment.Status = PaymentStatus.Paid;
-        payment.ProviderEventStatus = PaymentProviderEventStatus.Accepted;
-        payment.PaidAtUtc = DateTime.UtcNow;
-        payment.Message = "Matched";
-        _context.Payments.Add(payment);
+        transaction.Status = SePayTransactionStatus.Paid;
+        transaction.Message = "Matched";
+        _context.SePayTransactions.Add(transaction);
         if (!await TrySaveChangesAsync(payload))
             return Ok(new { success = true });
 
@@ -112,19 +95,19 @@ public class SePayWebhookController : ControllerBase
             await _context.SaveChangesAsync();
             return true;
         }
-        catch (DbUpdateException ex) when (IsDuplicatePayment(ex))
+        catch (DbUpdateException ex) when (IsDuplicateSePayTransactionId(ex))
         {
             _logger.LogInformation("Duplicate SePay transaction {TransactionId} received concurrently; returning success.", payload.Id);
             return false;
         }
     }
 
-    private static bool IsDuplicatePayment(DbUpdateException ex)
+    private static bool IsDuplicateSePayTransactionId(DbUpdateException ex)
     {
         const int uniqueIndexViolation = 2601;
         const int uniqueConstraintViolation = 2627;
 
-        if (ex.InnerException is null || !ex.Entries.Any(e => e.Entity is Payment))
+        if (ex.InnerException is null || !ex.Entries.Any(e => e.Entity is SePayTransaction))
             return false;
 
         var innerType = ex.InnerException.GetType();
@@ -138,9 +121,7 @@ public class SePayWebhookController : ControllerBase
             }
         }
 
-        // SQLite / InMemory uniqueness surfaces as DbUpdateException without SQL numbers.
-        return ex.InnerException.Message.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase)
-            || ex.InnerException.Message.Contains("unique", StringComparison.OrdinalIgnoreCase);
+        return false;
     }
 
     private bool IsValidSignature(string rawBody)
@@ -179,7 +160,7 @@ public class SePayWebhookController : ControllerBase
             message = "Missing or invalid payment code";
             return false;
         }
-
+        
         if (order == null)
         {
             message = "Order not found";

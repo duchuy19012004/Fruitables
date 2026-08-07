@@ -249,8 +249,6 @@ public class RbacPermissionCheckTests
 
         // Directly remove permission from DB without invalidating cache
         ctx.RolePermissions.RemoveRange(ctx.RolePermissions);
-        foreach (var role in ctx.Roles)
-            role.PermissionsJson = "[]";
         await ctx.SaveChangesAsync();
 
         // Second call — should still return cached value
@@ -278,8 +276,6 @@ public class RbacPermissionCheckTests
 
         // Modify DB
         ctx.RolePermissions.RemoveRange(ctx.RolePermissions);
-        foreach (var role in ctx.Roles)
-            role.PermissionsJson = "[]";
         await ctx.SaveChangesAsync();
 
         // Invalidate, then re-read

@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Http;
 using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Services.Communications;
-using Fruitables.Services.Infrastructure.Json;
 using Fruitables.ViewModels;
 
 namespace Fruitables.Services.Orders.OrderManagement;
@@ -18,20 +17,17 @@ public class OrderAdminService : IOrderAdminService
     private readonly ApplicationDbContext _context;
     private readonly IOrderLogService _logService;
     private readonly IRealtimeNotifier _notifier;
-    private readonly IJsonDocumentSerializer _serializer;
     private readonly TimeProvider _timeProvider;
 
     public OrderAdminService(
         ApplicationDbContext context,
         IOrderLogService logService,
         IRealtimeNotifier notifier,
-        IJsonDocumentSerializer? serializer = null,
         TimeProvider? timeProvider = null)
     {
         _context = context;
         _logService = logService;
         _notifier = notifier;
-        _serializer = serializer ?? new VersionedJsonSerializer();
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
@@ -115,7 +111,7 @@ public class OrderAdminService : IOrderAdminService
 
     public async Task<Order?> GetOrderWithHistoryAsync(int id)
     {
-        var order = await _context.Orders
+        return await _context.Orders
             .Include(o => o.Items)
                 .ThenInclude(i => i.Product)
                     .ThenInclude(p => p.Images)
@@ -123,17 +119,9 @@ public class OrderAdminService : IOrderAdminService
             .Include(o => o.Address)
             .Include(o => o.ReturnRequest)
                 .ThenInclude(request => request!.Refund)
+            .Include(o => o.StatusHistory)
+                .ThenInclude(h => h.Admin)
             .FirstOrDefaultAsync(o => o.Id == id);
-        if (order == null)
-            return null;
-
-        var history = OrderAggregateJson.ReadHistory(order.StatusHistoryJson, _serializer);
-        var adminIds = history.Entries.Select(entry => entry.AdminId).Distinct().ToList();
-        var admins = adminIds.Count == 0
-            ? new Dictionary<int, User>()
-            : await _context.Users.Where(user => adminIds.Contains(user.Id)).ToDictionaryAsync(user => user.Id);
-        order.StatusHistory = OrderAggregateJson.ToHistoryEntities(order.Id, history, admins);
-        return order;
     }
 
     public async Task<OrderResult> UpdateOrderStatusAsync(UpdateOrderStatusRequest request)
@@ -179,10 +167,15 @@ public class OrderAdminService : IOrderAdminService
             {
                 order.DeliveredAtUtc = _timeProvider.GetUtcNow().UtcDateTime;
             }
-            var history = OrderAggregateJson.ReadHistory(order.StatusHistoryJson, _serializer);
-            order.StatusHistoryJson = OrderAggregateJson.SerializeHistory(
-                OrderAggregateJson.AppendHistory(history, oldStatus, request.NewStatus, request.AdminId, request.Notes, DateTime.UtcNow),
-                _serializer);
+            _context.OrderStatusHistories.Add(new OrderStatusHistory
+            {
+                OrderId = order.Id,
+                OldStatus = oldStatus,
+                NewStatus = request.NewStatus,
+                AdminId = request.AdminId,
+                Notes = request.Notes,
+                CreatedAt = DateTime.UtcNow
+            });
 
             await _context.SaveChangesAsync();
 
@@ -593,65 +586,37 @@ public class OrderAdminService : IOrderAdminService
 
     public async Task<List<OrderNote>> GetOrderNotesAsync(int orderId)
     {
-        var order = await _context.Orders.AsNoTracking().FirstOrDefaultAsync(item => item.Id == orderId);
-        if (order == null)
-            return [];
-
-        return OrderAggregateJson.ToNoteEntities(orderId, OrderAggregateJson.ReadNotes(order.NotesJson, _serializer))
-            .OrderByDescending(note => note.CreatedAt)
-            .ToList();
+        return await _context.OrderNotes
+            .Where(n => n.OrderId == orderId)
+            .OrderByDescending(n => n.CreatedAt)
+            .ToListAsync();
     }
 
     public async Task<OrderNote> AddOrderNoteAsync(int orderId, string content, int adminId, string adminName)
     {
-        var order = await _context.Orders.FirstOrDefaultAsync(item => item.Id == orderId)
-            ?? throw new InvalidOperationException("Order not found");
-        var createdAt = DateTime.UtcNow;
-        var (document, added) = OrderAggregateJson.AppendNote(
-            OrderAggregateJson.ReadNotes(order.NotesJson, _serializer),
-            adminId,
-            adminName,
-            content,
-            createdAt);
-        order.NotesJson = OrderAggregateJson.SerializeNotes(document, _serializer);
-        await _context.SaveChangesAsync();
-
-        await _notifier.NotifyOrderNoteAddedAsync(orderId, content);
-
-        return new OrderNote
+        var note = new OrderNote
         {
-            Id = added.Id,
             OrderId = orderId,
             AdminId = adminId,
             AdminName = adminName,
             Content = content,
-            CreatedAt = createdAt
+            CreatedAt = DateTime.UtcNow
         };
+        _context.OrderNotes.Add(note);
+        await _context.SaveChangesAsync();
+
+        await _notifier.NotifyOrderNoteAddedAsync(orderId, content);
+
+        return note;
     }
 
     public async Task<bool> DeleteOrderNoteAsync(int noteId, int adminId)
     {
-        // ponytail: scan orders for note id; index note->order if volume grows
-        var orders = await _context.Orders.Where(order => order.NotesJson != "[]").ToListAsync();
-        foreach (var order in orders)
-        {
-            var document = OrderAggregateJson.ReadNotes(order.NotesJson, _serializer);
-            var note = document.Notes.FirstOrDefault(item => item.Id == noteId);
-            if (note is null)
-                continue;
-            if (note.AdminId != adminId)
-                return false;
-
-            order.NotesJson = OrderAggregateJson.SerializeNotes(
-                new Models.Json.OrderNotesDocument
-                {
-                    Notes = document.Notes.Where(item => item.Id != noteId).ToList()
-                },
-                _serializer);
-            await _context.SaveChangesAsync();
-            return true;
-        }
-
-        return false;
+        var note = await _context.OrderNotes.FindAsync(noteId);
+        if (note == null || note.AdminId != adminId)
+            return false;
+        _context.OrderNotes.Remove(note);
+        await _context.SaveChangesAsync();
+        return true;
     }
 }

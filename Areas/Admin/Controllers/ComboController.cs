@@ -1,16 +1,12 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Fruitables.Data;
-using Fruitables.Models.Json;
 using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using Fruitables.Services.Catalog.Combos;
 using Fruitables.Services.Catalog.Products;
-using Fruitables.Services.Infrastructure.Json;
-using Fruitables.Services.Reviews;
 
 namespace Fruitables.Areas.Admin.Controllers;
 
@@ -22,23 +18,13 @@ public class ComboController : Controller
     private readonly IImageUploadService _imageUploadService;
     private readonly Fruitables.Repositories.Interfaces.IUnitOfWork _unitOfWork;
     private readonly ILogger<ComboController> _logger;
-    private readonly ApplicationDbContext? _dbContext;
-    private readonly IJsonDocumentSerializer _serializer;
 
-    public ComboController(
-        IComboService comboService,
-        IImageUploadService imageUploadService,
-        Fruitables.Repositories.Interfaces.IUnitOfWork unitOfWork,
-        ILogger<ComboController> logger,
-        ApplicationDbContext? dbContext = null,
-        IJsonDocumentSerializer? serializer = null)
+    public ComboController(IComboService comboService, IImageUploadService imageUploadService, Fruitables.Repositories.Interfaces.IUnitOfWork unitOfWork, ILogger<ComboController> logger)
     {
         _comboService = comboService;
         _imageUploadService = imageUploadService;
         _unitOfWork = unitOfWork;
         _logger = logger;
-        _dbContext = dbContext;
-        _serializer = serializer ?? new VersionedJsonSerializer();
     }
 
     public async Task<IActionResult> Index()
@@ -54,63 +40,41 @@ public class ComboController : Controller
         var warnings = new Dictionary<int, List<string>>();
         try
         {
-            if (_dbContext == null)
-                return warnings;
-
-            var combos = await _dbContext.Promotions.AsNoTracking()
-                .Where(promotion => promotion.Type == "combo")
+            var combos = await _unitOfWork.Combos.Query()
+                .Include(c => c.Items)
+                .Where(c => !c.IsActive || c.Items.Any())
                 .ToListAsync();
-            var payloads = combos
-                .Select(promotion => (Promotion: promotion, Payload: _serializer.Deserialize<ComboPayload>(promotion.PayloadJson)))
-                .Where(item => !item.Payload.IsActive || item.Payload.Items.Count > 0)
-                .ToList();
 
-            var productIds = payloads.SelectMany(c => c.Payload.Items.Select(i => i.ProductId)).Distinct().ToList();
+            var productIds = combos.SelectMany(c => c.Items.Select(i => i.ProductId)).Distinct().ToList();
             if (productIds.Count == 0) return warnings;
-            var products = await _unitOfWork.Products.Query()
-                .Where(product => productIds.Contains(product.Id))
-                .ToDictionaryAsync(product => product.Id);
 
-            var sentiments = _dbContext.Database.IsSqlServer()
-                ? (await _dbContext.Reviews.AsNoTracking()
-                    .Where(review => productIds.Contains(review.ProductId) && !review.IsDeleted)
-                    .ToListAsync())
-                    .Select(review => new { Review = review, Sentiment = ReviewAggregateJson.Read(review, _serializer).Sentiment })
-                    .Where(item => item.Sentiment is not null)
-                    .GroupBy(item => item.Review.ProductId)
-                    .Select(group => new
-                    {
-                        ProductId = group.Key,
-                        Negative = group.Count(item => item.Sentiment!.Sentiment == Fruitables.Models.SentimentLabel.Negative),
-                        Total = group.Count()
-                    }).ToList()
-                : await (
-                    from r in _unitOfWork.Reviews.Query()
-                    join s in _unitOfWork.ReviewSentiments.Query() on r.Id equals s.ReviewId
-                    where productIds.Contains(r.ProductId) && !r.IsDeleted
-                    group s by r.ProductId into g
-                    select new
-                    {
-                        ProductId = g.Key,
-                        Negative = g.Count(x => x.Sentiment == Fruitables.Models.SentimentLabel.Negative),
-                        Total = g.Count()
-                    }).ToListAsync();
+            var sentiments = await (
+                from r in _unitOfWork.Reviews.Query()
+                join s in _unitOfWork.ReviewSentiments.Query() on r.Id equals s.ReviewId
+                where productIds.Contains(r.ProductId) && !r.IsDeleted
+                group s by r.ProductId into g
+                select new
+                {
+                    ProductId = g.Key,
+                    Negative = g.Count(x => x.Sentiment == Fruitables.Models.SentimentLabel.Negative),
+                    Total = g.Count()
+                }).ToListAsync();
 
-            foreach (var combo in payloads)
+            foreach (var combo in combos)
             {
                 var comboWarnings = new List<string>();
-                foreach (var item in combo.Payload.Items)
+                foreach (var item in combo.Items)
                 {
                     var stat = sentiments.FirstOrDefault(s => s.ProductId == item.ProductId);
                     if (stat is null) continue;
                     var rate = stat.Total == 0 ? 0 : (float)Math.Round(stat.Negative * 100f / stat.Total, 1);
                     if (stat.Negative >= 2 || rate >= 40)
                     {
-                        comboWarnings.Add($"{products.GetValueOrDefault(item.ProductId)?.Name ?? $"Sản phẩm #{item.ProductId}"}: {stat.Negative} review tiêu cực ({rate.ToString("0.0")}%)");
+                        comboWarnings.Add($"{item.Product?.Name ?? $"Sản phẩm #{item.ProductId}"}: {stat.Negative} review tiêu cực ({rate.ToString("0.0")}%)");
                     }
                 }
                 if (comboWarnings.Count > 0)
-                    warnings[combo.Promotion.Id] = comboWarnings;
+                    warnings[combo.Id] = comboWarnings;
             }
         }
         catch (Exception ex)

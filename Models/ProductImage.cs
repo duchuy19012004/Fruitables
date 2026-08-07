@@ -1,5 +1,4 @@
 using System.ComponentModel.DataAnnotations;
-using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Fruitables.Models;
 
@@ -11,9 +10,6 @@ public class ProductImage
 
     [Required, MaxLength(255)]
     public string ImageUrl { get; set; } = string.Empty;
-
-    [NotMapped]
-    public string StorageKey { get; set; } = string.Empty;
 
     public bool IsPrimary { get; set; } = false;
 

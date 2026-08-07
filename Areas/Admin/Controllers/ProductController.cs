@@ -1,13 +1,9 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Fruitables.Models;
-using Fruitables.Models.Json;
 using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Catalog.Products;
-using Fruitables.Services.Infrastructure.Json;
 
 namespace Fruitables.Areas.Admin.Controllers;
 
@@ -18,18 +14,12 @@ public class ProductController : Controller
     private readonly IProductAdminService _productAdminService;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IRealtimeNotifier _notifier;
-    private readonly IJsonDocumentSerializer _serializer;
 
-    public ProductController(
-        IProductAdminService productAdminService,
-        IUnitOfWork unitOfWork,
-        IRealtimeNotifier notifier,
-        IJsonDocumentSerializer? serializer = null)
+    public ProductController(IProductAdminService productAdminService, IUnitOfWork unitOfWork, IRealtimeNotifier notifier)
     {
         _productAdminService = productAdminService;
         _unitOfWork = unitOfWork;
         _notifier = notifier;
-        _serializer = serializer ?? new VersionedJsonSerializer();
     }
 
     // GET: Admin/Product
@@ -129,13 +119,13 @@ public class ProductController : Controller
         }
 
         var categories = await _unitOfWork.Categories.GetAllAsync();
-        var allProductTags = await GetAllProductTagsAsync();
+        var allProductTags = await _unitOfWork.ProductTags.GetAllAsync();
 
         var viewModel = new EditProductViewModel
         {
             Product = product,
             Categories = categories.Where(c => !c.IsDeleted).ToList(),
-            AllTags = allProductTags
+            AllTags = allProductTags.ToList()
         };
         return View(viewModel);
     }
@@ -160,13 +150,13 @@ public class ProductController : Controller
         {
 
             var categories = await _unitOfWork.Categories.GetAllAsync();
-            var allProductTags = await GetAllProductTagsAsync();
+            var allProductTags = await _unitOfWork.ProductTags.GetAllAsync();
 
             var viewModel = new EditProductViewModel
             {
                 Product = existingProduct,
                 Categories = categories.Where(c => !c.IsDeleted).ToList(),
-                AllTags = allProductTags
+                AllTags = allProductTags.ToList()
             };
             return View(viewModel);
         }
@@ -184,13 +174,13 @@ public class ProductController : Controller
             }
 
             var categories = await _unitOfWork.Categories.GetAllAsync();
-            var allProductTags = await GetAllProductTagsAsync();
+            var allProductTags = await _unitOfWork.ProductTags.GetAllAsync();
 
             var viewModel = new EditProductViewModel
             {
                 Product = product,
                 Categories = categories.Where(c => !c.IsDeleted).ToList(),
-                AllTags = allProductTags
+                AllTags = allProductTags.ToList()
             };
             return View(viewModel);
         }
@@ -417,29 +407,6 @@ public class ProductController : Controller
         }
 
         return Json(new { success = true });
-    }
-
-    private async Task<List<ProductTag>> GetAllProductTagsAsync()
-    {
-        var jsonDocuments = await _unitOfWork.Products.Query()
-            .Select(product => product.TagsJson)
-            .ToListAsync();
-        return jsonDocuments
-            .SelectMany(json =>
-            {
-                if (string.IsNullOrWhiteSpace(json) || json.Trim() == "[]")
-                    return [];
-                return _serializer.Deserialize<ProductTagsDocument>(json).Tags;
-            })
-            .GroupBy(tag => tag.Slug, StringComparer.OrdinalIgnoreCase)
-            .Select((group, index) => new ProductTag
-            {
-                Id = index + 1,
-                Name = group.First().Name,
-                Slug = group.Key
-            })
-            .OrderBy(tag => tag.Name)
-            .ToList();
     }
 
     #endregion

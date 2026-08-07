@@ -91,66 +91,6 @@ namespace Fruitables.Migrations
                     b.ToTable("Addresses");
                 });
 
-            modelBuilder.Entity("Fruitables.Models.AuditLog", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("Action")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<DateTime>("ChangedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("ChangedByAdminId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("EntityId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("EntityType")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<string>("NewValue")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("OldValue")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<long>("SourceId")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("SourceType")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ChangedAt");
-
-                    b.HasIndex("ChangedByAdminId");
-
-                    b.HasIndex("EntityType", "EntityId");
-
-                    b.HasIndex("SourceType", "SourceId")
-                        .IsUnique();
-
-                    b.ToTable("AuditLogs", t =>
-                        {
-                            t.HasCheckConstraint("CK_AuditLogs_NewValue_IsJson", "[NewValue] IS NULL OR ISJSON([NewValue]) = 1");
-
-                            t.HasCheckConstraint("CK_AuditLogs_OldValue_IsJson", "[OldValue] IS NULL OR ISJSON([OldValue]) = 1");
-                        });
-                });
-
             modelBuilder.Entity("Fruitables.Models.Cart", b =>
                 {
                     b.Property<int>("Id")
@@ -169,16 +109,6 @@ namespace Fruitables.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("LinesJson")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("nvarchar(max)")
-                        .HasDefaultValue("[]");
-
-                    b.Property<byte[]>("RowVersion")
-                        .IsConcurrencyToken()
-                        .HasColumnType("varbinary(16)");
-
                     b.Property<string>("SessionId")
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)");
@@ -195,10 +125,124 @@ namespace Fruitables.Migrations
                         .IsUnique()
                         .HasFilter("[UserId] IS NOT NULL");
 
-                    b.ToTable("Carts", t =>
-                        {
-                            t.HasCheckConstraint("CK_Carts_LinesJson_IsJson", "ISJSON([LinesJson]) = 1");
-                        });
+                    b.ToTable("Carts");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.CartGroup", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("AllowCouponStacking")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("CartId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ComboId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ComboName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<int>("ComboRevision")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("Discount")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("FinalTotal")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<decimal>("OriginalTotal")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ComboId");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("UpdatedAt");
+
+                    b.HasIndex("CartId", "ComboId", "ComboRevision")
+                        .IsUnique();
+
+                    b.ToTable("CartGroups");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.CartItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("CartGroupId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CartId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("ComboDiscount")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<decimal>("Price")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ProductVariantId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("decimal(10,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.HasIndex("ProductVariantId");
+
+                    b.HasIndex("CartGroupId", "ProductId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_CartItems_CartGroupId_ProductId_NoVariant")
+                        .HasFilter("[CartGroupId] IS NOT NULL AND [ProductVariantId] IS NULL");
+
+                    b.HasIndex("CartId", "ProductId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_CartItems_CartId_ProductId_NoVariant")
+                        .HasFilter("[CartGroupId] IS NULL AND [ProductVariantId] IS NULL");
+
+                    b.HasIndex("CartGroupId", "ProductId", "ProductVariantId")
+                        .IsUnique()
+                        .HasFilter("[CartGroupId] IS NOT NULL AND [ProductVariantId] IS NOT NULL");
+
+                    b.HasIndex("CartId", "ProductId", "ProductVariantId")
+                        .IsUnique()
+                        .HasFilter("[CartGroupId] IS NULL AND [ProductVariantId] IS NOT NULL");
+
+                    b.ToTable("CartItems");
                 });
 
             modelBuilder.Entity("Fruitables.Models.Category", b =>
@@ -257,6 +301,39 @@ namespace Fruitables.Migrations
                     b.ToTable("Categories");
                 });
 
+            modelBuilder.Entity("Fruitables.Models.ChatMessage", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("MetaJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SessionId");
+
+                    b.ToTable("ChatMessages");
+                });
+
             modelBuilder.Entity("Fruitables.Models.ChatSession", b =>
                 {
                     b.Property<Guid>("Id")
@@ -268,16 +345,6 @@ namespace Fruitables.Migrations
 
                     b.Property<DateTime>("LastMessageAt")
                         .HasColumnType("datetime2");
-
-                    b.Property<string>("MessagesJson")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("nvarchar(max)")
-                        .HasDefaultValue("[]");
-
-                    b.Property<byte[]>("RowVersion")
-                        .IsConcurrencyToken()
-                        .HasColumnType("varbinary(16)");
 
                     b.Property<string>("Source")
                         .HasMaxLength(20)
@@ -292,13 +359,170 @@ namespace Fruitables.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("ChatSessions", t =>
-                        {
-                            t.HasCheckConstraint("CK_ChatSessions_MessagesJson_IsJson", "ISJSON([MessagesJson]) = 1");
-                        });
+                    b.ToTable("ChatSessions");
                 });
 
-            modelBuilder.Entity("Fruitables.Models.ContentEntry", b =>
+            modelBuilder.Entity("Fruitables.Models.Combo", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("AllowCouponStacking")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal?>("DiscountValue")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<DateTimeOffset?>("EndsAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<decimal?>("FixedPrice")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<string>("ImageUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<int>("PricingType")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Revision")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(1);
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("StartsAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("Status")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(2);
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Slug")
+                        .IsUnique();
+
+                    b.HasIndex("Status", "StartsAt", "EndsAt");
+
+                    b.ToTable("Combos");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.ComboAuditLog", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<int?>("AdminId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ComboId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Details")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AdminId");
+
+                    b.HasIndex("ComboId", "CreatedAt");
+
+                    b.ToTable("ComboAuditLogs");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.ComboItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ComboId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ProductVariantId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.HasIndex("ProductVariantId");
+
+                    b.HasIndex("ComboId", "ProductId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_ComboItems_ComboId_ProductId_NoVariant")
+                        .HasFilter("[ProductVariantId] IS NULL");
+
+                    b.HasIndex("ComboId", "SortOrder");
+
+                    b.HasIndex("ComboId", "ProductId", "ProductVariantId")
+                        .IsUnique()
+                        .HasFilter("[ProductVariantId] IS NOT NULL");
+
+                    b.ToTable("ComboItems");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.ContactMessage", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -309,31 +533,99 @@ namespace Fruitables.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("EntryType")
+                    b.Property<string>("Email")
                         .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
 
                     b.Property<bool>("IsRead")
                         .HasColumnType("bit");
 
-                    b.Property<string>("Key")
+                    b.Property<string>("Message")
                         .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
+                        .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("PayloadJson")
+                    b.Property<string>("Name")
                         .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ContactMessages");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.Coupon", b =>
+                {
+                    b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("nvarchar(max)")
-                        .HasDefaultValue("{ \"schemaVersion\": 1 }");
+                        .HasColumnType("int");
 
-                    b.Property<byte[]>("RowVersion")
-                        .IsConcurrencyToken()
-                        .HasColumnType("varbinary(16)");
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime?>("EndDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("MaxUses")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("MinOrderAmount")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal>("MinQuantity")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<DateTime?>("StartDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UsedCount")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("Value")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("Coupons");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.Faq", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
 
                     b.Property<string>("Title")
                         .IsRequired()
@@ -345,18 +637,72 @@ namespace Fruitables.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("EntryType");
+                    b.HasIndex("Category");
 
                     b.HasIndex("IsActive");
 
-                    b.HasIndex("IsRead");
+                    b.ToTable("Faqs");
 
-                    b.HasIndex("EntryType", "Key")
-                        .IsUnique();
-
-                    b.ToTable("ContentEntries", t =>
+                    b.HasData(
+                        new
                         {
-                            t.HasCheckConstraint("CK_ContentEntries_PayloadJson_IsJson", "ISJSON([PayloadJson]) = 1");
+                            Id = 1,
+                            Body = "Phí vận chuyển được tính theo khu vực: nội thành (zone 1), các tỉnh lân cận (zone 2) và các tỉnh xa (zone 3). Đơn hàng đạt ngưỡng miễn phí ship sẽ được miễn phí vận chuyển. Chi tiết phí hiển thị khi bạn chọn địa chỉ giao hàng ở bước thanh toán.",
+                            Category = "shipping",
+                            CreatedAt = new DateTime(2026, 7, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Title = "Phí vận chuyển như thế nào?",
+                            UpdatedAt = new DateTime(2026, 7, 1, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = 2,
+                            Body = "Fruitables hỗ trợ thanh toán qua SePay QR khi checkout. Sau khi đặt hàng, bạn quét mã QR để chuyển khoản; hệ thống tự xác nhận thanh toán khi nhận được giao dịch.",
+                            Category = "payment",
+                            CreatedAt = new DateTime(2026, 7, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Title = "Thanh toán bằng cách nào?",
+                            UpdatedAt = new DateTime(2026, 7, 1, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = 3,
+                            Body = "Rau củ tươi nên bảo quản trong tủ lạnh (ngăn mát), để trong túi hoặc hộp thoáng khí, tránh để gần trái cây chín. Dùng sớm trong vài ngày để giữ độ tươi ngon tốt nhất.",
+                            Category = "product-care",
+                            CreatedAt = new DateTime(2026, 7, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Title = "Bảo quản rau củ tươi như thế nào?",
+                            UpdatedAt = new DateTime(2026, 7, 1, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = 4,
+                            Body = "Bạn có thể xem giờ làm việc và thông tin liên hệ (điện thoại, email, địa chỉ) trên trang Liên hệ hoặc phần chân trang website. Chúng tôi sẵn sàng hỗ trợ trong khung giờ làm việc đã công bố.",
+                            Category = "hours",
+                            CreatedAt = new DateTime(2026, 7, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Title = "Giờ làm việc và liên hệ?",
+                            UpdatedAt = new DateTime(2026, 7, 1, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = 5,
+                            Body = "Đăng nhập tài khoản, vào mục Lịch sử đơn hàng để xem trạng thái, chi tiết và theo dõi đơn. Bạn cần đăng nhập để xem các đơn gắn với tài khoản của mình.",
+                            Category = "order",
+                            CreatedAt = new DateTime(2026, 7, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Title = "Làm sao để kiểm tra đơn hàng?",
+                            UpdatedAt = new DateTime(2026, 7, 1, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = 6,
+                            Body = "Bạn có thể xem trạng thái đơn hàng trong tài khoản hoặc liên hệ cửa hàng qua trang Liên hệ và tính năng chat để được hỗ trợ.",
+                            Category = "support",
+                            CreatedAt = new DateTime(2026, 7, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Title = "Tôi cần hỗ trợ đơn hàng ở đâu?",
+                            UpdatedAt = new DateTime(2026, 7, 1, 0, 0, 0, 0, DateTimeKind.Utc)
                         });
                 });
 
@@ -435,12 +781,6 @@ namespace Fruitables.Migrations
                     b.Property<string>("Notes")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("NotesJson")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("nvarchar(max)")
-                        .HasDefaultValue("[]");
-
                     b.Property<string>("OrderNumber")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -474,12 +814,6 @@ namespace Fruitables.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
-                    b.Property<string>("StatusHistoryJson")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("nvarchar(max)")
-                        .HasDefaultValue("[]");
-
                     b.Property<decimal>("Subtotal")
                         .HasColumnType("decimal(10,2)");
 
@@ -504,12 +838,7 @@ namespace Fruitables.Migrations
 
                     b.HasIndex("UserId", "CreatedAt");
 
-                    b.ToTable("Orders", t =>
-                        {
-                            t.HasCheckConstraint("CK_Orders_NotesJson_IsJson", "ISJSON([NotesJson]) = 1");
-
-                            t.HasCheckConstraint("CK_Orders_StatusHistoryJson_IsJson", "ISJSON([StatusHistoryJson]) = 1");
-                        });
+                    b.ToTable("Orders");
                 });
 
             modelBuilder.Entity("Fruitables.Models.OrderItem", b =>
@@ -588,6 +917,80 @@ namespace Fruitables.Migrations
                     b.ToTable("OrderItems");
                 });
 
+            modelBuilder.Entity("Fruitables.Models.OrderNote", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AdminId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("AdminName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("OrderId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("OrderId");
+
+                    b.ToTable("OrderNotes");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.OrderStatusHistory", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AdminId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("NewStatus")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("OldStatus")
+                        .HasColumnType("int");
+
+                    b.Property<int>("OrderId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AdminId");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("OrderId");
+
+                    b.ToTable("OrderStatusHistories");
+                });
+
             modelBuilder.Entity("Fruitables.Models.OutboxMessage", b =>
                 {
                     b.Property<Guid>("Id")
@@ -649,7 +1052,7 @@ namespace Fruitables.Migrations
                         });
                 });
 
-            modelBuilder.Entity("Fruitables.Models.Payment", b =>
+            modelBuilder.Entity("Fruitables.Models.Permission", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -657,68 +1060,98 @@ namespace Fruitables.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<decimal>("Amount")
-                        .HasPrecision(12, 2)
-                        .HasColumnType("decimal(12,2)");
-
-                    b.Property<DateTime>("CreatedAtUtc")
+                    b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("Message")
+                    b.Property<string>("Description")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
-                    b.Property<int>("OrderId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("PaidAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("PaymentCode")
-                        .HasMaxLength(16)
-                        .HasColumnType("nvarchar(16)");
-
-                    b.Property<string>("Provider")
+                    b.Property<string>("Module")
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
-                    b.Property<int>("ProviderEventStatus")
-                        .HasColumnType("int");
-
-                    b.Property<string>("ProviderTransactionId")
+                    b.Property<string>("Name")
                         .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<string>("ReferenceCode")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
-                    b.Property<byte[]>("RowVersion")
-                        .IsConcurrencyToken()
-                        .HasColumnType("varbinary(16)");
+                    b.HasKey("Id");
 
-                    b.Property<int>("Status")
+                    b.HasIndex("Module");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("Permissions");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.PriceSchedule", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("int");
 
-                    b.Property<DateTime>("UpdatedAtUtc")
-                        .HasColumnType("datetime2");
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("CancellationReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTimeOffset?>("CancelledAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int?>("CancelledByAdminId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int?>("CreatedByAdminId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DiscountType")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("EndsAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsCancelled")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ProductVariantId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Revision")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(1);
+
+                    b.Property<DateTimeOffset>("StartsAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<decimal>("Value")
+                        .HasColumnType("decimal(10,2)");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CreatedAtUtc");
+                    b.HasIndex("CancelledByAdminId");
 
-                    b.HasIndex("OrderId");
+                    b.HasIndex("CreatedByAdminId");
 
-                    b.HasIndex("ProviderEventStatus");
+                    b.HasIndex("ProductVariantId");
 
-                    b.HasIndex("Status");
+                    b.HasIndex("ProductId", "ProductVariantId", "StartsAt");
 
-                    b.HasIndex("Provider", "ProviderTransactionId")
-                        .IsUnique();
-
-                    b.ToTable("Payments");
+                    b.ToTable("PriceSchedules");
                 });
 
             modelBuilder.Entity("Fruitables.Models.Product", b =>
@@ -728,12 +1161,6 @@ namespace Fruitables.Migrations
                         .HasColumnType("int");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("AssetRevision")
-                        .IsConcurrencyToken()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int")
-                        .HasDefaultValue(1);
 
                     b.Property<decimal>("AverageRating")
                         .HasColumnType("decimal(3,2)");
@@ -753,12 +1180,6 @@ namespace Fruitables.Migrations
 
                     b.Property<string>("Description")
                         .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("ImagesJson")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("nvarchar(max)")
-                        .HasDefaultValue("[]");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
@@ -793,10 +1214,6 @@ namespace Fruitables.Migrations
                     b.Property<int>("ReviewCount")
                         .HasColumnType("int");
 
-                    b.Property<byte[]>("RowVersion")
-                        .IsConcurrencyToken()
-                        .HasColumnType("varbinary(16)");
-
                     b.Property<string>("ShortDescription")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
@@ -809,12 +1226,6 @@ namespace Fruitables.Migrations
                     b.Property<decimal>("StockQuantity")
                         .HasPrecision(10, 2)
                         .HasColumnType("decimal(10,2)");
-
-                    b.Property<string>("TagsJson")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("nvarchar(max)")
-                        .HasDefaultValue("[]");
 
                     b.Property<string>("Unit")
                         .IsRequired()
@@ -834,12 +1245,95 @@ namespace Fruitables.Migrations
                     b.HasIndex("Slug")
                         .IsUnique();
 
-                    b.ToTable("Products", t =>
-                        {
-                            t.HasCheckConstraint("CK_Products_ImagesJson_IsJson", "ISJSON([ImagesJson]) = 1");
+                    b.ToTable("Products");
+                });
 
-                            t.HasCheckConstraint("CK_Products_TagsJson_IsJson", "ISJSON([TagsJson]) = 1");
-                        });
+            modelBuilder.Entity("Fruitables.Models.ProductImage", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ImageUrl")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<bool>("IsPrimary")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("ProductImages");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.ProductLog", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<int>("AdminId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Details")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("ProductId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AdminId");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("ProductLogs");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.ProductTag", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ProductTags");
                 });
 
             modelBuilder.Entity("Fruitables.Models.ProductVariant", b =>
@@ -891,7 +1385,7 @@ namespace Fruitables.Migrations
                     b.ToTable("ProductVariants");
                 });
 
-            modelBuilder.Entity("Fruitables.Models.Promotion", b =>
+            modelBuilder.Entity("Fruitables.Models.RbacAuditLog", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -899,77 +1393,217 @@ namespace Fruitables.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("Code")
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("CustomerCode")
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<DateTimeOffset?>("EndsAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("PayloadJson")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("nvarchar(max)")
-                        .HasDefaultValue("{ \"schemaVersion\": 1 }");
-
-                    b.Property<int>("Revision")
-                        .IsConcurrencyToken()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int")
-                        .HasDefaultValue(1);
-
-                    b.Property<byte[]>("RowVersion")
-                        .IsConcurrencyToken()
-                        .HasColumnType("varbinary(16)");
-
-                    b.Property<DateTimeOffset?>("StartsAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("Type")
+                    b.Property<string>("Action")
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
-                    b.Property<DateTime>("UpdatedAt")
+                    b.Property<DateTime>("ChangedAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<int>("ChangedByAdminId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("EntityId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("EntityType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("NewValue")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("OldValue")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Code")
-                        .IsUnique()
-                        .HasFilter("[Code] IS NOT NULL");
+                    b.HasIndex("ChangedAt");
 
-                    b.HasIndex("CustomerCode")
-                        .IsUnique()
-                        .HasFilter("[CustomerCode] IS NOT NULL");
+                    b.HasIndex("ChangedByAdminId");
 
-                    b.HasIndex("Type");
+                    b.HasIndex("EntityType", "EntityId");
 
-                    b.HasIndex("IsActive", "StartsAt", "EndsAt");
-
-                    b.ToTable("Promotions", t =>
-                        {
-                            t.HasCheckConstraint("CK_Promotions_PayloadJson_IsJson", "ISJSON([PayloadJson]) = 1");
-                        });
+                    b.ToTable("RbacAuditLogs");
                 });
 
-            modelBuilder.Entity("Fruitables.Models.Returns.ReturnCase", b =>
+            modelBuilder.Entity("Fruitables.Models.Returns.Refund", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("CreatedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("FailureReason")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<int>("OrderId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ProcessedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ProcessedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ReturnRequestId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("ShippingFeeAmount")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("TransactionReference")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("OrderId");
+
+                    b.HasIndex("ProcessedByUserId");
+
+                    b.HasIndex("ReturnRequestId")
+                        .IsUnique();
+
+                    b.HasIndex("TransactionReference")
+                        .IsUnique()
+                        .HasFilter("[TransactionReference] IS NOT NULL");
+
+                    b.ToTable("Refunds", t =>
+                        {
+                            t.HasCheckConstraint("CK_Refunds_AmountsNonNegative", "[Amount] >= 0 AND [ShippingFeeAmount] >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("Fruitables.Models.Returns.ReturnEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<int?>("ActorUserId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("EventType")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("NewStatus")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<int?>("OldStatus")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ReturnRequestId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ReturnRequestItemId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActorUserId");
+
+                    b.HasIndex("ReturnRequestItemId");
+
+                    b.HasIndex("ReturnRequestId", "CreatedAtUtc");
+
+                    b.ToTable("ReturnEvents");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.Returns.ReturnEvidence", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("OriginalFileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<int>("ReturnRequestId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ReturnRequestItemId")
+                        .HasColumnType("int");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("StorageKey")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime>("UploadedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("UploadedByUserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReturnRequestId");
+
+                    b.HasIndex("ReturnRequestItemId");
+
+                    b.HasIndex("StorageKey")
+                        .IsUnique();
+
+                    b.HasIndex("UploadedByUserId");
+
+                    b.ToTable("ReturnEvidence");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.Returns.ReturnRequest", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AdminNote")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
 
                     b.Property<decimal>("ApprovedAmount")
                         .HasPrecision(12, 2)
@@ -982,11 +1616,9 @@ namespace Fruitables.Migrations
                     b.Property<DateTime>("ClaimDeadlineAtUtc")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("DetailsJson")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("nvarchar(max)")
-                        .HasDefaultValue("{ \"schemaVersion\": 1 }");
+                    b.Property<string>("CustomerNote")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
 
                     b.Property<int>("OrderId")
                         .HasColumnType("int");
@@ -1031,9 +1663,73 @@ namespace Fruitables.Migrations
 
                     b.HasIndex("UserId", "SubmittedAtUtc");
 
-                    b.ToTable("Returns", null, t =>
+                    b.ToTable("ReturnRequests", t =>
                         {
-                            t.HasCheckConstraint("CK_Returns_DetailsJson_IsJson", "ISJSON([DetailsJson]) = 1");
+                            t.HasCheckConstraint("CK_ReturnRequests_AmountsNonNegative", "[RequestedAmount] >= 0 AND [ApprovedAmount] >= 0 AND [ApprovedShippingFeeAmount] >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("Fruitables.Models.Returns.ReturnRequestItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("ApprovedAmount")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<decimal>("ApprovedQuantity")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<string>("DecisionReason")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<int>("DecisionStatus")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<int>("OrderItemId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Reason")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("RequestedAmount")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<decimal>("RequestedQuantity")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<int>("ReturnRequestId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderItemId");
+
+                    b.HasIndex("ReturnRequestId", "OrderItemId")
+                        .IsUnique();
+
+                    b.ToTable("ReturnRequestItems", t =>
+                        {
+                            t.HasCheckConstraint("CK_ReturnRequestItems_AmountsNonNegative", "[RequestedAmount] >= 0 AND [ApprovedAmount] >= 0");
+
+                            t.HasCheckConstraint("CK_ReturnRequestItems_ApprovedQuantityNonNegative", "[ApprovedQuantity] >= 0");
+
+                            t.HasCheckConstraint("CK_ReturnRequestItems_ApprovedQuantityWithinRequested", "[ApprovedQuantity] <= [RequestedQuantity]");
+
+                            t.HasCheckConstraint("CK_ReturnRequestItems_RequestedQuantityPositive", "[RequestedQuantity] > 0");
                         });
                 });
 
@@ -1079,12 +1775,6 @@ namespace Fruitables.Migrations
                     b.Property<bool>("IsVerifiedPurchase")
                         .HasColumnType("bit");
 
-                    b.Property<string>("MetadataJson")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("nvarchar(max)")
-                        .HasDefaultValue("{ \"schemaVersion\": 1 }");
-
                     b.Property<int>("ProductId")
                         .HasColumnType("int");
 
@@ -1093,10 +1783,6 @@ namespace Fruitables.Migrations
 
                     b.Property<int>("ReportCount")
                         .HasColumnType("int");
-
-                    b.Property<byte[]>("RowVersion")
-                        .IsConcurrencyToken()
-                        .HasColumnType("varbinary(16)");
 
                     b.Property<int>("Status")
                         .HasColumnType("int");
@@ -1126,10 +1812,203 @@ namespace Fruitables.Migrations
 
                     b.HasIndex("Status", "IsHidden", "IsDeleted");
 
-                    b.ToTable("Reviews", t =>
-                        {
-                            t.HasCheckConstraint("CK_Reviews_MetadataJson_IsJson", "ISJSON([MetadataJson]) = 1");
-                        });
+                    b.ToTable("Reviews");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.ReviewHelpful", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("ReviewId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReviewId");
+
+                    b.HasIndex("UserId", "ReviewId")
+                        .IsUnique();
+
+                    b.ToTable("ReviewHelpfuls");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.ReviewReport", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("HandledAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("HandledByAdminId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Reason")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ReportedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ReviewId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("HandledByAdminId");
+
+                    b.HasIndex("ReviewId");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("ReportedByUserId", "ReviewId")
+                        .IsUnique();
+
+                    b.ToTable("ReviewReports");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.ReviewSentiment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("AcknowledgedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("AcknowledgedById")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("AdminOverrideAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("AdminOverrideById")
+                        .HasColumnType("int");
+
+                    b.Property<string>("AdminReviewNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("AlertStatus")
+                        .HasColumnType("int");
+
+                    b.Property<string>("AnalysisVersion")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime?>("AnalyzedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("CommentSentiment")
+                        .HasColumnType("int");
+
+                    b.Property<float?>("Confidence")
+                        .HasColumnType("real");
+
+                    b.Property<bool>("HasRatingCommentConflict")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("HasSafetyRisk")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("NeedsManualReview")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("RatingSentiment")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("ReviewId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Sentiment")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("Severity")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Source")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AcknowledgedById");
+
+                    b.HasIndex("AdminOverrideById");
+
+                    b.HasIndex("AlertStatus");
+
+                    b.HasIndex("CommentSentiment");
+
+                    b.HasIndex("HasRatingCommentConflict");
+
+                    b.HasIndex("HasSafetyRisk");
+
+                    b.HasIndex("NeedsManualReview");
+
+                    b.HasIndex("RatingSentiment");
+
+                    b.HasIndex("ReviewId")
+                        .IsUnique();
+
+                    b.HasIndex("Sentiment");
+
+                    b.ToTable("ReviewSentiments");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.ReviewSentimentAspect", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("Aspect")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ReviewSentimentId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Sentiment")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("Severity")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReviewSentimentId");
+
+                    b.ToTable("ReviewSentimentAspects");
                 });
 
             modelBuilder.Entity("Fruitables.Models.Role", b =>
@@ -1155,16 +2034,6 @@ namespace Fruitables.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
-                    b.Property<string>("PermissionsJson")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("nvarchar(max)")
-                        .HasDefaultValue("[]");
-
-                    b.Property<byte[]>("RowVersion")
-                        .IsConcurrencyToken()
-                        .HasColumnType("varbinary(16)");
-
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
 
@@ -1173,9 +2042,237 @@ namespace Fruitables.Migrations
                     b.HasIndex("Name")
                         .IsUnique();
 
-                    b.ToTable("Roles", t =>
+                    b.ToTable("Roles");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.RolePermission", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("AssignedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("AssignedByAdminId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PermissionId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RoleId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssignedByAdminId");
+
+                    b.HasIndex("PermissionId");
+
+                    b.HasIndex("RoleId");
+
+                    b.HasIndex("RoleId", "PermissionId")
+                        .IsUnique();
+
+                    b.ToTable("RolePermissions");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.SePayTransaction", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Message")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int?>("OrderId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PaymentCode")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("ReferenceCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<long>("SePayTransactionId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("TransferAmount")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderId");
+
+                    b.HasIndex("PaymentCode");
+
+                    b.HasIndex("SePayTransactionId")
+                        .IsUnique();
+
+                    b.ToTable("SePayTransactions");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.SearchHotKeyword", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("NormalizedText")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("Weight")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsActive");
+
+                    b.HasIndex("NormalizedText");
+
+                    b.ToTable("SearchHotKeywords");
+
+                    b.HasData(
+                        new
                         {
-                            t.HasCheckConstraint("CK_Roles_PermissionsJson_IsJson", "ISJSON([PermissionsJson]) = 1");
+                            Id = 1,
+                            CreatedAt = new DateTime(2026, 7, 12, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            NormalizedText = "tao",
+                            Text = "táo",
+                            Weight = 100
+                        },
+                        new
+                        {
+                            Id = 2,
+                            CreatedAt = new DateTime(2026, 7, 12, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            NormalizedText = "cam",
+                            Text = "cam",
+                            Weight = 90
+                        },
+                        new
+                        {
+                            Id = 3,
+                            CreatedAt = new DateTime(2026, 7, 12, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            NormalizedText = "nho",
+                            Text = "nho",
+                            Weight = 80
+                        },
+                        new
+                        {
+                            Id = 4,
+                            CreatedAt = new DateTime(2026, 7, 12, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            NormalizedText = "dau",
+                            Text = "dâu",
+                            Weight = 80
+                        },
+                        new
+                        {
+                            Id = 5,
+                            CreatedAt = new DateTime(2026, 7, 12, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            NormalizedText = "rau cu",
+                            Text = "rau củ",
+                            Weight = 95
+                        },
+                        new
+                        {
+                            Id = 6,
+                            CreatedAt = new DateTime(2026, 7, 12, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            NormalizedText = "trai cay",
+                            Text = "trái cây",
+                            Weight = 95
+                        },
+                        new
+                        {
+                            Id = 7,
+                            CreatedAt = new DateTime(2026, 7, 12, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            NormalizedText = "combo",
+                            Text = "combo",
+                            Weight = 85
+                        },
+                        new
+                        {
+                            Id = 8,
+                            CreatedAt = new DateTime(2026, 7, 12, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            NormalizedText = "tao fuji",
+                            Text = "táo fuji",
+                            Weight = 70
+                        },
+                        new
+                        {
+                            Id = 9,
+                            CreatedAt = new DateTime(2026, 7, 12, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            NormalizedText = "chuoi",
+                            Text = "chuối",
+                            Weight = 70
+                        },
+                        new
+                        {
+                            Id = 10,
+                            CreatedAt = new DateTime(2026, 7, 12, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            NormalizedText = "bo",
+                            Text = "bơ",
+                            Weight = 70
+                        },
+                        new
+                        {
+                            Id = 11,
+                            CreatedAt = new DateTime(2026, 7, 12, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            NormalizedText = "xoai",
+                            Text = "xoài",
+                            Weight = 70
+                        },
+                        new
+                        {
+                            Id = 12,
+                            CreatedAt = new DateTime(2026, 7, 12, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            NormalizedText = "nuoc ep",
+                            Text = "nước ép",
+                            Weight = 60
                         });
                 });
 
@@ -1205,6 +2302,50 @@ namespace Fruitables.Migrations
                         .IsUnique();
 
                     b.ToTable("Settings");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.Testimonial", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Avatar")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Profession")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("Rating")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("Testimonials");
                 });
 
             modelBuilder.Entity("Fruitables.Models.User", b =>
@@ -1281,24 +2422,8 @@ namespace Fruitables.Migrations
                     b.Property<int>("Role")
                         .HasColumnType("int");
 
-                    b.Property<string>("RoleIdsJson")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("nvarchar(max)")
-                        .HasDefaultValue("[]");
-
-                    b.Property<byte[]>("RowVersion")
-                        .IsConcurrencyToken()
-                        .HasColumnType("varbinary(16)");
-
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
-
-                    b.Property<string>("WishlistJson")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("nvarchar(max)")
-                        .HasDefaultValue("[]");
 
                     b.HasKey("Id");
 
@@ -1307,12 +2432,7 @@ namespace Fruitables.Migrations
 
                     b.HasIndex("LockedByAdminId");
 
-                    b.ToTable("Users", t =>
-                        {
-                            t.HasCheckConstraint("CK_Users_RoleIdsJson_IsJson", "ISJSON([RoleIdsJson]) = 1");
-
-                            t.HasCheckConstraint("CK_Users_WishlistJson_IsJson", "ISJSON([WishlistJson]) = 1");
-                        });
+                    b.ToTable("Users");
 
                     b.HasData(
                         new
@@ -1324,9 +2444,7 @@ namespace Fruitables.Migrations
                             Name = "Admin User",
                             Password = "$2a$11$lA/jMR6h6Qga83lrdc0xd.Fx1TLBOiefaI1vAvCcVTjhYFqTYisHO",
                             Role = 1,
-                            RoleIdsJson = "[]",
-                            UpdatedAt = new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            WishlistJson = "[]"
+                            UpdatedAt = new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
                         },
                         new
                         {
@@ -1337,10 +2455,139 @@ namespace Fruitables.Migrations
                             Name = "Super Admin",
                             Password = "$2a$11$lA/jMR6h6Qga83lrdc0xd.Fx1TLBOiefaI1vAvCcVTjhYFqTYisHO",
                             Role = 2,
-                            RoleIdsJson = "[]",
-                            UpdatedAt = new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            WishlistJson = "[]"
+                            UpdatedAt = new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
                         });
+                });
+
+            modelBuilder.Entity("Fruitables.Models.UserAccountLog", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<int>("AdminId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<int?>("LockType")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ViolationType")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AdminId");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("UserAccountLogs");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.UserRoleMapping", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("AssignedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("AssignedByAdminId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RoleId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssignedByAdminId");
+
+                    b.HasIndex("RoleId");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("UserId", "RoleId")
+                        .IsUnique();
+
+                    b.ToTable("UserRoleMappings");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.Wishlist", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.HasIndex("UserId", "ProductId")
+                        .IsUnique();
+
+                    b.ToTable("Wishlists");
+                });
+
+            modelBuilder.Entity("ProductProductTag", b =>
+                {
+                    b.Property<int>("ProductsId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TagsId")
+                        .HasColumnType("int");
+
+                    b.HasKey("ProductsId", "TagsId");
+
+                    b.HasIndex("TagsId");
+
+                    b.ToTable("ProductTagMapping", (string)null);
                 });
 
             modelBuilder.Entity("Fruitables.Models.Address", b =>
@@ -1362,6 +2609,58 @@ namespace Fruitables.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("Fruitables.Models.CartGroup", b =>
+                {
+                    b.HasOne("Fruitables.Models.Cart", "Cart")
+                        .WithMany("Groups")
+                        .HasForeignKey("CartId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Fruitables.Models.Combo", "Combo")
+                        .WithMany()
+                        .HasForeignKey("ComboId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Cart");
+
+                    b.Navigation("Combo");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.CartItem", b =>
+                {
+                    b.HasOne("Fruitables.Models.CartGroup", "CartGroup")
+                        .WithMany("Items")
+                        .HasForeignKey("CartGroupId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Fruitables.Models.Cart", "Cart")
+                        .WithMany("Items")
+                        .HasForeignKey("CartId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Fruitables.Models.Product", "Product")
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Fruitables.Models.ProductVariant", "ProductVariant")
+                        .WithMany()
+                        .HasForeignKey("ProductVariantId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Cart");
+
+                    b.Navigation("CartGroup");
+
+                    b.Navigation("Product");
+
+                    b.Navigation("ProductVariant");
+                });
+
             modelBuilder.Entity("Fruitables.Models.Category", b =>
                 {
                     b.HasOne("Fruitables.Models.Category", "Parent")
@@ -1372,6 +2671,17 @@ namespace Fruitables.Migrations
                     b.Navigation("Parent");
                 });
 
+            modelBuilder.Entity("Fruitables.Models.ChatMessage", b =>
+                {
+                    b.HasOne("Fruitables.Models.ChatSession", "Session")
+                        .WithMany("Messages")
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Session");
+                });
+
             modelBuilder.Entity("Fruitables.Models.ChatSession", b =>
                 {
                     b.HasOne("Fruitables.Models.User", "User")
@@ -1380,6 +2690,49 @@ namespace Fruitables.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.ComboAuditLog", b =>
+                {
+                    b.HasOne("Fruitables.Models.User", "Admin")
+                        .WithMany()
+                        .HasForeignKey("AdminId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Fruitables.Models.Combo", "Combo")
+                        .WithMany("AuditLogs")
+                        .HasForeignKey("ComboId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Admin");
+
+                    b.Navigation("Combo");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.ComboItem", b =>
+                {
+                    b.HasOne("Fruitables.Models.Combo", "Combo")
+                        .WithMany("Items")
+                        .HasForeignKey("ComboId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Fruitables.Models.Product", "Product")
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Fruitables.Models.ProductVariant", "ProductVariant")
+                        .WithMany()
+                        .HasForeignKey("ProductVariantId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Combo");
+
+                    b.Navigation("Product");
+
+                    b.Navigation("ProductVariant");
                 });
 
             modelBuilder.Entity("Fruitables.Models.Order", b =>
@@ -1424,15 +2777,66 @@ namespace Fruitables.Migrations
                     b.Navigation("ProductVariant");
                 });
 
-            modelBuilder.Entity("Fruitables.Models.Payment", b =>
+            modelBuilder.Entity("Fruitables.Models.OrderNote", b =>
                 {
                     b.HasOne("Fruitables.Models.Order", "Order")
-                        .WithMany("Payments")
+                        .WithMany("OrderNotes")
                         .HasForeignKey("OrderId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("Order");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.OrderStatusHistory", b =>
+                {
+                    b.HasOne("Fruitables.Models.User", "Admin")
+                        .WithMany()
+                        .HasForeignKey("AdminId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Fruitables.Models.Order", "Order")
+                        .WithMany("StatusHistory")
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Admin");
+
+                    b.Navigation("Order");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.PriceSchedule", b =>
+                {
+                    b.HasOne("Fruitables.Models.User", "CancelledByAdmin")
+                        .WithMany()
+                        .HasForeignKey("CancelledByAdminId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Fruitables.Models.User", "CreatedByAdmin")
+                        .WithMany()
+                        .HasForeignKey("CreatedByAdminId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Fruitables.Models.Product", "Product")
+                        .WithMany("PriceSchedules")
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Fruitables.Models.ProductVariant", "ProductVariant")
+                        .WithMany("PriceSchedules")
+                        .HasForeignKey("ProductVariantId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("CancelledByAdmin");
+
+                    b.Navigation("CreatedByAdmin");
+
+                    b.Navigation("Product");
+
+                    b.Navigation("ProductVariant");
                 });
 
             modelBuilder.Entity("Fruitables.Models.Product", b =>
@@ -1446,6 +2850,35 @@ namespace Fruitables.Migrations
                     b.Navigation("Category");
                 });
 
+            modelBuilder.Entity("Fruitables.Models.ProductImage", b =>
+                {
+                    b.HasOne("Fruitables.Models.Product", "Product")
+                        .WithMany("Images")
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Product");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.ProductLog", b =>
+                {
+                    b.HasOne("Fruitables.Models.User", "Admin")
+                        .WithMany()
+                        .HasForeignKey("AdminId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Fruitables.Models.Product", "Product")
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Admin");
+
+                    b.Navigation("Product");
+                });
+
             modelBuilder.Entity("Fruitables.Models.ProductVariant", b =>
                 {
                     b.HasOne("Fruitables.Models.Product", "Product")
@@ -1457,16 +2890,112 @@ namespace Fruitables.Migrations
                     b.Navigation("Product");
                 });
 
-            modelBuilder.Entity("Fruitables.Models.Returns.ReturnCase", b =>
+            modelBuilder.Entity("Fruitables.Models.RbacAuditLog", b =>
+                {
+                    b.HasOne("Fruitables.Models.User", "ChangedByAdmin")
+                        .WithMany()
+                        .HasForeignKey("ChangedByAdminId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ChangedByAdmin");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.Returns.Refund", b =>
+                {
+                    b.HasOne("Fruitables.Models.User", "CreatedByUser")
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Fruitables.Models.Order", "Order")
+                        .WithMany()
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Fruitables.Models.User", "ProcessedByUser")
+                        .WithMany()
+                        .HasForeignKey("ProcessedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Fruitables.Models.Returns.ReturnRequest", "ReturnRequest")
+                        .WithOne("Refund")
+                        .HasForeignKey("Fruitables.Models.Returns.Refund", "ReturnRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("CreatedByUser");
+
+                    b.Navigation("Order");
+
+                    b.Navigation("ProcessedByUser");
+
+                    b.Navigation("ReturnRequest");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.Returns.ReturnEvent", b =>
+                {
+                    b.HasOne("Fruitables.Models.User", "ActorUser")
+                        .WithMany()
+                        .HasForeignKey("ActorUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Fruitables.Models.Returns.ReturnRequest", "ReturnRequest")
+                        .WithMany("Events")
+                        .HasForeignKey("ReturnRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Fruitables.Models.Returns.ReturnRequestItem", "ReturnRequestItem")
+                        .WithMany()
+                        .HasForeignKey("ReturnRequestItemId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("ActorUser");
+
+                    b.Navigation("ReturnRequest");
+
+                    b.Navigation("ReturnRequestItem");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.Returns.ReturnEvidence", b =>
+                {
+                    b.HasOne("Fruitables.Models.Returns.ReturnRequest", "ReturnRequest")
+                        .WithMany("Evidence")
+                        .HasForeignKey("ReturnRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Fruitables.Models.Returns.ReturnRequestItem", "ReturnRequestItem")
+                        .WithMany("Evidence")
+                        .HasForeignKey("ReturnRequestItemId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Fruitables.Models.User", "UploadedByUser")
+                        .WithMany()
+                        .HasForeignKey("UploadedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ReturnRequest");
+
+                    b.Navigation("ReturnRequestItem");
+
+                    b.Navigation("UploadedByUser");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.Returns.ReturnRequest", b =>
                 {
                     b.HasOne("Fruitables.Models.Order", "Order")
-                        .WithOne("ReturnCase")
-                        .HasForeignKey("Fruitables.Models.Returns.ReturnCase", "OrderId")
+                        .WithOne("ReturnRequest")
+                        .HasForeignKey("Fruitables.Models.Returns.ReturnRequest", "OrderId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.HasOne("Fruitables.Models.User", "User")
-                        .WithMany("ReturnCases")
+                        .WithMany("ReturnRequests")
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
@@ -1474,6 +3003,25 @@ namespace Fruitables.Migrations
                     b.Navigation("Order");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.Returns.ReturnRequestItem", b =>
+                {
+                    b.HasOne("Fruitables.Models.OrderItem", "OrderItem")
+                        .WithMany("ReturnRequestItems")
+                        .HasForeignKey("OrderItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Fruitables.Models.Returns.ReturnRequest", "ReturnRequest")
+                        .WithMany("Items")
+                        .HasForeignKey("ReturnRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("OrderItem");
+
+                    b.Navigation("ReturnRequest");
                 });
 
             modelBuilder.Entity("Fruitables.Models.Review", b =>
@@ -1509,6 +3057,132 @@ namespace Fruitables.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("Fruitables.Models.ReviewHelpful", b =>
+                {
+                    b.HasOne("Fruitables.Models.Review", "Review")
+                        .WithMany("HelpfulVotes")
+                        .HasForeignKey("ReviewId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Fruitables.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Review");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.ReviewReport", b =>
+                {
+                    b.HasOne("Fruitables.Models.User", "HandledByAdmin")
+                        .WithMany()
+                        .HasForeignKey("HandledByAdminId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Fruitables.Models.User", "ReportedByUser")
+                        .WithMany()
+                        .HasForeignKey("ReportedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Fruitables.Models.Review", "Review")
+                        .WithMany("Reports")
+                        .HasForeignKey("ReviewId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("HandledByAdmin");
+
+                    b.Navigation("ReportedByUser");
+
+                    b.Navigation("Review");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.ReviewSentiment", b =>
+                {
+                    b.HasOne("Fruitables.Models.User", "AcknowledgedBy")
+                        .WithMany()
+                        .HasForeignKey("AcknowledgedById")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Fruitables.Models.User", "AdminOverrideBy")
+                        .WithMany()
+                        .HasForeignKey("AdminOverrideById")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Fruitables.Models.Review", "Review")
+                        .WithOne("Sentiment")
+                        .HasForeignKey("Fruitables.Models.ReviewSentiment", "ReviewId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AcknowledgedBy");
+
+                    b.Navigation("AdminOverrideBy");
+
+                    b.Navigation("Review");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.ReviewSentimentAspect", b =>
+                {
+                    b.HasOne("Fruitables.Models.ReviewSentiment", "ReviewSentiment")
+                        .WithMany("Aspects")
+                        .HasForeignKey("ReviewSentimentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ReviewSentiment");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.RolePermission", b =>
+                {
+                    b.HasOne("Fruitables.Models.User", "AssignedByAdmin")
+                        .WithMany()
+                        .HasForeignKey("AssignedByAdminId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Fruitables.Models.Permission", "Permission")
+                        .WithMany("RolePermissions")
+                        .HasForeignKey("PermissionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Fruitables.Models.Role", "Role")
+                        .WithMany("RolePermissions")
+                        .HasForeignKey("RoleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AssignedByAdmin");
+
+                    b.Navigation("Permission");
+
+                    b.Navigation("Role");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.SePayTransaction", b =>
+                {
+                    b.HasOne("Fruitables.Models.Order", "Order")
+                        .WithMany()
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Order");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.Testimonial", b =>
+                {
+                    b.HasOne("Fruitables.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("Fruitables.Models.User", b =>
                 {
                     b.HasOne("Fruitables.Models.User", "LockedByAdmin")
@@ -1519,9 +3193,100 @@ namespace Fruitables.Migrations
                     b.Navigation("LockedByAdmin");
                 });
 
+            modelBuilder.Entity("Fruitables.Models.UserAccountLog", b =>
+                {
+                    b.HasOne("Fruitables.Models.User", "Admin")
+                        .WithMany()
+                        .HasForeignKey("AdminId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Fruitables.Models.User", "User")
+                        .WithMany("AccountLogs")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Admin");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.UserRoleMapping", b =>
+                {
+                    b.HasOne("Fruitables.Models.User", "AssignedByAdmin")
+                        .WithMany()
+                        .HasForeignKey("AssignedByAdminId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Fruitables.Models.Role", "Role")
+                        .WithMany("UserRoleMappings")
+                        .HasForeignKey("RoleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Fruitables.Models.User", "User")
+                        .WithMany("UserRoleMappings")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AssignedByAdmin");
+
+                    b.Navigation("Role");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.Wishlist", b =>
+                {
+                    b.HasOne("Fruitables.Models.Product", "Product")
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Fruitables.Models.User", "User")
+                        .WithMany("Wishlists")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Product");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("ProductProductTag", b =>
+                {
+                    b.HasOne("Fruitables.Models.Product", null)
+                        .WithMany()
+                        .HasForeignKey("ProductsId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Fruitables.Models.ProductTag", null)
+                        .WithMany()
+                        .HasForeignKey("TagsId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Fruitables.Models.Address", b =>
                 {
                     b.Navigation("Orders");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.Cart", b =>
+                {
+                    b.Navigation("Groups");
+
+                    b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.CartGroup", b =>
+                {
+                    b.Navigation("Items");
                 });
 
             modelBuilder.Entity("Fruitables.Models.Category", b =>
@@ -1531,33 +3296,109 @@ namespace Fruitables.Migrations
                     b.Navigation("Products");
                 });
 
+            modelBuilder.Entity("Fruitables.Models.ChatSession", b =>
+                {
+                    b.Navigation("Messages");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.Combo", b =>
+                {
+                    b.Navigation("AuditLogs");
+
+                    b.Navigation("Items");
+                });
+
             modelBuilder.Entity("Fruitables.Models.Order", b =>
                 {
                     b.Navigation("Items");
 
-                    b.Navigation("Payments");
+                    b.Navigation("OrderNotes");
 
-                    b.Navigation("ReturnCase");
+                    b.Navigation("ReturnRequest");
+
+                    b.Navigation("StatusHistory");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.OrderItem", b =>
+                {
+                    b.Navigation("ReturnRequestItems");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.Permission", b =>
+                {
+                    b.Navigation("RolePermissions");
                 });
 
             modelBuilder.Entity("Fruitables.Models.Product", b =>
                 {
+                    b.Navigation("Images");
+
+                    b.Navigation("PriceSchedules");
+
                     b.Navigation("Reviews");
 
                     b.Navigation("Variants");
                 });
 
+            modelBuilder.Entity("Fruitables.Models.ProductVariant", b =>
+                {
+                    b.Navigation("PriceSchedules");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.Returns.ReturnRequest", b =>
+                {
+                    b.Navigation("Events");
+
+                    b.Navigation("Evidence");
+
+                    b.Navigation("Items");
+
+                    b.Navigation("Refund");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.Returns.ReturnRequestItem", b =>
+                {
+                    b.Navigation("Evidence");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.Review", b =>
+                {
+                    b.Navigation("HelpfulVotes");
+
+                    b.Navigation("Reports");
+
+                    b.Navigation("Sentiment");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.ReviewSentiment", b =>
+                {
+                    b.Navigation("Aspects");
+                });
+
+            modelBuilder.Entity("Fruitables.Models.Role", b =>
+                {
+                    b.Navigation("RolePermissions");
+
+                    b.Navigation("UserRoleMappings");
+                });
+
             modelBuilder.Entity("Fruitables.Models.User", b =>
                 {
+                    b.Navigation("AccountLogs");
+
                     b.Navigation("Addresses");
 
                     b.Navigation("Cart");
 
                     b.Navigation("Orders");
 
-                    b.Navigation("ReturnCases");
+                    b.Navigation("ReturnRequests");
 
                     b.Navigation("Reviews");
+
+                    b.Navigation("UserRoleMappings");
+
+                    b.Navigation("Wishlists");
                 });
 #pragma warning restore 612, 618
         }

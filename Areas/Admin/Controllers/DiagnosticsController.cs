@@ -6,8 +6,6 @@ using Fruitables.Services.Communications;
 using System.Security.Claims;
 using Fruitables.Services.Identity.Rbac;
 using Fruitables.Services.Infrastructure;
-using Fruitables.Services.Infrastructure.DatabaseConsolidation;
-using Fruitables.Attributes;
 
 namespace Fruitables.Areas.Admin.Controllers;
 
@@ -21,18 +19,15 @@ public class DiagnosticsController : Controller
     private readonly ApplicationDbContext _context;
     private readonly IMigrationService _migrationService;
     private readonly IRbacService _rbacService;
-    private readonly IDatabaseConsolidationService? _databaseConsolidationService;
 
     public DiagnosticsController(
         ApplicationDbContext context,
         IMigrationService migrationService,
-        IRbacService rbacService,
-        IDatabaseConsolidationService? databaseConsolidationService = null)
+        IRbacService rbacService)
     {
         _context = context;
         _migrationService = migrationService;
         _rbacService = rbacService;
-        _databaseConsolidationService = databaseConsolidationService;
     }
 
     /// <summary>
@@ -250,33 +245,6 @@ public class DiagnosticsController : Controller
         {
             return Content($"✗ Fatal error: {ex.Message}\n{ex.StackTrace}", "text/plain");
         }
-    }
-
-    /// <summary>
-    /// Protected read-only status for the aggregate JSON backfill.
-    /// The CLI remains the only path that applies the backfill.
-    /// </summary>
-    [HttpGet]
-    [RequirePermission("system.manage_rbac")]
-    public async Task<IActionResult> DatabaseConsolidationStatus()
-    {
-        if (_databaseConsolidationService is null)
-            return Problem("Database consolidation service is not registered.");
-
-        var report = await _databaseConsolidationService.VerifyAsync(HttpContext.RequestAborted);
-        var status = new System.Text.StringBuilder();
-        status.AppendLine($"Success: {report.Success}");
-        status.AppendLine($"ISJSON: {report.IsJsonValid}");
-        status.AppendLine("Source counts:");
-        foreach (var count in report.SourceCounts.OrderBy(item => item.Key))
-            status.AppendLine($"- {count.Key}: {count.Value}");
-        status.AppendLine("Target counts:");
-        foreach (var count in report.TargetCounts.OrderBy(item => item.Key))
-            status.AppendLine($"- {count.Key}: {count.Value}");
-        status.AppendLine("Errors:");
-        foreach (var error in report.Errors)
-            status.AppendLine($"- {error.AggregateType} {error.SourceId}: {error.Message}");
-        return Content(status.ToString(), "text/plain");
     }
 
     private int? GetCurrentUserId()

@@ -10,14 +10,15 @@ using Fruitables.Services.Chat.Knowledge;
 
 namespace Fruitables.Tests;
 
-// Guardrail: tag writes are aggregate JSON writes and must not query the legacy tag table.
+// Guardrail N+1: UpdateTagsAsync phải lookup ProductTags theo batch (1 SELECT cho mọi
+// số tag), không truy vấn từng tag. Test với 1, 5, 20 tag đầu vào.
 public class ProductAdminServiceNPlusOneTests
 {
     [Theory]
     [InlineData(1)]
     [InlineData(5)]
     [InlineData(20)]
-    public async Task UpdateTagsAsync_DoesNotQueryLegacyTags(int tagCount)
+    public async Task UpdateTagsAsync_TagLookupIsBatched(int tagCount)
     {
         var (interceptor, options) = SeedAsync(tagCount, seedExistingTag: true);
         // Đăng ký pattern trước khi chạy query để interceptor đếm từ đầu.
@@ -40,7 +41,9 @@ public class ProductAdminServiceNPlusOneTests
         var result = await service.UpdateTagsAsync(10, allTagNames);
 
         Assert.True(result.Success);
-        Assert.Equal(0, interceptor.GetCount("ProductTags"));
+        // ProductTags SELECTs = 1 (product Include Tags) + 1 (batch tag-by-name lookup).
+        // Hằng số theo tagCount chứng minh lookup theo batch, không phải N+1.
+        Assert.Equal(2, interceptor.GetCount("ProductTags"));
     }
 
     private static (CountingQueryInterceptor interceptor, DbContextOptions<ApplicationDbContext> options)

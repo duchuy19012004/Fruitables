@@ -121,10 +121,10 @@ Fruitables.Tests/                 # Test project
 
 **Models**:
 - **`Role`**: Vai trò trong hệ thống
-- **`Role.PermissionsJson`**: Quyền cụ thể (products.create, orders.view, etc.)
-- **`User.RoleIdsJson`**: Mapping user-role
-- **`Role.PermissionsJson`**: Mapping role-permission
-- **`AuditLog`**: Audit log cho RBAC
+- **`Permission`**: Quyền cụ thể (products.create, orders.view, etc.)
+- **`UserRoleMapping`**: Mapping user-role
+- **`RolePermission`**: Mapping role-permission
+- **`RbacAuditLog`**: Audit log cho RBAC
 
 **Controllers**:
 - **`RoleController`**: Quản lý roles
@@ -197,8 +197,8 @@ Fruitables.Tests/                 # Test project
 
 **Models**:
 - `Order`: Thông tin đơn hàng
-- `Orders.StatusHistoryJson`: Lịch sử trạng thái
-- `Orders.NotesJson`: Ghi chú và chi tiết audit
+- `OrderStatusHistory`: Lịch sử trạng thái
+- `OrderStatusAuditLog`: Chi tiết audit log
 - `AuditLogAttachment`: File đính kèm
 
 ### 5. Module Thống Kê Doanh Thu
@@ -241,7 +241,7 @@ Fruitables.Tests/                 # Test project
 
 **Models**:
 - `User`: Thông tin người dùng
-- `AuditLog`: Lịch sử khóa/mở dùng chung
+- `UserAccountLog`: Lịch sử khóa/mở
 - `LockType`: Enum loại khóa
 - `ViolationTypes`: Enum loại vi phạm
 
@@ -277,7 +277,7 @@ Fruitables.Tests/                 # Test project
 
 **Models**:
 - `Review`: Đánh giá sản phẩm với status, visibility
-- `Review.MetadataJson`: Báo cáo vi phạm và helpful votes
+- `ReviewReport`: Báo cáo vi phạm
 - `ReviewStatus`: Enum (Pending/Approved/Rejected)
 - `ReportReason`: Enum (Spam/Offensive/Fake/Other)
 - `ReportStatus`: Enum (Pending/Resolved/Dismissed)
@@ -294,8 +294,8 @@ Fruitables.Tests/                 # Test project
 - `ReviewAdminController`: Quản lý đánh giá (admin panel)
 
 **Repositories**:
-- `ReviewRepository`: Data access cho review aggregate
-- `ReviewRepository`: Data access cho review aggregate
+- `ReviewRepository`: Data access cho reviews
+- `ReviewReportRepository`: Data access cho reports
 
 **RBAC Permissions**:
 - `reviews.view`: Xem đánh giá
@@ -534,21 +534,19 @@ cd Fruitables
 dotnet ef database update
 ```
 
-5. **Backfill và kiểm tra database consolidation**
+5. **Chạy RBAC Migration (Quan trọng!)**
 
-Chạy dry-run trước, sau đó apply và verify. Các lệnh verify chỉ đọc dữ liệu nghiệp vụ:
+Sau khi chạy migrations, bạn cần migrate users sang hệ thống RBAC:
 
-```bash
-dotnet run -- --database-consolidation-backfill
-dotnet run -- --database-consolidation-backfill --apply
-dotnet run -- --database-consolidation-verify
-```
+**Option 1: Via Web UI (Recommended)**
+- Đăng nhập với tài khoản admin
+- Truy cập: `https://localhost:5001/Admin/Diagnostics/Migration`
+- Nhấn "Run Migration"
+- Đăng xuất và đăng nhập lại
 
-Chỉ chạy contract migration sau khi verify sạch:
-
-```bash
-dotnet ef database update
-```
+**Option 2: Via Diagnostics Page**
+- Truy cập: `https://localhost:5001/Admin/Diagnostics`
+- Xem system status và làm theo hướng dẫn
 
 6. **Chạy ứng dụng**
 
@@ -584,14 +582,31 @@ dotnet test /p:CollectCoverage=true /p:CoverletOutputFormat=opencover
 
 ## Cấu Trúc Database
 
-### 19 bảng nghiệp vụ sau contract
-
-`Users`, `Roles`, `Addresses`, `Categories`, `Products`, `ProductVariants`,
-`Carts`, `Orders`, `OrderItems`, `Payments`, `Promotions`, `Reviews`, `Returns`,
-`Settings`, `ContentEntries`, `ChatSessions`, `KnowledgeChunks`, `AuditLogs`,
-`OutboxMessages`.
-
-Các collection phụ, lịch sử, RBAC assignments, content payloads và audit values nằm trong JSON versioned của aggregate tương ứng. `__EFMigrationsHistory` không tính vào con số 19.
+### Bảng Chính
+- `Users`: Người dùng (Customer/Admin/SuperAdmin)
+- **`Roles`**: Vai trò trong hệ thống RBAC
+- **`Permissions`**: Quyền cụ thể trong hệ thống
+- **`UserRoleMappings`**: Mapping user-role
+- **`RolePermissions`**: Mapping role-permission
+- **`RbacAuditLogs`**: Audit log cho RBAC
+- `Addresses`: Địa chỉ giao hàng
+- `Categories`: Danh mục sản phẩm
+- `Products`: Sản phẩm
+- `ProductImages`: Hình ảnh sản phẩm
+- `ProductVariants`: Biến thể sản phẩm
+- `ProductTags`: Tags sản phẩm
+- `Orders`: Đơn hàng
+- `OrderItems`: Chi tiết đơn hàng
+- `OrderStatusHistory`: Lịch sử trạng thái
+- `OrderStatusAuditLog`: Audit log đơn hàng
+- `Reviews`: Đánh giá sản phẩm
+- `Carts`: Giỏ hàng
+- `CartItems`: Sản phẩm trong giỏ
+- `Settings`: Cấu hình hệ thống
+- `ContactMessages`: Tin nhắn liên hệ
+- `Testimonials`: Testimonials
+- `UserAccountLogs`: Log khóa/mở tài khoản
+- `ProductLogs`: Log thay đổi sản phẩm
 
 ## API Endpoints
 

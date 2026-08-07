@@ -1,19 +1,13 @@
-using System.Text.Json;
 using System.Text.RegularExpressions;
-using Fruitables.Data;
 using Fruitables.Models;
-using Fruitables.Models.Json;
 using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Communications;
-using Fruitables.Services.Infrastructure.Auditing;
-using Fruitables.Services.Infrastructure.Json;
 using Fruitables.ViewModels;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Fruitables.Services.Chat.Knowledge;
 using Fruitables.Services.Orders;
-using Fruitables.Services.Reviews;
 
 namespace Fruitables.Services.Catalog.Products;
 
@@ -24,28 +18,19 @@ public class ProductAdminService : IProductAdminService
     private readonly IIndexingService _indexing;
     private readonly ILogger<ProductAdminService> _logger;
     private readonly IRealtimeNotifier? _notifier;
-    private readonly ApplicationDbContext? _dbContext;
-    private readonly IJsonDocumentSerializer _serializer;
-    private readonly IAuditLogWriter? _auditLogWriter;
 
     public ProductAdminService(
         IUnitOfWork unitOfWork,
         IImageUploadService imageUploadService,
         IIndexingService indexing,
         ILogger<ProductAdminService> logger,
-        IRealtimeNotifier? notifier = null,
-        ApplicationDbContext? dbContext = null,
-        IJsonDocumentSerializer? serializer = null,
-        IAuditLogWriter? auditLogWriter = null)
+        IRealtimeNotifier? notifier = null)
     {
         _unitOfWork = unitOfWork;
         _imageUploadService = imageUploadService;
         _indexing = indexing;
         _logger = logger;
         _notifier = notifier;
-        _dbContext = dbContext;
-        _serializer = serializer ?? new VersionedJsonSerializer();
-        _auditLogWriter = auditLogWriter ?? (dbContext == null ? null : new AuditLogWriter(dbContext));
     }
 
     private async Task TryIndexProductAsync(int productId)
@@ -59,14 +44,6 @@ public class ProductAdminService : IProductAdminService
             _logger.LogError(ex, "Index product {Id} failed", productId);
         }
     }
-
-    private Task WriteAuditAsync(string action, int productId, string details) =>
-        _auditLogWriter?.WriteAsync(
-            action,
-            "Product",
-            productId,
-            0,
-            newValue: JsonSerializer.Serialize(new { details })) ?? Task.CompletedTask;
 
     #region Helper Methods
 
@@ -105,7 +82,7 @@ public class ProductAdminService : IProductAdminService
 
     public async Task<ProductListResult> GetProductsAsync(ProductListRequest request)
     {
-        var query = _unitOfWork.Products.Query().AsNoTracking();
+        var query = _unitOfWork.Products.Query();
 
         // Filter by deleted status
         if (!request.IncludeDeleted)
@@ -145,11 +122,10 @@ public class ProductAdminService : IProductAdminService
         // Pagination
         var products = await query
             .Include(p => p.Category)
+            .Include(p => p.Images)
             .Skip((request.Page - 1) * request.PageSize)
             .Take(request.PageSize)
             .ToListAsync();
-
-        ProductAggregateJson.Hydrate(products, _serializer);
 
         return new ProductListResult
         {
@@ -163,13 +139,13 @@ public class ProductAdminService : IProductAdminService
 
     public async Task<Product?> GetProductByIdAsync(int id)
     {
-        var product = await _unitOfWork.Products.Query().AsNoTracking()
+        var product = await _unitOfWork.Products.Query()
             .Include(p => p.Category)
+            .Include(p => p.Images)
+            .Include(p => p.Tags)
             .Include(p => p.Variants)
             .FirstOrDefaultAsync(p => p.Id == id);
-
-        if (product != null)
-            ProductAggregateJson.Hydrate([product], _serializer);
+        
         return product;
     }
 
@@ -219,14 +195,11 @@ public class ProductAdminService : IProductAdminService
             IsActive = request.IsActive,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
-            IsDeleted = false,
-            ImagesJson = _serializer.Serialize(new Fruitables.Models.Json.ProductImagesDocument()),
-            TagsJson = _serializer.Serialize(new Fruitables.Models.Json.ProductTagsDocument())
+            IsDeleted = false
         };
 
         await _unitOfWork.Products.AddAsync(product);
         await _unitOfWork.SaveChangesAsync();
-        await WriteAuditAsync("Create", product.Id, $"Tạo sản phẩm: {product.Name}");
 
         await TryIndexProductAsync(product.Id);
 
@@ -283,7 +256,6 @@ public class ProductAdminService : IProductAdminService
         product.UpdatedAt = DateTime.UtcNow;
 
         await _unitOfWork.SaveChangesAsync();
-        await WriteAuditAsync("Update", product.Id, $"Cập nhật sản phẩm: {product.Name}");
 
         await TryIndexProductAsync(product.Id);
         if (_notifier != null && oldStock != product.StockQuantity &&
@@ -307,7 +279,6 @@ public class ProductAdminService : IProductAdminService
         product.UpdatedAt = DateTime.UtcNow;
 
         await _unitOfWork.SaveChangesAsync();
-        await WriteAuditAsync("SoftDelete", product.Id, "Chuyển sản phẩm vào thùng rác");
 
         await TryIndexProductAsync(product.Id);
 
@@ -328,7 +299,6 @@ public class ProductAdminService : IProductAdminService
         product.UpdatedAt = DateTime.UtcNow;
 
         await _unitOfWork.SaveChangesAsync();
-        await WriteAuditAsync("Restore", product.Id, "Khôi phục sản phẩm từ thùng rác");
 
         await TryIndexProductAsync(product.Id);
 
@@ -353,22 +323,24 @@ public class ProductAdminService : IProductAdminService
             return ProductResult.Fail(ProductErrorType.HasOrders, 
                 "Không thể xóa vĩnh viễn sản phẩm đã có trong đơn hàng. Hãy sử dụng chức năng xóa mềm.");
         }
-        if ((await GetPriceSchedulesAsync()).Any(schedule => schedule.ProductId == id))
+        if (await _unitOfWork.PriceSchedules.AnyAsync(schedule => schedule.ProductId == id))
             return ProductResult.Fail(ProductErrorType.ValidationError,
                 "Không thể xóa vĩnh viễn sản phẩm đã có lịch sử giá. Hãy sử dụng chức năng xóa mềm.");
-        var productInCart = _dbContext?.Database.IsSqlServer() == true
-            ? await IsProductInCartAsync(id, null)
-            : await _unitOfWork.CartItems.AnyAsync(item => item.ProductId == id);
-        if (productInCart)
+        if (await _unitOfWork.CartItems.AnyAsync(item => item.ProductId == id))
             return ProductResult.Fail(ProductErrorType.ValidationError,
                 "Không thể xóa vĩnh viễn sản phẩm đang nằm trong giỏ hàng. Hãy sử dụng chức năng xóa mềm.");
-        if (await IsReferencedByComboPayloadAsync(id))
-            return ProductResult.Fail(ProductErrorType.ValidationError,
-                "Không thể xóa vĩnh viễn sản phẩm đang được tham chiếu bởi combo.");
 
         // Delete related data
-        var imageUrls = ProductAggregateJson.ReadImages(product.ImagesJson, _serializer)
-            .Images.Select(image => image.Url).ToList();
+        var images = await _unitOfWork.ProductImages
+            .FindAsync(pi => pi.ProductId == id);
+        var imageUrls = images.Select(image => image.ImageUrl).ToList();
+        foreach (var image in images)
+        {
+            _unitOfWork.ProductImages.Remove(image);
+        }
+
+        // Clear tags (many-to-many relationship)
+        product.Tags.Clear();
 
         var variants = await _unitOfWork.ProductVariants
             .FindAsync(pv => pv.ProductId == id);
@@ -380,7 +352,6 @@ public class ProductAdminService : IProductAdminService
         var productId = product.Id;
         _unitOfWork.Products.Remove(product);
         await _unitOfWork.SaveChangesAsync();
-        await WriteAuditAsync("HardDelete", productId, "Xóa vĩnh viễn sản phẩm");
 
         foreach (var imageUrl in imageUrls)
         {
@@ -406,6 +377,14 @@ public class ProductAdminService : IProductAdminService
 
     public async Task<ProductResult> AddImagesAsync(int productId, List<IFormFile> files)
     {
+        // Check product exists
+        var products = await _unitOfWork.Products
+            .FindAsync(p => p.Id == productId);
+        var product = products.FirstOrDefault();
+
+        if (product == null)
+            return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy sản phẩm với ID {productId}");
+
         if (files.Count > 10)
             return ProductResult.Fail(ProductErrorType.ValidationError, "Mỗi lần chỉ được tải lên tối đa 10 ảnh");
 
@@ -419,48 +398,34 @@ public class ProductAdminService : IProductAdminService
                 return ProductResult.Fail(ProductErrorType.FileTooLarge, "File vượt quá kích thước cho phép (5MB)");
         }
 
+        // Get current max sort order
+        var existingImages = await _unitOfWork.ProductImages
+            .FindAsync(pi => pi.ProductId == productId);
+        var maxSortOrder = existingImages.Any() ? existingImages.Max(i => i.SortOrder) : -1;
+
         var uploadedUrls = new List<string>();
-        await using var transaction = await BeginProductWriteAsync();
         try
         {
-            var products = await _unitOfWork.Products
-                .FindAsync(p => p.Id == productId);
-            var product = products.FirstOrDefault();
-            if (product == null)
-                return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy sản phẩm với ID {productId}");
-
-            var existingImages = ProductAggregateJson.ReadImageModels(product, _serializer)
-                .OrderBy(image => image.SortOrder)
-                .ToList();
-            var maxSortOrder = existingImages.Any() ? existingImages.Max(i => i.SortOrder) : -1;
-
             foreach (var file in files)
             {
                 var imageUrl = await _imageUploadService.UploadProductImageAsync(file);
                 uploadedUrls.Add(imageUrl);
 
-                existingImages.Add(new ProductImage
+                var productImage = new ProductImage
                 {
                     ProductId = productId,
                     ImageUrl = imageUrl,
                     IsPrimary = !existingImages.Any() && maxSortOrder == -1,
                     SortOrder = ++maxSortOrder
-                });
+                };
+
+                await _unitOfWork.ProductImages.AddAsync(productImage);
             }
 
-            product.ImagesJson = ProductAggregateJson.SerializeImages(existingImages, _serializer);
-            product.AssetRevision++;
             await _unitOfWork.SaveChangesAsync();
-            await WriteAuditAsync("ImageUpload", productId, $"Upload {uploadedUrls.Count} ảnh");
-            if (transaction != null)
-                await transaction.CommitAsync();
-
-            return ProductResult.Ok(product);
         }
         catch (Exception exception)
         {
-            if (transaction != null)
-                await transaction.RollbackAsync();
             foreach (var uploadedUrl in uploadedUrls)
             {
                 try
@@ -476,127 +441,114 @@ public class ProductAdminService : IProductAdminService
             _logger.LogError(exception, "Could not add images for product {ProductId}", productId);
             return ProductResult.Fail(ProductErrorType.ValidationError, exception.Message);
         }
+
+        return ProductResult.Ok(product);
     }
 
     public async Task<ProductResult> SetPrimaryImageAsync(int productId, int imageId)
     {
-        await using var transaction = await BeginProductWriteAsync();
-        try
+        // Check product exists
+        var products = await _unitOfWork.Products
+            .FindAsync(p => p.Id == productId);
+        var product = products.FirstOrDefault();
+
+        if (product == null)
+            return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy sản phẩm với ID {productId}");
+
+        // Get all images for this product
+        var images = await _unitOfWork.ProductImages
+            .FindAsync(pi => pi.ProductId == productId);
+
+        // Check if target image exists
+        var targetImage = images.FirstOrDefault(i => i.Id == imageId);
+        if (targetImage == null)
+            return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy ảnh với ID {imageId}");
+
+        // Reset all images to non-primary
+        foreach (var image in images)
         {
-            var product = (await _unitOfWork.Products.FindAsync(p => p.Id == productId)).FirstOrDefault();
-            if (product == null)
-                return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy sản phẩm với ID {productId}");
-
-            var images = ProductAggregateJson.ReadImageModels(product, _serializer);
-            var targetImage = images.FirstOrDefault(i => i.Id == imageId);
-            if (targetImage == null)
-                return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy ảnh với ID {imageId}");
-
-            foreach (var image in images)
-                image.IsPrimary = false;
-            targetImage.IsPrimary = true;
-
-            product.ImagesJson = ProductAggregateJson.SerializeImages(images, _serializer);
-            product.AssetRevision++;
-            await _unitOfWork.SaveChangesAsync();
-            await WriteAuditAsync("ImagePrimary", productId, $"Đặt ảnh {imageId} làm ảnh chính");
-            if (transaction != null)
-                await transaction.CommitAsync();
-
-            return ProductResult.Ok(product);
+            image.IsPrimary = false;
         }
-        catch (DbUpdateConcurrencyException)
-        {
-            if (transaction != null)
-                await transaction.RollbackAsync();
-            return ProductResult.Fail(ProductErrorType.ValidationError, "Sản phẩm vừa được cập nhật. Vui lòng tải lại trang.");
-        }
+
+        // Set target image as primary
+        targetImage.IsPrimary = true;
+
+        await _unitOfWork.SaveChangesAsync();
+
+        return ProductResult.Ok(product);
     }
 
     public async Task<ProductResult> DeleteImageAsync(int productId, int imageId)
     {
-        await using var transaction = await BeginProductWriteAsync();
+        // Check product exists
+        var products = await _unitOfWork.Products
+            .FindAsync(p => p.Id == productId);
+        var product = products.FirstOrDefault();
+
+        if (product == null)
+            return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy sản phẩm với ID {productId}");
+
+        // Get image
+        var images = await _unitOfWork.ProductImages
+            .FindAsync(pi => pi.Id == imageId && pi.ProductId == productId);
+        var image = images.FirstOrDefault();
+
+        if (image == null)
+            return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy ảnh với ID {imageId}");
+
+        var wasPrimary = image.IsPrimary;
+        _unitOfWork.ProductImages.Remove(image);
+
+        if (wasPrimary)
+        {
+            var replacement = (await _unitOfWork.ProductImages
+                    .FindAsync(pi => pi.ProductId == productId && pi.Id != imageId))
+                .OrderBy(pi => pi.SortOrder)
+                .FirstOrDefault();
+            if (replacement != null)
+                replacement.IsPrimary = true;
+        }
+
+        await _unitOfWork.SaveChangesAsync();
         try
         {
-            var product = (await _unitOfWork.Products.FindAsync(p => p.Id == productId)).FirstOrDefault();
-            if (product == null)
-                return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy sản phẩm với ID {productId}");
-
-            var images = ProductAggregateJson.ReadImageModels(product, _serializer);
-            var image = images.FirstOrDefault(candidate => candidate.Id == imageId);
-            if (image == null)
-                return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy ảnh với ID {imageId}");
-
-            var remainingImages = images.Where(candidate => candidate.Id != imageId).ToList();
-            if (image.IsPrimary)
-            {
-                var replacement = remainingImages.OrderBy(pi => pi.SortOrder).FirstOrDefault();
-                if (replacement != null)
-                    replacement.IsPrimary = true;
-            }
-
-            product.ImagesJson = ProductAggregateJson.SerializeImages(remainingImages, _serializer);
-            product.AssetRevision++;
-            await _unitOfWork.SaveChangesAsync();
-            await WriteAuditAsync("ImageDelete", productId, $"Xóa ảnh {imageId}");
-            if (transaction != null)
-                await transaction.CommitAsync();
-
-            try
-            {
-                await _imageUploadService.DeleteImageAsync(image.ImageUrl);
-            }
-            catch (Exception exception)
-            {
-                _logger.LogWarning(exception, "Could not delete product image file {ImageUrl}", image.ImageUrl);
-            }
-
-            return ProductResult.Ok(product);
+            await _imageUploadService.DeleteImageAsync(image.ImageUrl);
         }
-        catch (DbUpdateConcurrencyException)
+        catch (Exception exception)
         {
-            if (transaction != null)
-                await transaction.RollbackAsync();
-            return ProductResult.Fail(ProductErrorType.ValidationError, "Sản phẩm vừa được cập nhật. Vui lòng tải lại trang.");
+            _logger.LogWarning(exception, "Could not delete product image file {ImageUrl}", image.ImageUrl);
         }
+
+        return ProductResult.Ok(product);
     }
 
     public async Task<ProductResult> ReorderImagesAsync(int productId, List<int> imageIds)
     {
-        await using var transaction = await BeginProductWriteAsync();
-        try
+        // Check product exists
+        var products = await _unitOfWork.Products
+            .FindAsync(p => p.Id == productId);
+        var product = products.FirstOrDefault();
+
+        if (product == null)
+            return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy sản phẩm với ID {productId}");
+
+        // Get all images for this product
+        var images = await _unitOfWork.ProductImages
+            .FindAsync(pi => pi.ProductId == productId);
+
+        // Update sort order based on new order
+        for (int i = 0; i < imageIds.Count; i++)
         {
-            var product = (await _unitOfWork.Products.FindAsync(p => p.Id == productId)).FirstOrDefault();
-            if (product == null)
-                return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy sản phẩm với ID {productId}");
-
-            var images = ProductAggregateJson.ReadImageModels(product, _serializer)
-                .OrderBy(image => image.SortOrder)
-                .ToList();
-            var ordered = imageIds
-                .Select(id => images.FirstOrDefault(image => image.Id == id))
-                .Where(image => image != null)
-                .Cast<ProductImage>()
-                .Concat(images.Where(image => !imageIds.Contains(image.Id)))
-                .ToList();
-            for (var index = 0; index < ordered.Count; index++)
-                ordered[index].SortOrder = index;
-
-            product.ImagesJson = ProductAggregateJson.SerializeImages(ordered, _serializer);
-            product.AssetRevision++;
-            await _unitOfWork.SaveChangesAsync();
-            await WriteAuditAsync("ImageReorder", productId, "Sắp xếp lại ảnh sản phẩm");
-            if (transaction != null)
-                await transaction.CommitAsync();
-
-            return ProductResult.Ok(product);
+            var image = images.FirstOrDefault(img => img.Id == imageIds[i]);
+            if (image != null)
+            {
+                image.SortOrder = i;
+            }
         }
-        catch (DbUpdateConcurrencyException)
-        {
-            if (transaction != null)
-                await transaction.RollbackAsync();
-            return ProductResult.Fail(ProductErrorType.ValidationError, "Sản phẩm vừa được cập nhật. Vui lòng tải lại trang.");
-        }
+
+        await _unitOfWork.SaveChangesAsync();
+
+        return ProductResult.Ok(product);
     }
 
     #endregion
@@ -605,42 +557,59 @@ public class ProductAdminService : IProductAdminService
 
     public async Task<ProductResult> UpdateTagsAsync(int productId, List<string> tagNames)
     {
-        await using var transaction = await BeginProductWriteAsync();
-        try
-        {
-            var product = await _unitOfWork.Products.Query()
-                .FirstOrDefaultAsync(p => p.Id == productId);
-            if (product == null)
-                return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy sản phẩm với ID {productId}");
-            if (tagNames.Any(string.IsNullOrWhiteSpace))
-                return ProductResult.Fail(ProductErrorType.ValidationError, "Tên tag không được để trống");
+        var product = await _unitOfWork.Products.Query()
+            .Include(p => p.Tags)
+            .FirstOrDefaultAsync(p => p.Id == productId);
 
-            tagNames = tagNames
-                .Select(t => t.Trim())
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
-            product.TagsJson = ProductAggregateJson.SerializeTags(
-                tagNames.Select((tagName, index) => new ProductTag
+        if (product == null)
+            return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy sản phẩm với ID {productId}");
+
+        // Validate tag names
+        if (tagNames.Any(string.IsNullOrWhiteSpace))
+            return ProductResult.Fail(ProductErrorType.ValidationError, "Tên tag không được để trống");
+
+        // Remove duplicates and trim
+        tagNames = tagNames
+            .Select(t => t.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        // Clear existing tags for this product
+        product.Tags.Clear();
+
+        // Query all existing tags at once
+        var lowercaseTagNames = tagNames.Select(t => t.ToLowerInvariant()).ToList();
+        var existingTags = await _unitOfWork.ProductTags.Query()
+            .Where(t => lowercaseTagNames.Contains(t.Name.ToLower()))
+            .ToListAsync();
+
+        var existingTagsDict = existingTags
+            .GroupBy(t => t.Name.ToLowerInvariant())
+            .ToDictionary(g => g.Key, g => g.First());
+
+        // Add new tags
+        foreach (var tagName in tagNames)
+        {
+            var key = tagName.ToLowerInvariant();
+            if (!existingTagsDict.TryGetValue(key, out var tag))
+            {
+                // Create new tag
+                tag = new ProductTag
                 {
-                    Id = index + 1,
                     Name = tagName,
                     Slug = GenerateSlug(tagName)
-                }),
-                _serializer);
-            product.AssetRevision++;
-            await _unitOfWork.SaveChangesAsync();
-            await WriteAuditAsync("TagUpdate", productId, "Cập nhật tags sản phẩm");
-            if (transaction != null)
-                await transaction.CommitAsync();
+                };
+                await _unitOfWork.ProductTags.AddAsync(tag);
+                existingTagsDict[key] = tag;
+            }
 
-            return ProductResult.Ok(product);
+            // Add tag to product
+            product.Tags.Add(tag);
         }
-        catch (DbUpdateConcurrencyException)
-        {
-            if (transaction != null)
-                await transaction.RollbackAsync();
-            return ProductResult.Fail(ProductErrorType.ValidationError, "Sản phẩm vừa được cập nhật. Vui lòng tải lại trang.");
-        }
+
+        await _unitOfWork.SaveChangesAsync();
+
+        return ProductResult.Ok(product);
     }
 
     #endregion
@@ -686,7 +655,6 @@ public class ProductAdminService : IProductAdminService
 
         await _unitOfWork.ProductVariants.AddAsync(variant);
         await _unitOfWork.SaveChangesAsync();
-        await WriteAuditAsync("VariantCreate", product.Id, $"Tạo biến thể {variant.SKU}");
         if (transaction != null) await transaction.CommitAsync();
         if (_notifier != null && variant.IsActive)
         {
@@ -738,7 +706,6 @@ public class ProductAdminService : IProductAdminService
         variant.IsActive = request.IsActive;
 
         await _unitOfWork.SaveChangesAsync();
-        await WriteAuditAsync("VariantUpdate", variant.ProductId, $"Cập nhật biến thể {variant.SKU}");
 
         // Get product for result
         var products = await _unitOfWork.Products
@@ -778,15 +745,12 @@ public class ProductAdminService : IProductAdminService
         var wasActive = variant.IsActive;
 
         if (await _unitOfWork.OrderItems.AnyAsync(i => i.ProductVariantId == variantId) ||
-            (await GetPriceSchedulesAsync()).Any(schedule => schedule.ProductVariantId == variantId) ||
-            (_dbContext?.Database.IsSqlServer() == true
-                ? await IsProductInCartAsync(variant.ProductId, variantId)
-                : await _unitOfWork.CartItems.AnyAsync(item => item.ProductVariantId == variantId)))
+            await _unitOfWork.PriceSchedules.AnyAsync(schedule => schedule.ProductVariantId == variantId) ||
+            await _unitOfWork.CartItems.AnyAsync(item => item.ProductVariantId == variantId))
             variant.IsActive = false;
         else
             _unitOfWork.ProductVariants.Remove(variant);
         await _unitOfWork.SaveChangesAsync();
-        await WriteAuditAsync("VariantDelete", productId, $"Xóa biến thể {variantId}");
         if (transaction != null) await transaction.CommitAsync();
         await TryIndexProductAsync(productId);
         if (_notifier != null && wasActive)
@@ -813,11 +777,10 @@ public class ProductAdminService : IProductAdminService
     private static bool IsValidStock(string? unit, decimal quantity) =>
         quantity >= 0 && (quantity == 0 || QuantityRules.IsValid(unit, quantity, MinimumStep(unit)));
 
-    private async Task<bool> CanEnableVariantAsync(int productId)
+    private Task<bool> CanEnableVariantAsync(int productId)
     {
         var now = DateTimeOffset.UtcNow;
-        var schedules = await GetPriceSchedulesAsync();
-        return schedules.All(s =>
+        return _unitOfWork.PriceSchedules.Query().AllAsync(s =>
             s.ProductId != productId || s.ProductVariantId != null || s.IsCancelled ||
             (s.EndsAt.HasValue && s.EndsAt <= now));
     }
@@ -833,7 +796,8 @@ public class ProductAdminService : IProductAdminService
             return null;
 
         var now = DateTimeOffset.UtcNow;
-        var hasActiveOrUpcomingVariantSchedule = (await GetPriceSchedulesAsync()).Any(schedule =>
+        var hasActiveOrUpcomingVariantSchedule = await _unitOfWork.PriceSchedules.Query()
+            .AnyAsync(schedule =>
                 schedule.ProductId == variant.ProductId &&
                 schedule.ProductVariantId != null &&
                 !schedule.IsCancelled &&
@@ -860,109 +824,23 @@ public class ProductAdminService : IProductAdminService
         return await _unitOfWork.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
     }
 
-    private async Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction?> BeginProductWriteAsync()
-    {
-        if ((_unitOfWork.DatabaseProviderName ?? string.Empty).Contains("InMemory", StringComparison.OrdinalIgnoreCase))
-            return null;
-        return await _unitOfWork.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
-    }
-
-    private async Task<List<PriceSchedule>> GetPriceSchedulesAsync()
-    {
-        if (_dbContext == null)
-            return [];
-
-        var promotions = await _dbContext.Promotions.AsNoTracking()
-            .Where(promotion => promotion.Type == "price-schedule")
-            .ToListAsync();
-        return promotions.Select(promotion =>
-        {
-            var payload = _serializer.Deserialize<Fruitables.Models.Json.PriceSchedulePayload>(promotion.PayloadJson);
-            return new PriceSchedule
-            {
-                Id = payload.LegacyScheduleId ?? ParseLegacyScheduleId(promotion.Code) ?? promotion.Id,
-                ProductId = payload.ProductId,
-                ProductVariantId = payload.ProductVariantId,
-                DiscountType = payload.DiscountType,
-                Value = payload.Value,
-                StartsAt = payload.StartsAt,
-                EndsAt = payload.EndsAt,
-                IsCancelled = payload.IsCancelled,
-                CancelledAt = payload.CancelledAt,
-                CancelledByAdminId = payload.CancelledByAdminId,
-                CancellationReason = payload.CancellationReason,
-                Revision = payload.Revision,
-                CreatedByAdminId = payload.CreatedByAdminId,
-                CreatedAt = payload.CreatedAt,
-                UpdatedAt = payload.UpdatedAt
-            };
-        }).ToList();
-    }
-
-    private static int? ParseLegacyScheduleId(string? code)
-    {
-        const string prefix = "price-schedule:";
-        return code != null && code.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
-            int.TryParse(code[prefix.Length..], out var id) && id > 0
-            ? id
-            : null;
-    }
-
-    private async Task<bool> IsProductInCartAsync(int productId, int? variantId)
-    {
-        if (_dbContext is null)
-            return false;
-        var carts = await _dbContext.Carts.AsNoTracking().Select(cart => cart.LinesJson).ToListAsync();
-        return carts.Any(json => _serializer.TryDeserialize<CartLinesDocument>(json, out var document, out _) &&
-            document!.Lines.Any(line => line.ProductId == productId &&
-                (!variantId.HasValue || line.ProductVariantId == variantId.Value)));
-    }
-
-    private async Task<bool> IsReferencedByComboPayloadAsync(int productId)
-    {
-        if (_dbContext == null)
-            return false;
-
-        var payloads = await _dbContext.Promotions.AsNoTracking()
-            .Where(promotion => promotion.Type == "combo")
-            .Select(promotion => promotion.PayloadJson)
-            .ToListAsync();
-        return payloads.Any(json =>
-            _serializer.TryDeserialize<ComboPayload>(json, out var payload, out _) &&
-            payload!.Items.Any(item => item.ProductId == productId));
-    }
-
     public async Task<Dictionary<int, ProductSentimentSummary>> GetSentimentSummariesAsync(IReadOnlyList<int> productIds)
     {
         var ids = productIds.Distinct().ToArray();
         if (ids.Length == 0) return new Dictionary<int, ProductSentimentSummary>();
 
-        var rows = _dbContext?.Database.IsSqlServer() == true
-            ? (await _dbContext.Reviews.AsNoTracking()
-                .Where(review => ids.Contains(review.ProductId) && !review.IsDeleted)
-                .ToListAsync())
-                .Select(review => new { Review = review, Sentiment = ReviewAggregateJson.Read(review, _serializer).Sentiment })
-                .Where(item => item.Sentiment is not null && !item.Sentiment.NeedsManualReview)
-                .GroupBy(item => item.Review.ProductId)
-                .Select(group => new
-                {
-                    ProductId = group.Key,
-                    Negative = group.Count(item => item.Sentiment!.Sentiment == SentimentLabel.Negative),
-                    Conflict = group.Count(item => item.Sentiment!.HasRatingCommentConflict),
-                    Total = group.Count()
-                }).ToList()
-            : await (
-                from r in _unitOfWork.Reviews.Query()
-                join s in _unitOfWork.ReviewSentiments.Query() on r.Id equals s.ReviewId
-                where ids.Contains(r.ProductId) && !r.IsDeleted && !s.NeedsManualReview
-                group s by r.ProductId into g
-                select new
-                {
-                    ProductId = g.Key,
-                    Negative = g.Count(x => x.Sentiment == SentimentLabel.Negative),
-                    Conflict = g.Count(x => x.HasRatingCommentConflict),
-                    Total = g.Count()
-                }).ToListAsync();
+        var rows = await (
+            from r in _unitOfWork.Reviews.Query()
+            join s in _unitOfWork.ReviewSentiments.Query() on r.Id equals s.ReviewId
+            where ids.Contains(r.ProductId) && !r.IsDeleted && !s.NeedsManualReview
+            group s by r.ProductId into g
+            select new
+            {
+                ProductId = g.Key,
+                Negative = g.Count(x => x.Sentiment == SentimentLabel.Negative),
+                Conflict = g.Count(x => x.HasRatingCommentConflict),
+                Total = g.Count()
+            }).ToListAsync();
 
         return rows.ToDictionary(
             x => x.ProductId,

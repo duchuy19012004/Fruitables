@@ -3,7 +3,6 @@ using Moq;
 using Microsoft.EntityFrameworkCore;
 using Fruitables.Data;
 using Fruitables.Models;
-using Fruitables.Models.Json;
 using Fruitables.Repositories;
 using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
@@ -12,7 +11,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using Fruitables.Services.Catalog.Products;
 using Fruitables.Services.Chat.Knowledge;
-using Fruitables.Services.Infrastructure.Json;
 
 namespace Fruitables.Tests
 {
@@ -32,7 +30,12 @@ namespace Fruitables.Tests
             var options = CreateNewContextOptions();
             using var context = new ApplicationDbContext(options);
             
-            var serializer = new VersionedJsonSerializer();
+            // Seed tags
+            var tag1 = new ProductTag { Id = 1, Name = "Fruit", Slug = "fruit" };
+            var tag2 = new ProductTag { Id = 2, Name = "Apple", Slug = "apple" };
+            context.ProductTags.AddRange(tag1, tag2);
+
+            // Seed product with existing tags
             var product = new Product
             {
                 Id = 10,
@@ -44,14 +47,7 @@ namespace Fruitables.Tests
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
-                TagsJson = serializer.Serialize(new ProductTagsDocument
-                {
-                    Tags =
-                    [
-                        new ProductTagDocument { Name = "Fruit", Slug = "fruit" },
-                        new ProductTagDocument { Name = "Apple", Slug = "apple" }
-                    ]
-                })
+                Tags = new List<ProductTag> { tag1, tag2 } // Starts with Fruit, Apple
             };
             context.Products.Add(product);
             await context.SaveChangesAsync();
@@ -62,21 +58,34 @@ namespace Fruitables.Tests
                 unitOfWork,
                 imageMock.Object,
                 Mock.Of<IIndexingService>(),
-                Microsoft.Extensions.Logging.Abstractions.NullLogger<ProductAdminService>.Instance,
-                dbContext: context,
-                serializer: serializer);
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<ProductAdminService>.Instance);
 
+            // Act: Update tags to ["Fruit", "Fresh"]
+            // "Fruit" is an existing tag (loaded in batch)
+            // "Fresh" is a brand new tag (created)
+            // "Apple" should be removed from product.Tags
             var result = await service.UpdateTagsAsync(10, new List<string> { "Fruit", "Fresh" });
 
             // Assert
             Assert.True(result.Success);
             
-            var updatedProduct = await context.Products.FirstOrDefaultAsync(p => p.Id == 10);
+            // Reload product from db with tags
+            var updatedProduct = await context.Products
+                .Include(p => p.Tags)
+                .FirstOrDefaultAsync(p => p.Id == 10);
             
             Assert.NotNull(updatedProduct);
-            var tags = serializer.Deserialize<ProductTagsDocument>(updatedProduct!.TagsJson).Tags;
-            Assert.Equal(["Fruit", "Fresh"], tags.Select(tag => tag.Name).ToArray());
-            Assert.Empty(await context.ProductTags.ToListAsync());
+            Assert.Equal(2, updatedProduct.Tags.Count);
+            
+            var tagNames = updatedProduct.Tags.Select(t => t.Name).ToList();
+            Assert.Contains("Fruit", tagNames);
+            Assert.Contains("Fresh", tagNames);
+            Assert.DoesNotContain("Apple", tagNames);
+
+            // Ensure "Fresh" was created in ProductTags table
+            var newTagInDb = await context.ProductTags.FirstOrDefaultAsync(t => t.Name == "Fresh");
+            Assert.NotNull(newTagInDb);
+            Assert.Equal("fresh", newTagInDb.Slug);
         }
 
         private static ApplicationDbContext CreateContext() => new(
@@ -85,8 +94,7 @@ namespace Fruitables.Tests
 
         private static ProductAdminService CreateService(ApplicationDbContext context) =>
             new(new UnitOfWork(context), Mock.Of<IImageUploadService>(), Mock.Of<IIndexingService>(),
-                Microsoft.Extensions.Logging.Abstractions.NullLogger<ProductAdminService>.Instance,
-                dbContext: context);
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<ProductAdminService>.Instance);
 
         [Fact]
         public async Task UpdateVariant_last_active_variant_with_future_schedule_is_rejected()
@@ -98,23 +106,10 @@ namespace Fruitables.Tests
                 Id = 2, ProductId = 1, SKU = "TAO-1", Name = "Hộp 1kg",
                 Price = 100_000, StockQuantity = 8, IsActive = true
             });
-            var serializer = new VersionedJsonSerializer();
-            context.Promotions.Add(new Promotion
+            context.PriceSchedules.Add(new PriceSchedule
             {
-                Id = 2,
-                Type = "price-schedule",
-                Code = "price-schedule:2",
-                PayloadJson = serializer.Serialize(new PriceSchedulePayload
-                {
-                    ProductId = 1,
-                    ProductVariantId = 2,
-                    DiscountType = DiscountType.Percentage,
-                    Value = 10,
-                    StartsAt = DateTimeOffset.UtcNow.AddHours(1),
-                    CreatedAt = DateTimeOffset.UtcNow,
-                    UpdatedAt = DateTimeOffset.UtcNow
-                }),
-                IsActive = true,
+                ProductId = 1, ProductVariantId = 2,
+                DiscountType = DiscountType.Percentage, Value = 10,
                 StartsAt = DateTimeOffset.UtcNow.AddHours(1)
             });
             await context.SaveChangesAsync();

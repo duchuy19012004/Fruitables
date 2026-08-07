@@ -4,8 +4,6 @@ using Fruitables.ViewModels;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Fruitables.Services.Communications;
-using Fruitables.Services.Infrastructure.Auditing;
-using System.Text.Json;
 
 namespace Fruitables.Services.Identity.Users;
 
@@ -17,19 +15,16 @@ public class UserManagementService : IUserManagementService
     private readonly ApplicationDbContext _context;
     private readonly IEmailService _emailService;
     private readonly ILogger<UserManagementService> _logger;
-    private readonly IAuditLogWriter? _auditLogWriter;
     private const decimal VIP_THRESHOLD = 50000000; // 50 million VND
 
     public UserManagementService(
         ApplicationDbContext context,
         IEmailService emailService,
-        ILogger<UserManagementService> logger,
-        IAuditLogWriter? auditLogWriter = null)
+        ILogger<UserManagementService> logger)
     {
         _context = context;
         _emailService = emailService;
         _logger = logger;
-        _auditLogWriter = auditLogWriter;
     }
 
     /// <inheritdoc />
@@ -374,23 +369,7 @@ public class UserManagementService : IUserManagementService
             IpAddress = request.IpAddress,
             UserAgent = request.UserAgent
         };
-        if (_context.Database.IsSqlServer())
-        {
-            await (_auditLogWriter ?? new AuditLogWriter(_context)).WriteAsync(
-                "Lock",
-                "User",
-                customer.Id,
-                request.AdminId,
-                newValue: JsonSerializer.Serialize(new
-                {
-                    log.Action, log.LockType, log.ViolationType, log.Reason,
-                    log.ExpiresAt, log.IpAddress, log.UserAgent
-                }));
-        }
-        else
-        {
-            _context.UserAccountLogs.Add(log);
-        }
+        _context.UserAccountLogs.Add(log);
 
         await _context.SaveChangesAsync();
 
@@ -478,22 +457,7 @@ public class UserManagementService : IUserManagementService
             IpAddress = request.IpAddress,
             UserAgent = request.UserAgent
         };
-        if (_context.Database.IsSqlServer())
-        {
-            await (_auditLogWriter ?? new AuditLogWriter(_context)).WriteAsync(
-                "Unlock",
-                "User",
-                customer.Id,
-                request.AdminId,
-                newValue: JsonSerializer.Serialize(new
-                {
-                    log.Action, log.Reason, log.IpAddress, log.UserAgent
-                }));
-        }
-        else
-        {
-            _context.UserAccountLogs.Add(log);
-        }
+        _context.UserAccountLogs.Add(log);
 
         await _context.SaveChangesAsync();
 
@@ -528,38 +492,6 @@ public class UserManagementService : IUserManagementService
                 $"Không tìm thấy khách hàng với ID: {customerId}");
         }
 
-        if (_context.Database.IsSqlServer())
-        {
-            var audits = await _context.AuditLogs.AsNoTracking()
-                .Where(log => log.EntityType == "User" && log.EntityId == customerId)
-                .OrderByDescending(log => log.ChangedAt)
-                .ToListAsync();
-            var adminIds = audits.Select(log => log.ChangedByAdminId).Distinct().ToArray();
-            var admins = await _context.Users.AsNoTracking()
-                .Where(user => adminIds.Contains(user.Id))
-                .ToDictionaryAsync(user => user.Id);
-            var targetLogs = audits.Select(log =>
-            {
-                var payload = string.IsNullOrWhiteSpace(log.NewValue)
-                    ? null
-                    : JsonSerializer.Deserialize<UserAccountAuditPayload>(log.NewValue);
-                return new UserAccountLogViewModel
-                {
-                    Id = log.Id,
-                    CreatedAt = log.ChangedAt,
-                    Action = log.Action,
-                    LockType = payload?.LockType,
-                    ViolationType = payload?.ViolationType,
-                    Reason = payload?.Reason,
-                    AdminName = admins.GetValueOrDefault(log.ChangedByAdminId)?.Name ?? "System",
-                    AdminId = log.ChangedByAdminId,
-                    IpAddress = payload?.IpAddress,
-                    UserAgent = payload?.UserAgent
-                };
-            }).ToList();
-            return UserManagementResult<List<UserAccountLogViewModel>>.Success(targetLogs);
-        }
-
         var logs = await _context.UserAccountLogs
             .Where(l => l.UserId == customerId)
             .Include(l => l.Admin)
@@ -583,16 +515,6 @@ public class UserManagementService : IUserManagementService
     }
 
     /// <inheritdoc />
-    private sealed class UserAccountAuditPayload
-    {
-        public LockType? LockType { get; set; }
-        public string? ViolationType { get; set; }
-        public string? Reason { get; set; }
-        public DateTime? ExpiresAt { get; set; }
-        public string? IpAddress { get; set; }
-        public string? UserAgent { get; set; }
-    }
-
     public bool CanLockAccount(string adminRole)
     {
         return adminRole == "SuperAdmin";

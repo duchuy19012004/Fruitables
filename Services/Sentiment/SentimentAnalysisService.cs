@@ -1,6 +1,5 @@
 using Fruitables.Data;
 using Fruitables.Models;
-using Fruitables.Models.Json;
 using Fruitables.Options;
 using Fruitables.Services.Communications;
 using Fruitables.Services.Outbox;
@@ -9,8 +8,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Fruitables.Services.Chat.Knowledge;
 using Fruitables.Services.Chat.Providers;
-using Fruitables.Services.Infrastructure.Json;
-using Fruitables.Services.Reviews;
 
 namespace Fruitables.Services.Sentiment;
 
@@ -34,9 +31,6 @@ public sealed class SentimentAnalysisService : ISentimentAnalysisService
     private readonly IRealtimeNotifier _notifier;
     private readonly IIndexingService? _indexing;
     private readonly ILogger<SentimentAnalysisService> _logger;
-    private readonly IJsonDocumentSerializer _serializer;
-
-    private bool UseTargetSchema => _db.Database.IsSqlServer();
 
     public SentimentAnalysisService(
         ApplicationDbContext db,
@@ -45,8 +39,7 @@ public sealed class SentimentAnalysisService : ISentimentAnalysisService
         IOptions<SentimentOptions> options,
         IRealtimeNotifier notifier,
         ILogger<SentimentAnalysisService> logger,
-        IIndexingService? indexing = null,
-        IJsonDocumentSerializer? serializer = null)
+        IIndexingService? indexing = null)
     {
         _db = db;
         _llm = llm;
@@ -55,7 +48,6 @@ public sealed class SentimentAnalysisService : ISentimentAnalysisService
         _notifier = notifier;
         _logger = logger;
         _indexing = indexing;
-        _serializer = serializer ?? new VersionedJsonSerializer();
     }
 
     public async Task<int> AnalyzeAsync(IReadOnlyList<int> reviewIds, CancellationToken ct = default)
@@ -273,12 +265,6 @@ public sealed class SentimentAnalysisService : ISentimentAnalysisService
 
     private async Task PersistAsync(IReadOnlyList<SentimentResultDto> results, CancellationToken ct)
     {
-        if (UseTargetSchema)
-        {
-            await PersistTargetAsync(results, ct);
-            return;
-        }
-
         var reviewIds = results.Select(r => r.ReviewId).ToArray();
         var existing = await _db.ReviewSentiments
             .Where(s => reviewIds.Contains(s.ReviewId))
@@ -376,142 +362,25 @@ public sealed class SentimentAnalysisService : ISentimentAnalysisService
         }
     }
 
-    private async Task PersistTargetAsync(IReadOnlyList<SentimentResultDto> results, CancellationToken ct)
-    {
-        var reviews = await _db.Reviews
-            .Where(review => results.Select(result => result.ReviewId).Contains(review.Id) && !review.IsDeleted)
-            .ToDictionaryAsync(review => review.Id, ct);
-        var newlyAlerted = new List<(int ReviewId, string ProductName, string Snippet)>();
-
-        foreach (var result in results)
-        {
-            if (!reviews.TryGetValue(result.ReviewId, out var review))
-                continue;
-
-            var current = ReviewAggregateJson.Read(review, _serializer);
-            var oldSentiment = current.Sentiment;
-            if (oldSentiment?.Source == SentimentSource.AdminOverride)
-                continue;
-
-            var alertNow = result.HasSafetyRisk ||
-                (result.Label == SentimentLabel.Negative &&
-                 result.Severity.HasValue &&
-                 result.Severity.Value >= _options.SevereThreshold);
-            var wasAlerted = oldSentiment?.AlertStatus != SentimentAlertStatus.None;
-            var alertStatus = oldSentiment?.AlertStatus ?? SentimentAlertStatus.None;
-            if (alertNow && !wasAlerted)
-            {
-                alertStatus = SentimentAlertStatus.Pending;
-                var product = await _db.Products.AsNoTracking().FirstOrDefaultAsync(item => item.Id == review.ProductId, ct);
-                newlyAlerted.Add((
-                    review.Id,
-                    product?.Name ?? $"Sản phẩm #{review.ProductId}",
-                    SentimentPromptBuilder.Truncate(review.Comment, 80)));
-            }
-            else if (!alertNow)
-            {
-                alertStatus = SentimentAlertStatus.None;
-            }
-
-            var sentiment = new ReviewSentimentPayload
-            {
-                Sentiment = result.Label,
-                RatingSentiment = result.RatingSentiment,
-                CommentSentiment = result.CommentSentiment,
-                HasRatingCommentConflict = result.HasRatingCommentConflict,
-                NeedsManualReview = result.NeedsManualReview,
-                HasSafetyRisk = result.HasSafetyRisk,
-                Severity = result.Severity,
-                Confidence = result.Confidence,
-                Reason = result.Reason,
-                Source = result.Source,
-                AnalyzedAtUtc = DateTime.UtcNow,
-                AnalysisVersion = result.AnalysisVersion ?? _options.AnalysisVersion,
-                AdminOverrideById = oldSentiment?.AdminOverrideById,
-                AdminOverrideAtUtc = oldSentiment?.AdminOverrideAtUtc,
-                AdminReviewNote = oldSentiment?.AdminReviewNote,
-                AlertStatus = alertStatus,
-                AcknowledgedById = alertStatus == SentimentAlertStatus.Acknowledged ? oldSentiment?.AcknowledgedById : null,
-                AcknowledgedAtUtc = alertStatus == SentimentAlertStatus.Acknowledged ? oldSentiment?.AcknowledgedAtUtc : null,
-                Aspects = result.Aspects
-                    .Where(item => Enum.TryParse<SentimentAspect>(item.Aspect, out _)
-                        && Enum.TryParse<SentimentLabel>(item.Sentiment, out _))
-                    .Select(item => new ReviewSentimentAspectPayload
-                    {
-                        Aspect = item.Aspect,
-                        Sentiment = Enum.Parse<SentimentLabel>(item.Sentiment)
-                    })
-                    .ToList()
-            };
-            ReviewAggregateJson.Write(
-                review,
-                current.With(sentiment: sentiment, sentimentSet: true),
-                _serializer);
-        }
-
-        await _db.SaveChangesAsync(ct);
-        foreach (var (reviewId, productName, snippet) in newlyAlerted)
-        {
-            try
-            {
-                await _notifier.NotifySevereReviewAlertAsync(reviewId, productName, snippet);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error notifying severe review alert for review {ReviewId}", reviewId);
-            }
-        }
-    }
-
     public async Task<int> CountUnanalyzedAsync(CancellationToken ct = default)
-    {
-        if (UseTargetSchema)
-        {
-            var reviews = await _db.Reviews.AsNoTracking()
-                .Where(review => !review.IsDeleted)
-                .ToListAsync(ct);
-            return reviews.Count(review =>
-            {
-                var sentiment = ReviewAggregateJson.Read(review, _serializer).Sentiment;
-                return sentiment is null ||
-                    (sentiment.Source != SentimentSource.AdminOverride &&
-                     (sentiment.Sentiment == SentimentLabel.Failed || sentiment.AnalysisVersion != _options.AnalysisVersion));
-            });
-        }
-
-        return await _db.Reviews
+        => await _db.Reviews
             .CountAsync(r => !r.IsDeleted
                 && !_db.ReviewSentiments.Any(s => s.ReviewId == r.Id
                     && (s.Source == SentimentSource.AdminOverride
                         || (s.Sentiment != SentimentLabel.Failed && s.AnalysisVersion == _options.AnalysisVersion))), ct);
-    }
 
     public async Task<int> EnqueueBackfillAsync(CancellationToken ct = default)
     {
         if (!_options.Enabled) return 0;
 
-        var ids = UseTargetSchema
-            ? (await _db.Reviews.AsNoTracking()
-                .Where(review => !review.IsDeleted)
-                .OrderBy(review => review.Id)
-                .ToListAsync(ct))
-                .Where(review =>
-                {
-                    var sentiment = ReviewAggregateJson.Read(review, _serializer).Sentiment;
-                    return sentiment is null ||
-                        (sentiment.Source != SentimentSource.AdminOverride &&
-                         (sentiment.Sentiment == SentimentLabel.Failed || sentiment.AnalysisVersion != _options.AnalysisVersion));
-                })
-                .Select(review => review.Id)
-                .ToList()
-            : await _db.Reviews
-                .Where(r => !r.IsDeleted
-                    && !_db.ReviewSentiments.Any(s => s.ReviewId == r.Id
-                        && (s.Source == SentimentSource.AdminOverride
-                            || (s.Sentiment != SentimentLabel.Failed && s.AnalysisVersion == _options.AnalysisVersion))))
-                .OrderBy(r => r.Id)
-                .Select(r => r.Id)
-                .ToListAsync(ct);
+        var ids = await _db.Reviews
+            .Where(r => !r.IsDeleted
+                && !_db.ReviewSentiments.Any(s => s.ReviewId == r.Id
+                    && (s.Source == SentimentSource.AdminOverride
+                        || (s.Sentiment != SentimentLabel.Failed && s.AnalysisVersion == _options.AnalysisVersion))))
+            .OrderBy(r => r.Id)
+            .Select(r => r.Id)
+            .ToListAsync(ct);
 
         var chunks = ids.Chunk(Math.Max(1, _options.BackfillChunkSize)).ToList();
 
@@ -529,9 +398,6 @@ public sealed class SentimentAnalysisService : ISentimentAnalysisService
 
     public async Task<SentimentDashboardData> GetDashboardAsync(CancellationToken ct = default)
     {
-        if (UseTargetSchema)
-            return await GetDashboardTargetAsync(ct);
-
         var since = DateTime.UtcNow.Date.AddDays(-13);
 
         // Quy tắc eligibility nhất quán cho KPI vận hành: review không bị xóa, không bị ẩn,
@@ -629,79 +495,8 @@ public sealed class SentimentAnalysisService : ISentimentAnalysisService
         return data;
     }
 
-    private async Task<SentimentDashboardData> GetDashboardTargetAsync(CancellationToken ct)
-    {
-        var since = DateTime.UtcNow.Date.AddDays(-13);
-        var reviews = await _db.Reviews.AsNoTracking()
-            .Include(review => review.Product)
-            .Where(review => !review.IsDeleted && !review.IsHidden)
-            .ToListAsync(ct);
-        var rows = reviews
-            .Select(review => new { Review = review, Sentiment = ReviewAggregateJson.Read(review, _serializer).Sentiment })
-            .Where(row => row.Sentiment is not null)
-            .ToList();
-        var eligible = rows.Where(row => !row.Sentiment!.NeedsManualReview && row.Sentiment.Sentiment != SentimentLabel.Failed).ToList();
-        var data = new SentimentDashboardData
-        {
-            TotalAnalyzed = eligible.Count,
-            PositiveCount = eligible.Count(row => row.Sentiment!.Sentiment == SentimentLabel.Positive),
-            NeutralCount = eligible.Count(row => row.Sentiment!.Sentiment == SentimentLabel.Neutral),
-            NegativeCount = eligible.Count(row => row.Sentiment!.Sentiment == SentimentLabel.Negative),
-            FailedCount = rows.Count(row => row.Sentiment!.Sentiment == SentimentLabel.Failed),
-            PendingAlertCount = rows.Count(row => row.Sentiment!.AlertStatus == SentimentAlertStatus.Pending),
-            PendingReviewCount = rows.Count(row => row.Sentiment!.NeedsManualReview),
-            ConflictCount = rows.Count(row => row.Sentiment!.HasRatingCommentConflict),
-            SafetyRiskCount = rows.Count(row => row.Sentiment!.HasSafetyRisk),
-            UnanalyzedCount = await CountUnanalyzedAsync(ct)
-        };
-        data.NegativeRate = data.TotalAnalyzed == 0 ? 0 : (float)Math.Round(data.NegativeCount * 100f / data.TotalAnalyzed, 1);
-
-        for (var d = 13; d >= 0; d--)
-        {
-            var date = DateTime.UtcNow.Date.AddDays(-d);
-            var day = eligible.Where(row => row.Review.CreatedAt.Date == date).ToList();
-            data.Trend.Add(new SentimentTrendPoint
-            {
-                Date = date.ToString("dd/MM"),
-                Positive = day.Count(row => row.Sentiment!.Sentiment == SentimentLabel.Positive),
-                Neutral = day.Count(row => row.Sentiment!.Sentiment == SentimentLabel.Neutral),
-                Negative = day.Count(row => row.Sentiment!.Sentiment == SentimentLabel.Negative)
-            });
-        }
-
-        data.TopNegativeAspects = eligible
-            .SelectMany(row => row.Sentiment!.Aspects
-                .Where(aspect => aspect.Sentiment == SentimentLabel.Negative)
-                .Select(aspect => aspect.Aspect))
-            .GroupBy(aspect => aspect)
-            .OrderByDescending(group => group.Count())
-            .Take(5)
-            .Select(group => new AspectCount { Aspect = group.Key, Count = group.Count() })
-            .ToList();
-        data.TopNegativeProducts = eligible
-            .GroupBy(row => new { row.Review.ProductId, Name = row.Review.Product?.Name ?? $"Sản phẩm #{row.Review.ProductId}" })
-            .Select(group => new ProductSentiment
-            {
-                ProductId = group.Key.ProductId,
-                ProductName = group.Key.Name,
-                NegativeCount = group.Count(row => row.Sentiment!.Sentiment == SentimentLabel.Negative),
-                ConflictCount = group.Count(row => row.Sentiment!.HasRatingCommentConflict),
-                TotalCount = group.Count()
-            })
-            .OrderByDescending(item => item.NegativeCount)
-            .ThenByDescending(item => item.TotalCount)
-            .Take(5)
-            .ToList();
-        foreach (var product in data.TopNegativeProducts)
-            product.NegativeRate = product.TotalCount == 0 ? 0 : (float)Math.Round(product.NegativeCount * 100f / product.TotalCount, 1);
-        return data;
-    }
-
     public async Task<PagedSentimentReviews> GetReviewsAsync(SentimentReviewFilter filter, int maxPageSize = 100, CancellationToken ct = default)
     {
-        if (UseTargetSchema)
-            return await GetReviewsTargetAsync(filter, maxPageSize, ct);
-
         var query = _db.Reviews
             .Where(r => !r.IsDeleted)
             .Join(_db.ReviewSentiments, r => r.Id, s => s.ReviewId, (r, s) => new { r, s });
@@ -801,91 +596,8 @@ public sealed class SentimentAnalysisService : ISentimentAnalysisService
         };
     }
 
-    private async Task<PagedSentimentReviews> GetReviewsTargetAsync(
-        SentimentReviewFilter filter,
-        int maxPageSize,
-        CancellationToken ct)
-    {
-        var reviews = await _db.Reviews.AsNoTracking()
-            .Include(review => review.Product)
-            .Include(review => review.User)
-            .Where(review => !review.IsDeleted)
-            .ToListAsync(ct);
-        var rows = reviews.Select(review =>
-        {
-            var sentiment = ReviewAggregateJson.Read(review, _serializer).Sentiment;
-            return (Review: review, Sentiment: sentiment);
-        }).Where(row => row.Sentiment is not null).ToList();
-
-        if (filter.ProductId.HasValue)
-            rows = rows.Where(row => row.Review.ProductId == filter.ProductId.Value).ToList();
-        if (filter.Sentiment.HasValue)
-            rows = rows.Where(row => row.Sentiment!.Sentiment == filter.Sentiment.Value).ToList();
-        if (filter.Severity.HasValue)
-            rows = rows.Where(row => row.Sentiment!.Severity == filter.Severity.Value).ToList();
-        if (filter.AlertOnly == true)
-            rows = rows.Where(row => row.Sentiment!.AlertStatus == SentimentAlertStatus.Pending).ToList();
-        if (filter.ConflictOnly == true)
-            rows = rows.Where(row => row.Sentiment!.HasRatingCommentConflict).ToList();
-        if (filter.NeedsManualReviewOnly == true)
-            rows = rows.Where(row => row.Sentiment!.NeedsManualReview).ToList();
-        if (filter.SafetyOnly == true)
-            rows = rows.Where(row => row.Sentiment!.HasSafetyRisk).ToList();
-        if (filter.From.HasValue)
-            rows = rows.Where(row => row.Review.CreatedAt >= filter.From.Value).ToList();
-        if (filter.To.HasValue)
-            rows = rows.Where(row => row.Review.CreatedAt <= filter.To.Value).ToList();
-
-        var page = Math.Max(1, filter.Page);
-        var pageSize = Math.Clamp(filter.PageSize, 1, Math.Max(1, maxPageSize));
-        var total = rows.Count;
-        var items = rows.OrderByDescending(row => row.Review.CreatedAt)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .Select(row => new SentimentReviewRow
-            {
-                ReviewId = row.Review.Id,
-                ProductId = row.Review.ProductId,
-                ProductName = row.Review.Product?.Name ?? $"Sản phẩm #{row.Review.ProductId}",
-                UserName = row.Review.User?.Name ?? "Khách",
-                Rating = row.Review.Rating,
-                Comment = row.Review.Comment ?? string.Empty,
-                CreatedAt = row.Review.CreatedAt,
-                IsVerifiedPurchase = row.Review.IsVerifiedPurchase,
-                Label = row.Sentiment!.Sentiment,
-                RatingSentiment = row.Sentiment.RatingSentiment,
-                CommentSentiment = row.Sentiment.CommentSentiment,
-                HasRatingCommentConflict = row.Sentiment.HasRatingCommentConflict,
-                NeedsManualReview = row.Sentiment.NeedsManualReview,
-                HasSafetyRisk = row.Sentiment.HasSafetyRisk,
-                Severity = row.Sentiment.Severity,
-                Confidence = row.Sentiment.Confidence,
-                Reason = row.Sentiment.Reason,
-                Source = row.Sentiment.Source,
-                AnalyzedAtUtc = row.Sentiment.AnalyzedAtUtc,
-                AnalysisVersion = row.Sentiment.AnalysisVersion,
-                AlertStatus = row.Sentiment.AlertStatus,
-                Aspects = row.Sentiment.Aspects.Select(aspect => new SentimentAspectDto
-                {
-                    Aspect = aspect.Aspect,
-                    Sentiment = aspect.Sentiment.ToString()
-                }).ToList()
-            }).ToList();
-        return new PagedSentimentReviews
-        {
-            Items = items,
-            TotalCount = total,
-            Page = page,
-            PageSize = pageSize,
-            TotalPages = (int)Math.Ceiling(total / (double)pageSize)
-        };
-    }
-
     public async Task<bool> OverrideAsync(int reviewId, SentimentLabel label, int? severity, string? note, int adminId, CancellationToken ct = default)
     {
-        if (UseTargetSchema)
-            return await OverrideTargetAsync(reviewId, label, severity, note, adminId, ct);
-
         var sentiment = await _db.ReviewSentiments.FirstOrDefaultAsync(s => s.ReviewId == reviewId, ct);
         if (sentiment is null) return false;
         if ((sentiment.HasRatingCommentConflict || sentiment.HasSafetyRisk)
@@ -943,131 +655,20 @@ public sealed class SentimentAnalysisService : ISentimentAnalysisService
         return true;
     }
 
-    private async Task<bool> OverrideTargetAsync(
-        int reviewId,
-        SentimentLabel label,
-        int? severity,
-        string? note,
-        int adminId,
-        CancellationToken ct)
-    {
-        var review = await _db.Reviews.FirstOrDefaultAsync(item => item.Id == reviewId && !item.IsDeleted, ct);
-        if (review is null)
-            return false;
-        var document = ReviewAggregateJson.Read(review, _serializer);
-        var existing = document.Sentiment;
-        if (existing is null)
-            return false;
-        if ((existing.HasRatingCommentConflict || existing.HasSafetyRisk) && string.IsNullOrWhiteSpace(note))
-            return false;
-
-        int? nextSeverity = label == SentimentLabel.Negative && severity.HasValue
-            ? Math.Clamp(severity.Value, 1, 3)
-            : null;
-        var alertNow = existing.HasSafetyRisk ||
-            (label == SentimentLabel.Negative && nextSeverity.HasValue && nextSeverity.Value >= _options.SevereThreshold);
-        var wasAlerted = existing.AlertStatus != SentimentAlertStatus.None;
-        var alertStatus = alertNow ? (wasAlerted ? existing.AlertStatus : SentimentAlertStatus.Pending) : SentimentAlertStatus.None;
-        var next = new ReviewSentimentPayload
-        {
-            Sentiment = label,
-            RatingSentiment = existing.RatingSentiment,
-            CommentSentiment = existing.CommentSentiment,
-            HasRatingCommentConflict = existing.HasRatingCommentConflict,
-            NeedsManualReview = false,
-            HasSafetyRisk = existing.HasSafetyRisk,
-            Severity = nextSeverity,
-            Confidence = existing.Confidence,
-            Reason = existing.Reason,
-            Source = SentimentSource.AdminOverride,
-            AnalyzedAtUtc = existing.AnalyzedAtUtc,
-            AnalysisVersion = existing.AnalysisVersion,
-            AdminOverrideById = adminId,
-            AdminOverrideAtUtc = DateTime.UtcNow,
-            AdminReviewNote = TruncateReason(note, 400),
-            AlertStatus = alertStatus,
-            AcknowledgedById = alertStatus == SentimentAlertStatus.Acknowledged ? existing.AcknowledgedById : null,
-            AcknowledgedAtUtc = alertStatus == SentimentAlertStatus.Acknowledged ? existing.AcknowledgedAtUtc : null,
-            Aspects = existing.Aspects
-        };
-        ReviewAggregateJson.Write(review, document.With(sentiment: next, sentimentSet: true), _serializer);
-        await _db.SaveChangesAsync(ct);
-
-        if (!wasAlerted && alertStatus == SentimentAlertStatus.Pending)
-        {
-            try
-            {
-                var product = await _db.Products.AsNoTracking().FirstOrDefaultAsync(item => item.Id == review.ProductId, ct);
-                await _notifier.NotifySevereReviewAlertAsync(
-                    review.Id,
-                    product?.Name ?? $"Sản phẩm #{review.ProductId}",
-                    SentimentPromptBuilder.Truncate(review.Comment, 80));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error notifying severe review alert for review {ReviewId}", reviewId);
-            }
-        }
-        return true;
-    }
-
     public async Task<bool> AcknowledgeAlertAsync(int reviewId, int adminId, CancellationToken ct = default)
     {
-        if (UseTargetSchema)
-        {
-            var review = await _db.Reviews.FirstOrDefaultAsync(item => item.Id == reviewId && !item.IsDeleted, ct);
-            if (review is null)
-                return false;
-            var document = ReviewAggregateJson.Read(review, _serializer);
-            var sentiment = document.Sentiment;
-            if (sentiment is null || sentiment.AlertStatus != SentimentAlertStatus.Pending)
-                return false;
-            var next = new ReviewSentimentPayload
-            {
-                Sentiment = sentiment.Sentiment,
-                RatingSentiment = sentiment.RatingSentiment,
-                CommentSentiment = sentiment.CommentSentiment,
-                HasRatingCommentConflict = sentiment.HasRatingCommentConflict,
-                NeedsManualReview = sentiment.NeedsManualReview,
-                HasSafetyRisk = sentiment.HasSafetyRisk,
-                Severity = sentiment.Severity,
-                Confidence = sentiment.Confidence,
-                Reason = sentiment.Reason,
-                Source = sentiment.Source,
-                AnalyzedAtUtc = sentiment.AnalyzedAtUtc,
-                AnalysisVersion = sentiment.AnalysisVersion,
-                AdminOverrideById = sentiment.AdminOverrideById,
-                AdminOverrideAtUtc = sentiment.AdminOverrideAtUtc,
-                AdminReviewNote = sentiment.AdminReviewNote,
-                AlertStatus = SentimentAlertStatus.Acknowledged,
-                AcknowledgedById = adminId,
-                AcknowledgedAtUtc = DateTime.UtcNow,
-                Aspects = sentiment.Aspects
-            };
-            ReviewAggregateJson.Write(review, document.With(sentiment: next, sentimentSet: true), _serializer);
-            await _db.SaveChangesAsync(ct);
-            return true;
-        }
+        var sentiment = await _db.ReviewSentiments.FirstOrDefaultAsync(s => s.ReviewId == reviewId, ct);
+        if (sentiment is null || sentiment.AlertStatus != SentimentAlertStatus.Pending) return false;
 
-        var legacySentiment = await _db.ReviewSentiments.FirstOrDefaultAsync(s => s.ReviewId == reviewId, ct);
-        if (legacySentiment is null || legacySentiment.AlertStatus != SentimentAlertStatus.Pending) return false;
-
-        legacySentiment.AlertStatus = SentimentAlertStatus.Acknowledged;
-        legacySentiment.AcknowledgedById = adminId;
-        legacySentiment.AcknowledgedAtUtc = DateTime.UtcNow;
+        sentiment.AlertStatus = SentimentAlertStatus.Acknowledged;
+        sentiment.AcknowledgedById = adminId;
+        sentiment.AcknowledgedAtUtc = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
         return true;
     }
 
     public async Task<int> CountPendingAlertsAsync(CancellationToken ct = default)
-    {
-        if (UseTargetSchema)
-        {
-            var reviews = await _db.Reviews.AsNoTracking().Where(review => !review.IsDeleted).ToListAsync(ct);
-            return reviews.Count(review => ReviewAggregateJson.Read(review, _serializer).Sentiment?.AlertStatus == SentimentAlertStatus.Pending);
-        }
-        return await _db.ReviewSentiments.CountAsync(s => s.AlertStatus == SentimentAlertStatus.Pending, ct);
-    }
+        => await _db.ReviewSentiments.CountAsync(s => s.AlertStatus == SentimentAlertStatus.Pending, ct);
 
     public async Task<ReviewContextDto?> GetReviewContextAsync(int reviewId, CancellationToken ct = default)
     {
@@ -1106,8 +707,8 @@ public sealed class SentimentAnalysisService : ISentimentAnalysisService
             .FirstOrDefaultAsync(r => r.Id == reviewId && !r.IsDeleted, ct);
         if (review is null) return null;
 
-        var reviewDocument = ReviewAggregateJson.Read(review, _serializer);
-        var sentiment = reviewDocument.Sentiment;
+        var sentiment = await _db.ReviewSentiments.AsNoTracking()
+            .FirstOrDefaultAsync(s => s.ReviewId == reviewId, ct);
         if (sentiment is null
             || sentiment.NeedsManualReview
             || (sentiment.CommentSentiment != SentimentLabel.Negative

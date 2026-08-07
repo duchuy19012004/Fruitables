@@ -19,11 +19,6 @@ public class ChatSession
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime LastMessageAt { get; set; } = DateTime.UtcNow;
 
-    public string MessagesJson { get; set; } = "[]";
-
-    [ConcurrencyCheck]
-    public byte[]? RowVersion { get; set; }
-
     // Chat từ đâu: "widget" (nút góc màn hình) hoặc "page" (trang /Chat)
     [MaxLength(20)]
     public string? Source { get; set; }

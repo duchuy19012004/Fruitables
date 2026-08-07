@@ -1,10 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Fruitables.Models;
-using Fruitables.Models.Json;
 using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
-using Fruitables.Services.Infrastructure.Json;
 using Fruitables.Services.Pricing.ProductPricing;
 
 namespace Fruitables.Services.Catalog.Products;
@@ -14,15 +12,13 @@ public class ProductService : IProductService
     private readonly IUnitOfWork _unitOfWork;
     private readonly TimeProvider _timeProvider;
     private readonly IProductPricingService _pricing;
-    private readonly IJsonDocumentSerializer _serializer;
 
     public ProductService(IUnitOfWork unitOfWork, TimeProvider timeProvider,
-        IProductPricingService pricing, IJsonDocumentSerializer? serializer = null)
+        IProductPricingService pricing)
     {
         _unitOfWork = unitOfWork;
         _timeProvider = timeProvider;
         _pricing = pricing;
-        _serializer = serializer ?? new VersionedJsonSerializer();
     }
 
     public async Task<List<Product>> GetAllProductsAsync()
@@ -30,9 +26,9 @@ public class ProductService : IProductService
         var products = await PricedQuery()
             .Where(p => p.IsActive)
             .Include(p => p.Category)
+            .Include(p => p.Images)
             .ToListAsync();
-        ProductAggregateJson.Hydrate(products, _serializer);
-        await ApplyPricingAsync(products);
+        ApplyPricing(products);
         return products;
     }
 
@@ -41,10 +37,10 @@ public class ProductService : IProductService
         var products = await PricedQuery()
             .Where(p => p.IsActive && p.IsFeatured)
             .Include(p => p.Category)
+            .Include(p => p.Images)
             .Take(count)
             .ToListAsync();
-        ProductAggregateJson.Hydrate(products, _serializer);
-        await ApplyPricingAsync(products);
+        ApplyPricing(products);
         return products;
     }
 
@@ -53,9 +49,9 @@ public class ProductService : IProductService
         var products = await PricedQuery()
             .Where(p => p.IsActive && p.CategoryId == categoryId)
             .Include(p => p.Category)
+            .Include(p => p.Images)
             .ToListAsync();
-        ProductAggregateJson.Hydrate(products, _serializer);
-        await ApplyPricingAsync(products);
+        ApplyPricing(products);
         return products;
     }
 
@@ -63,13 +59,10 @@ public class ProductService : IProductService
     {
         var product = await PricedQuery()
             .Include(p => p.Category)
+            .Include(p => p.Images)
             .Include(p => p.Reviews).ThenInclude(r => r.User)
             .FirstOrDefaultAsync(p => p.Id == id);
-        if (product != null)
-        {
-            ProductAggregateJson.Hydrate([product], _serializer);
-            await ApplyPricingAsync([product]);
-        }
+        if (product != null) ApplyPricing([product]);
         return product;
     }
 
@@ -77,13 +70,10 @@ public class ProductService : IProductService
     {
         var product = await PricedQuery()
             .Include(p => p.Category)
+            .Include(p => p.Images)
             .Include(p => p.Reviews).ThenInclude(r => r.User)
             .FirstOrDefaultAsync(p => p.Slug == slug);
-        if (product != null)
-        {
-            ProductAggregateJson.Hydrate([product], _serializer);
-            await ApplyPricingAsync([product]);
-        }
+        if (product != null) ApplyPricing([product]);
         return product;
     }
 
@@ -121,9 +111,8 @@ public class ProductService : IProductService
             .ToList();
         var pageIds = pagePrices.Select(p => p.ProductId).ToList();
         var loaded = await PricedQuery().Where(p => pageIds.Contains(p.Id))
-            .Include(p => p.Category).ToListAsync();
-        ProductAggregateJson.Hydrate(loaded, _serializer);
-        await ApplyPricingAsync(loaded);
+            .Include(p => p.Category).Include(p => p.Images).ToListAsync();
+        ApplyPricing(loaded);
         var productsById = loaded.ToDictionary(p => p.Id);
         var products = pageIds.Where(productsById.ContainsKey).Select(id => productsById[id]).ToList();
 
@@ -154,28 +143,20 @@ public class ProductService : IProductService
 
         var related = await PricedQuery()
             .Where(p => p.IsActive && p.CategoryId == product.CategoryId && p.Id != productId)
+            .Include(p => p.Images)
             .Take(count)
             .ToListAsync();
-        ProductAggregateJson.Hydrate(related, _serializer);
-        await ApplyPricingAsync(related);
+        ApplyPricing(related);
         return related;
     }
 
     private IQueryable<Product> PricedQuery() => _unitOfWork.Products.Query().AsNoTracking()
-        .Include(p => p.Variants.Where(v => v.IsActive));
+        .Include(p => p.Variants.Where(v => v.IsActive)).ThenInclude(v => v.PriceSchedules)
+        .Include(p => p.PriceSchedules);
 
-    private async Task ApplyPricingAsync(IReadOnlyCollection<Product> products)
+    private void ApplyPricing(IEnumerable<Product> products)
     {
         var now = _timeProvider.GetUtcNow();
-        var targets = products.SelectMany(product =>
-        {
-            var variants = product.Variants.Where(v => v.IsActive).ToList();
-            return variants.Count > 0
-                ? variants.Select(variant => new PriceTargetKey(product.Id, variant.Id))
-                : [new PriceTargetKey(product.Id, null)];
-        }).ToList();
-        var quotes = await _pricing.GetQuotesAsync(targets, now);
-
         foreach (var product in products)
         {
             var variants = product.Variants.Where(v => v.IsActive).ToList();
@@ -184,8 +165,7 @@ public class ProductService : IProductService
                 var prices = new List<decimal>();
                 foreach (var variant in variants)
                 {
-                    var quote = quotes.GetValueOrDefault(new PriceTargetKey(product.Id, variant.Id))
-                        ?? new PriceQuote(product.Id, variant.Id, variant.Price, variant.Price, null);
+                    var quote = ProductPricingService.CalculateQuote(variant.Price, variant.PriceSchedules, now);
                     variant.SalePrice = quote.IsDiscounted ? quote.EffectivePrice : null;
                     variant.DisplayPrice = quote.EffectivePrice;
                     prices.Add(quote.EffectivePrice);
@@ -197,156 +177,11 @@ public class ProductService : IProductService
             }
             else
             {
-                var quote = quotes.GetValueOrDefault(new PriceTargetKey(product.Id, null))
-                    ?? new PriceQuote(product.Id, null, product.Price, product.Price, null);
+                var quote = ProductPricingService.CalculateQuote(product.Price, product.PriceSchedules, now);
                 product.SalePrice = quote.IsDiscounted ? quote.EffectivePrice : null;
                 product.DisplayMinPrice = quote.EffectivePrice;
                 product.DisplayMaxPrice = quote.EffectivePrice;
             }
         }
     }
-}
-
-internal static class ProductAggregateJson
-{
-    public static void Hydrate(IEnumerable<Product> products, IJsonDocumentSerializer serializer)
-    {
-        foreach (var product in products)
-        {
-            var images = ReadImages(product.ImagesJson, serializer);
-            var tags = ReadTags(product.TagsJson, serializer);
-            var orderedImages = OrderImages(images).ToList();
-
-            product.Images = orderedImages
-                .Select(image => new ProductImage
-                {
-                    Id = image.Id,
-                    ProductId = product.Id,
-                    ImageUrl = image.Url,
-                    StorageKey = image.StorageKey,
-                    IsPrimary = image.IsPrimary,
-                    SortOrder = image.SortOrder,
-                    Product = product
-                })
-                .ToList();
-            product.Tags = tags.Tags
-                .Select((tag, index) => new ProductTag
-                {
-                    Id = index + 1,
-                    Name = tag.Name,
-                    Slug = tag.Slug,
-                    Products = [product]
-                })
-                .ToList();
-        }
-    }
-
-    public static ProductImagesDocument ReadImages(string json, IJsonDocumentSerializer serializer)
-    {
-        if (string.IsNullOrWhiteSpace(json) || json.Trim() == "[]")
-            return new ProductImagesDocument();
-        return serializer.Deserialize<ProductImagesDocument>(json);
-    }
-
-    public static ProductTagsDocument ReadTags(string json, IJsonDocumentSerializer serializer)
-    {
-        if (string.IsNullOrWhiteSpace(json) || json.Trim() == "[]")
-            return new ProductTagsDocument();
-        return serializer.Deserialize<ProductTagsDocument>(json);
-    }
-
-    public static List<ProductImage> ReadImageModels(Product product, IJsonDocumentSerializer serializer) =>
-        OrderImages(ReadImages(product.ImagesJson, serializer))
-            .Select(image => new ProductImage
-            {
-                Id = image.Id,
-                ProductId = product.Id,
-                ImageUrl = image.Url,
-                StorageKey = image.StorageKey,
-                IsPrimary = image.IsPrimary,
-                SortOrder = image.SortOrder,
-                Product = product
-            })
-            .ToList();
-
-    public static string SerializeImages(IEnumerable<ProductImage> images, IJsonDocumentSerializer serializer) =>
-        serializer.Serialize(new ProductImagesDocument
-        {
-            Images = EnsureImageIds(images
-                .OrderBy(image => image.SortOrder)
-                .ThenBy(image => image.Id)
-                .Select(image => new ProductImageDocument
-                {
-                    Id = image.Id,
-                    Url = image.ImageUrl,
-                    StorageKey = string.IsNullOrWhiteSpace(image.StorageKey)
-                        ? image.ImageUrl.TrimStart('/')
-                        : image.StorageKey,
-                    IsPrimary = image.IsPrimary,
-                    SortOrder = image.SortOrder
-                }))
-                .ToList()
-        });
-
-    private static IEnumerable<ProductImageDocument> OrderImages(ProductImagesDocument document)
-    {
-        var usedIds = new HashSet<int>();
-        var nextId = 1;
-        foreach (var image in document.Images
-                     .OrderByDescending(image => image.IsPrimary)
-                     .ThenBy(image => image.SortOrder))
-        {
-            var id = image.Id;
-            if (id <= 0 || !usedIds.Add(id))
-            {
-                while (usedIds.Contains(nextId))
-                    nextId++;
-                id = nextId++;
-                usedIds.Add(id);
-            }
-
-            yield return new ProductImageDocument
-            {
-                Id = id,
-                Url = image.Url,
-                StorageKey = image.StorageKey,
-                IsPrimary = image.IsPrimary,
-                SortOrder = image.SortOrder
-            };
-        }
-    }
-
-    private static IEnumerable<ProductImageDocument> EnsureImageIds(IEnumerable<ProductImageDocument> images)
-    {
-        var usedIds = new HashSet<int>();
-        var nextId = 1;
-        foreach (var image in images)
-        {
-            var id = image.Id;
-            if (id <= 0 || !usedIds.Add(id))
-            {
-                while (usedIds.Contains(nextId))
-                    nextId++;
-                id = nextId++;
-                usedIds.Add(id);
-            }
-
-            yield return new ProductImageDocument
-            {
-                Id = id,
-                Url = image.Url,
-                StorageKey = image.StorageKey,
-                IsPrimary = image.IsPrimary,
-                SortOrder = image.SortOrder
-            };
-        }
-    }
-
-    public static string SerializeTags(IEnumerable<ProductTag> tags, IJsonDocumentSerializer serializer) =>
-        serializer.Serialize(new ProductTagsDocument
-        {
-            Tags = tags
-                .Select(tag => new ProductTagDocument { Name = tag.Name, Slug = tag.Slug })
-                .ToList()
-        });
 }

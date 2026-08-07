@@ -1,9 +1,7 @@
 using Fruitables.Data;
 using Fruitables.Models;
-using Fruitables.Models.Json;
 using Fruitables.Repositories;
 using Fruitables.Services.Communications;
-using Fruitables.Services.Infrastructure.Json;
 using Fruitables.ViewModels;
 using Microsoft.EntityFrameworkCore;
 using Moq;
@@ -16,15 +14,6 @@ namespace Fruitables.Tests;
 
 public class CartServiceTests
 {
-    private static readonly VersionedJsonSerializer Serializer = new();
-
-    private static string LinesJson(params CartLineDocument[] lines) =>
-        Serializer.Serialize(new CartLinesDocument
-        {
-            Lines = lines.ToList(),
-            NextLineId = lines.Select(line => line.Id).DefaultIfEmpty(0).Max() + 1
-        });
-
     private static IProductPricingService CreateDefaultPricing()
     {
         var pricing = new Mock<IProductPricingService>();
@@ -86,20 +75,19 @@ public class CartServiceTests
             ]
         };
 
-        cart.LinesJson = LinesJson(new CartLineDocument
+        context.AddRange(category, product, cart, order);
+        context.CartItems.Add(new CartItem
         {
-            Id = 1,
-            ProductId = product.Id,
+            Cart = cart,
+            Product = product,
             Quantity = 0.5m,
             Price = product.Price
         });
-        context.AddRange(category, product, cart, order);
         await context.SaveChangesAsync();
         context.ChangeTracker.Clear();
 
         Assert.Equal(2.5m, (await context.Products.FindAsync(product.Id))!.StockQuantity);
-        var document = Serializer.Deserialize<CartLinesDocument>((await context.Carts.SingleAsync()).LinesJson);
-        Assert.Equal(0.5m, document.Lines.Single().Quantity);
+        Assert.Equal(0.5m, (await context.CartItems.SingleAsync())!.Quantity);
         Assert.Equal(0.5m, (await context.OrderItems.SingleAsync())!.Quantity);
     }
 
@@ -129,19 +117,18 @@ public class CartServiceTests
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
-        var cart = new Cart
-        {
-            SessionId = "test-session",
-            LinesJson = LinesJson(new CartLineDocument
-            {
-                Id = 1,
-                ProductId = product.Id,
-                Quantity = quantity,
-                Price = product.Price
-            })
-        };
+        var cart = new Cart { SessionId = "test-session" };
         context.Products.Add(product);
         context.Carts.Add(cart);
+        await context.SaveChangesAsync();
+
+        context.CartItems.Add(new CartItem
+        {
+            CartId = cart.Id,
+            ProductId = product.Id,
+            Quantity = quantity,
+            Price = product.Price
+        });
         await context.SaveChangesAsync();
 
         var couponServiceMock = new Mock<ICouponService>();
@@ -211,15 +198,14 @@ public class CartServiceTests
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
-        var cart = new Cart
-        {
-            SessionId = "multi-session",
-            LinesJson = LinesJson(
-                new CartLineDocument { Id = 1, ProductId = product1.Id, Quantity = 2, Price = product1.Price },
-                new CartLineDocument { Id = 2, ProductId = product2.Id, Quantity = 3, Price = product2.Price })
-        };
+        var cart = new Cart { SessionId = "multi-session" };
         context.Products.AddRange(product1, product2);
         context.Carts.Add(cart);
+        await context.SaveChangesAsync();
+
+        context.CartItems.AddRange(
+            new CartItem { CartId = cart.Id, ProductId = product1.Id, Quantity = 2, Price = product1.Price },
+            new CartItem { CartId = cart.Id, ProductId = product2.Id, Quantity = 3, Price = product2.Price });
         await context.SaveChangesAsync();
 
         var couponServiceMock = new Mock<ICouponService>();
@@ -275,15 +261,7 @@ public class CartServiceTests
             quantity: 1);
 
         Assert.False(result.Success);
-        Assert.Contains("giá", result.Message, StringComparison.OrdinalIgnoreCase);
-        var cart = await context.Carts.SingleOrDefaultAsync(item => item.SessionId == "missing-quote-session");
-        if (cart != null)
-        {
-            var document = Serializer.Deserialize<CartLinesDocument>(cart.LinesJson == "[]"
-                ? Serializer.Serialize(new CartLinesDocument())
-                : cart.LinesJson);
-            // empty or default document only
-            Assert.Empty(document.Lines);
-        }
+        Assert.Contains("xÃ¡c Ä‘á»‹nh giÃ¡", result.Message);
+        Assert.Empty(await context.CartItems.ToListAsync());
     }
 }

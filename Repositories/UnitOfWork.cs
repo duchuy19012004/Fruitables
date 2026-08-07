@@ -51,8 +51,6 @@ public class UnitOfWork : IUnitOfWork
         _context = context;
     }
 
-    public ApplicationDbContext Context => _context;
-
     // Existing repository properties
     public ICategoryRepository Categories => 
         _categories ??= new CategoryRepository(_context);

@@ -45,8 +45,7 @@ public class IndexingServiceTests
     public async Task IndexFaqAsync_creates_chunk()
     {
         await using var db = CreateContext();
-        var serializer = new Fruitables.Services.Infrastructure.Json.VersionedJsonSerializer();
-        var entry = Fruitables.Services.Infrastructure.Content.ContentEntryMapper.FromFaq(new Faq
+        var faq = new Faq
         {
             Title = "Phí ship",
             Body = "Nội thành 30k",
@@ -54,19 +53,17 @@ public class IndexingServiceTests
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
-        }, serializer);
-        db.ContentEntries.Add(entry);
-        await db.SaveChangesAsync();
-        entry.Key = Fruitables.Services.Infrastructure.Content.ContentEntryMapper.Key("faq", entry.Id);
+        };
+        db.Faqs.Add(faq);
         await db.SaveChangesAsync();
 
         var embedding = new DeterministicEmbeddingClient(dimensions: 32);
         var sut = CreateService(db, embedding);
 
-        await sut.IndexFaqAsync(entry.Id);
+        await sut.IndexFaqAsync(faq.Id);
 
         var chunks = await db.KnowledgeChunks
-            .Where(c => c.SourceType == KnowledgeSourceType.Faq && c.SourceId == entry.Id.ToString())
+            .Where(c => c.SourceType == KnowledgeSourceType.Faq && c.SourceId == faq.Id.ToString())
             .ToListAsync();
 
         Assert.Single(chunks);
@@ -89,8 +86,7 @@ public class IndexingServiceTests
     public async Task IndexFaqAsync_inactive_disables_chunks()
     {
         await using var db = CreateContext();
-        var serializer = new Fruitables.Services.Infrastructure.Json.VersionedJsonSerializer();
-        var entry = Fruitables.Services.Infrastructure.Content.ContentEntryMapper.FromFaq(new Faq
+        var faq = new Faq
         {
             Title = "Hỗ trợ đơn hàng",
             Body = "Liên hệ cửa hàng để được hỗ trợ",
@@ -98,25 +94,23 @@ public class IndexingServiceTests
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
-        }, serializer);
-        db.ContentEntries.Add(entry);
-        await db.SaveChangesAsync();
-        entry.Key = Fruitables.Services.Infrastructure.Content.ContentEntryMapper.Key("faq", entry.Id);
+        };
+        db.Faqs.Add(faq);
         await db.SaveChangesAsync();
 
         var embedding = new DeterministicEmbeddingClient(dimensions: 32);
         var sut = CreateService(db, embedding);
 
-        await sut.IndexFaqAsync(entry.Id);
+        await sut.IndexFaqAsync(faq.Id);
         Assert.True(await db.KnowledgeChunks.AnyAsync(c => c.IsActive));
 
-        entry.IsActive = false;
+        faq.IsActive = false;
         await db.SaveChangesAsync();
 
-        await sut.IndexFaqAsync(entry.Id);
+        await sut.IndexFaqAsync(faq.Id);
 
         var chunks = await db.KnowledgeChunks
-            .Where(c => c.SourceType == KnowledgeSourceType.Faq && c.SourceId == entry.Id.ToString())
+            .Where(c => c.SourceType == KnowledgeSourceType.Faq && c.SourceId == faq.Id.ToString())
             .ToListAsync();
 
         Assert.NotEmpty(chunks);
@@ -127,8 +121,7 @@ public class IndexingServiceTests
     public async Task IndexFaqAsync_same_content_skips_reembed()
     {
         await using var db = CreateContext();
-        var serializer = new Fruitables.Services.Infrastructure.Json.VersionedJsonSerializer();
-        var entry = Fruitables.Services.Infrastructure.Content.ContentEntryMapper.FromFaq(new Faq
+        var faq = new Faq
         {
             Title = "Giờ mở cửa",
             Body = "8h-20h mỗi ngày",
@@ -136,24 +129,22 @@ public class IndexingServiceTests
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
-        }, serializer);
-        db.ContentEntries.Add(entry);
-        await db.SaveChangesAsync();
-        entry.Key = Fruitables.Services.Infrastructure.Content.ContentEntryMapper.Key("faq", entry.Id);
+        };
+        db.Faqs.Add(faq);
         await db.SaveChangesAsync();
 
         var inner = new DeterministicEmbeddingClient(dimensions: 32);
         var counting = new CountingEmbeddingClient(inner);
         var sut = CreateService(db, counting);
 
-        await sut.IndexFaqAsync(entry.Id);
+        await sut.IndexFaqAsync(faq.Id);
         Assert.Equal(1, counting.EmbedCallCount);
 
-        await sut.IndexFaqAsync(entry.Id);
+        await sut.IndexFaqAsync(faq.Id);
         Assert.Equal(1, counting.EmbedCallCount);
 
         var chunks = await db.KnowledgeChunks
-            .Where(c => c.SourceType == KnowledgeSourceType.Faq && c.SourceId == entry.Id.ToString() && c.IsActive)
+            .Where(c => c.SourceType == KnowledgeSourceType.Faq && c.SourceId == faq.Id.ToString() && c.IsActive)
             .ToListAsync();
         Assert.Single(chunks);
     }

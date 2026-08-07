@@ -1,8 +1,6 @@
 using Fruitables.Data;
 using Fruitables.Models;
-using Fruitables.Models.Json;
 using Fruitables.Services.Communications;
-using Fruitables.Services.Infrastructure.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using SixLabors.ImageSharp;
@@ -16,20 +14,17 @@ public sealed class ProductImageNormalizationService
     private readonly IImageUploadService _imageUploadService;
     private readonly IWebHostEnvironment _environment;
     private readonly ILogger<ProductImageNormalizationService> _logger;
-    private readonly IJsonDocumentSerializer _serializer;
 
     public ProductImageNormalizationService(
         ApplicationDbContext dbContext,
         IImageUploadService imageUploadService,
         IWebHostEnvironment environment,
-        ILogger<ProductImageNormalizationService> logger,
-        IJsonDocumentSerializer? serializer = null)
+        ILogger<ProductImageNormalizationService> logger)
     {
         _dbContext = dbContext;
         _imageUploadService = imageUploadService;
         _environment = environment;
         _logger = logger;
-        _serializer = serializer ?? new VersionedJsonSerializer();
     }
 
     public async Task<ProductImageNormalizationResult> NormalizeAsync(
@@ -38,18 +33,10 @@ public sealed class ProductImageNormalizationService
         bool force = false,
         CancellationToken cancellationToken = default)
     {
-        var products = await _dbContext.Products.ToListAsync(cancellationToken);
-        var images = products
-            .SelectMany(product =>
-            {
-                var document = ProductAggregateJson.ReadImages(product.ImagesJson, _serializer);
-                return document.Images
-                    .Select((image, index) => new ProductImageNormalizationEntry(product, document, index, image));
-            })
-            .Where(image => includeWebp || !image.Document.Url.EndsWith(".webp", StringComparison.OrdinalIgnoreCase))
-            .OrderBy(image => image.Product.Id)
-            .ThenBy(image => image.Document.SortOrder)
-            .ToList();
+        var images = await _dbContext.ProductImages
+            .Where(image => includeWebp || !image.ImageUrl.EndsWith(".webp"))
+            .OrderBy(image => image.Id)
+            .ToListAsync(cancellationToken);
 
         var result = new ProductImageNormalizationResult(images.Count);
         if (apply)
@@ -57,14 +44,14 @@ public sealed class ProductImageNormalizationService
 
         foreach (var image in images)
         {
-            if (!TryResolveProductImagePath(image.Document.Url, out var sourcePath) || !File.Exists(sourcePath))
+            if (!TryResolveProductImagePath(image.ImageUrl, out var sourcePath) || !File.Exists(sourcePath))
             {
                 result.Skipped++;
-                _logger.LogWarning("Skipping missing or unsupported product image {ImageUrl}", image.Document.Url);
+                _logger.LogWarning("Skipping missing or unsupported product image {ImageUrl}", image.ImageUrl);
                 continue;
             }
 
-            if (includeWebp && image.Document.Url.EndsWith(".webp", StringComparison.OrdinalIgnoreCase))
+            if (includeWebp && image.ImageUrl.EndsWith(".webp", StringComparison.OrdinalIgnoreCase))
             {
                 var info = await Image.IdentifyAsync(sourcePath, cancellationToken);
                 if (!force && info != null && Math.Max(info.Width, info.Height) >= 1000)
@@ -80,7 +67,7 @@ public sealed class ProductImageNormalizationService
                 continue;
             }
 
-            var oldUrl = image.Document.Url;
+            var oldUrl = image.ImageUrl;
             string? newUrl = null;
             await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
             try
@@ -96,16 +83,7 @@ public sealed class ProductImageNormalizationService
                     newUrl = await _imageUploadService.UploadProductImageAsync(formFile, cancellationToken);
                 }
 
-                var replacement = new ProductImageDocument
-                {
-                    Id = image.Document.Id,
-                    Url = newUrl,
-                    StorageKey = newUrl.TrimStart('/'),
-                    IsPrimary = image.Document.IsPrimary,
-                    SortOrder = image.Document.SortOrder
-                };
-                image.DocumentSet.Images[image.Index] = replacement;
-                image.Product.ImagesJson = _serializer.Serialize(image.DocumentSet);
+                image.ImageUrl = newUrl;
                 await _dbContext.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
                 result.Converted++;
@@ -113,9 +91,8 @@ public sealed class ProductImageNormalizationService
             catch (Exception exception)
             {
                 await transaction.RollbackAsync(cancellationToken);
-                image.DocumentSet.Images[image.Index] = image.Document;
-                image.Product.ImagesJson = _serializer.Serialize(image.DocumentSet);
-                _dbContext.Entry(image.Product).State = EntityState.Unchanged;
+                image.ImageUrl = oldUrl;
+                _dbContext.Entry(image).State = EntityState.Unchanged;
                 if (newUrl != null)
                     await _imageUploadService.DeleteImageAsync(newUrl);
 
@@ -146,20 +123,13 @@ public sealed class ProductImageNormalizationService
             await File.ReadAllTextAsync(manifestPath, cancellationToken)) ?? [];
         var restored = 0;
 
-        var products = await _dbContext.Products.ToListAsync(cancellationToken);
-
         foreach (var entry in manifest)
         {
-            var product = products.FirstOrDefault(candidate => candidate.Id == entry.ProductId);
-            if (product == null)
+            var image = await _dbContext.ProductImages.FindAsync([entry.Id], cancellationToken);
+            if (image == null)
                 continue;
 
-            var document = ProductAggregateJson.ReadImages(product.ImagesJson, _serializer);
-            var imageIndex = entry.Id - 1;
-            if (imageIndex < 0 || imageIndex >= document.Images.Count)
-                continue;
-
-            var currentUrl = document.Images[imageIndex].Url;
+            var currentUrl = image.ImageUrl;
             var backupFile = Path.Combine(resolvedBackupPath, entry.BackupFile);
             if (!TryResolveProductImagePath(entry.ImageUrl, out var targetFile))
                 continue;
@@ -168,16 +138,7 @@ public sealed class ProductImageNormalizationService
             if (!File.Exists(targetFile))
                 File.Copy(backupFile, targetFile);
 
-            var restoredImage = new ProductImageDocument
-            {
-                Url = entry.ImageUrl,
-                StorageKey = entry.ImageUrl.TrimStart('/'),
-                IsPrimary = document.Images[imageIndex].IsPrimary,
-                SortOrder = document.Images[imageIndex].SortOrder
-            };
-            var updatedImages = document.Images.ToList();
-            updatedImages[imageIndex] = restoredImage;
-            product.ImagesJson = _serializer.Serialize(new ProductImagesDocument { Images = updatedImages });
+            image.ImageUrl = entry.ImageUrl;
             await _dbContext.SaveChangesAsync(cancellationToken);
             if (!string.Equals(currentUrl, entry.ImageUrl, StringComparison.OrdinalIgnoreCase))
                 await _imageUploadService.DeleteImageAsync(currentUrl);
@@ -188,7 +149,7 @@ public sealed class ProductImageNormalizationService
     }
 
     private async Task<string> BackupAsync(
-        IReadOnlyCollection<ProductImageNormalizationEntry> images,
+        IReadOnlyCollection<ProductImage> images,
         CancellationToken cancellationToken)
     {
         var backupPath = Path.Combine(
@@ -201,16 +162,12 @@ public sealed class ProductImageNormalizationService
         var manifest = new List<object>();
         foreach (var image in images)
         {
-            if (!TryResolveProductImagePath(image.Document.Url, out var sourcePath) || !File.Exists(sourcePath))
+            if (!TryResolveProductImagePath(image.ImageUrl, out var sourcePath) || !File.Exists(sourcePath))
                 continue;
 
-            var backupFile = $"{image.Product.Id}-{image.Id}-{Path.GetFileName(sourcePath)}";
+            var backupFile = $"{image.Id}-{Path.GetFileName(sourcePath)}";
             File.Copy(sourcePath, Path.Combine(backupPath, backupFile));
-            manifest.Add(new ProductImageBackupEntry(
-                image.Product.Id,
-                image.Id,
-                image.Document.Url,
-                backupFile));
+            manifest.Add(new { image.Id, image.ImageUrl, BackupFile = backupFile });
         }
 
         await File.WriteAllTextAsync(
@@ -246,16 +203,7 @@ public sealed class ProductImageNormalizationService
     };
 }
 
-public sealed record ProductImageBackupEntry(int ProductId, int Id, string ImageUrl, string BackupFile);
-
-internal sealed record ProductImageNormalizationEntry(
-    Product Product,
-    ProductImagesDocument DocumentSet,
-    int Index,
-    ProductImageDocument Document)
-{
-    public int Id => Index + 1;
-}
+public sealed record ProductImageBackupEntry(int Id, string ImageUrl, string BackupFile);
 
 public sealed class ProductImageNormalizationResult
 {

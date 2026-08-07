@@ -1,6 +1,5 @@
 using Fruitables.Data;
 using Fruitables.Models;
-using Fruitables.Models.Json;
 using Fruitables.Repositories;
 using Fruitables.Services.Communications;
 using Microsoft.EntityFrameworkCore;
@@ -9,7 +8,6 @@ using Xunit;
 using Fruitables.Services.Orders.Cart;
 using Fruitables.Services.Pricing.Coupons;
 using Fruitables.Services.Pricing.ProductPricing;
-using Fruitables.Services.Infrastructure.Json;
 
 namespace Fruitables.Tests;
 
@@ -25,28 +23,14 @@ public class CartVariantPricingTests
         context.ProductVariants.AddRange(
             new ProductVariant { Id = 11, ProductId = 1, Name = "1kg", SKU = "TAO-1", Price = 100_000, StockQuantity = 5 },
             new ProductVariant { Id = 12, ProductId = 1, Name = "2kg", SKU = "TAO-2", Price = 180_000, StockQuantity = 3 });
-        var serializer = new VersionedJsonSerializer();
-        context.Promotions.Add(new Promotion
+        context.PriceSchedules.Add(new PriceSchedule
         {
-            Id = 1,
-            Type = "price-schedule",
-            Code = "price-schedule:1",
-            PayloadJson = serializer.Serialize(new PriceSchedulePayload
-            {
-                ProductId = 1,
-                ProductVariantId = 12,
-                DiscountType = DiscountType.Percentage,
-                Value = 10,
-                StartsAt = DateTimeOffset.UtcNow.AddDays(-1),
-                CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
-                UpdatedAt = DateTimeOffset.UtcNow.AddDays(-1)
-            }),
-            IsActive = true,
-            StartsAt = DateTimeOffset.UtcNow.AddDays(-1)
+            ProductId = 1, ProductVariantId = 12, DiscountType = DiscountType.Percentage, Value = 10,
+            StartsAt = DateTimeOffset.UtcNow.AddDays(-1), EndsAt = null
         });
         await context.SaveChangesAsync();
         var uow = new UnitOfWork(context);
-        var pricing = new ProductPricingService(uow, TimeProvider.System, context, serializer);
+        var pricing = new ProductPricingService(uow, TimeProvider.System);
         var cart = new CartService(uow, Mock.Of<ICouponService>(), pricing);
 
         await cart.AddToCartAsync("session", 1, 1, 11);

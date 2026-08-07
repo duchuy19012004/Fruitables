@@ -46,19 +46,6 @@ public class MigrationService : IMigrationService
     
     public async Task<MigrationResult> MigrateToRbacAsync()
     {
-        if (_context.Database.IsSqlServer())
-        {
-            var users = await _context.Users.AsNoTracking().ToListAsync();
-            var missing = users.Count(user => string.IsNullOrWhiteSpace(user.RoleIdsJson) || user.RoleIdsJson.Trim() == "[]");
-            return new MigrationResult
-            {
-                Success = missing == 0,
-                CompletedAt = DateTime.UtcNow,
-                UsersProcessed = users.Count - missing,
-                Errors = missing == 0 ? [] : [$"{missing} users have no JSON role assignment."]
-            };
-        }
-
         var result = new MigrationResult
         {
             CompletedAt = DateTime.UtcNow
@@ -161,16 +148,6 @@ public class MigrationService : IMigrationService
     
     public async Task<MigrationResult> RollbackToLegacyAsync()
     {
-        if (_context.Database.IsSqlServer())
-        {
-            return new MigrationResult
-            {
-                Success = false,
-                CompletedAt = DateTime.UtcNow,
-                Errors = ["Legacy RBAC tables are unavailable after ContractAggregateSchema; restore the pre-contract backup to roll back."]
-            };
-        }
-
         var result = new MigrationResult
         {
             CompletedAt = DateTime.UtcNow
@@ -217,19 +194,6 @@ public class MigrationService : IMigrationService
     {
         try
         {
-            if (_context.Database.IsSqlServer())
-            {
-                var users = await _context.Users.AsNoTracking().ToListAsync();
-                var migrated = users.Count(user => !string.IsNullOrWhiteSpace(user.RoleIdsJson) && user.RoleIdsJson.Trim() != "[]");
-                return new MigrationStatus
-                {
-                    IsCompleted = users.Count > 0 && migrated == users.Count,
-                    TotalUsers = users.Count,
-                    MigratedUsers = migrated,
-                    LastMigrationDate = users.Count == 0 ? null : users.Max(user => user.UpdatedAt)
-                };
-            }
-
             // Get total number of users
             var totalUsers = await _unitOfWork.Users.CountAsync();
             

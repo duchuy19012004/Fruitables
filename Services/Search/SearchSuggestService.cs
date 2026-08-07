@@ -1,9 +1,7 @@
 // Services/Search/SearchSuggestService.cs
 using Fruitables.Data;
-using Fruitables.Services.Catalog.Products;
 using Fruitables.Options;
 using Fruitables.Services.Communications;
-using Fruitables.Services.Infrastructure.Json;
 using Fruitables.ViewModels;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -16,16 +14,13 @@ public sealed class SearchSuggestService : ISearchSuggestService
     private readonly ApplicationDbContext _db;
     private readonly SearchSuggestOptions _options;
     private readonly IProductPricingService? _pricing;
-    private readonly IJsonDocumentSerializer _serializer;
 
     public SearchSuggestService(ApplicationDbContext db, IOptions<SearchSuggestOptions> options,
-        IProductPricingService? pricing = null,
-        IJsonDocumentSerializer? serializer = null)
+        IProductPricingService? pricing = null)
     {
         _db = db;
         _options = options?.Value ?? new SearchSuggestOptions();
         _pricing = pricing;
-        _serializer = serializer ?? new VersionedJsonSerializer();
     }
 
     public async Task<SearchSuggestResponse> SuggestAsync(string? query, CancellationToken ct = default)
@@ -77,18 +72,17 @@ public sealed class SearchSuggestService : ISearchSuggestService
         var topIds = rankedProducts.Select(x => x.p.Id).ToList();
         var imageByProduct = topIds.Count == 0
             ? new Dictionary<int, string?>()
-            : (await _db.Products.AsNoTracking()
-                .Where(product => topIds.Contains(product.Id))
-                .Select(product => new { product.Id, product.ImagesJson })
-                .ToListAsync(ct))
-                .ToDictionary(
-                    product => product.Id,
-                    product => ProductAggregateJson.ReadImages(product.ImagesJson, _serializer)
-                        .Images
-                        .OrderByDescending(image => image.IsPrimary)
-                        .ThenBy(image => image.SortOrder)
-                        .Select(image => (string?)image.Url)
-                        .FirstOrDefault());
+            : await _db.ProductImages.AsNoTracking()
+                .Where(i => topIds.Contains(i.ProductId))
+                .GroupBy(i => i.ProductId)
+                .Select(g => new
+                {
+                    ProductId = g.Key,
+                    Url = g.OrderByDescending(i => i.IsPrimary).ThenBy(i => i.SortOrder)
+                        .Select(i => i.ImageUrl)
+                        .FirstOrDefault()
+                })
+                .ToDictionaryAsync(x => x.ProductId, x => (string?)x.Url, ct);
 
         var quotes = _pricing == null || topIds.Count == 0
             ? new Dictionary<PriceTargetKey, PriceQuote>()
@@ -137,13 +131,9 @@ public sealed class SearchSuggestService : ISearchSuggestService
             })
             .ToList();
 
-        var keywordEntries = await _db.ContentEntries.AsNoTracking()
-            .Where(entry => entry.EntryType == "search-hot-keyword" && entry.IsActive)
+        var keywords = await _db.SearchHotKeywords.AsNoTracking()
+            .Where(k => k.IsActive)
             .ToListAsync(ct);
-        var serializer = _serializer ?? new Fruitables.Services.Infrastructure.Json.VersionedJsonSerializer();
-        var keywords = keywordEntries
-            .Select(entry => Fruitables.Services.Infrastructure.Content.ContentEntryMapper.ToHotKeyword(entry, serializer))
-            .ToList();
 
         response.Keywords = keywords
             .Select(k =>

@@ -6,7 +6,6 @@ using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 using System.Reflection;
 using Fruitables.Services.Orders.OrderManagement;
-using Microsoft.EntityFrameworkCore;
 
 namespace Fruitables.Tests
 {
@@ -86,13 +85,12 @@ namespace Fruitables.Tests
             Assert.NotNull(updatedProduct);
             Assert.Equal(7, updatedProduct.StockQuantity);
 
-            // History is appended into the order aggregate JSON document.
-            var stored = await context.Orders.AsNoTracking().SingleAsync(item => item.Id == 10);
-            var history = new Fruitables.Services.Infrastructure.Json.VersionedJsonSerializer()
-                .Deserialize<Fruitables.Models.Json.OrderStatusHistoryDocument>(stored.StatusHistoryJson);
-            var entry = Assert.Single(history.Entries);
-            Assert.Equal(OrderStatus.Processing, entry.OldStatus);
-            Assert.Equal(OrderStatus.Cancelled, entry.NewStatus);
+            // History row was created inline (no separate log service save).
+            var history = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions
+                .FirstOrDefaultAsync(context.OrderStatusHistories, h => h.OrderId == 10);
+            Assert.NotNull(history);
+            Assert.Equal(OrderStatus.Processing, history!.OldStatus);
+            Assert.Equal(OrderStatus.Cancelled, history.NewStatus);
 
             // Log service is no longer required for status change (kept only for payment status log).
             logServiceMock.Verify(

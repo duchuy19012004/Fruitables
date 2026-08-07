@@ -1,10 +1,8 @@
 // Tests/Search/SearchSuggestServiceTests.cs
 using Fruitables.Data;
 using Fruitables.Models;
-using Fruitables.Models.Json;
 using Fruitables.Options;
 using Fruitables.Services.Search;
-using Fruitables.Services.Infrastructure.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -30,7 +28,6 @@ public class SearchSuggestServiceTests
 
     private static async Task SeedCatalogAsync(ApplicationDbContext db)
     {
-        var serializer = new VersionedJsonSerializer();
         var catFruit = new Category
         {
             Id = 1, Name = "Trái cây", Slug = "trai-cay", IsActive = true, IsDeleted = false
@@ -45,20 +42,7 @@ public class SearchSuggestServiceTests
             new Product
             {
                 Id = 1, CategoryId = 1, Name = "Táo Fuji", Slug = "tao-fuji",
-                Price = 125000, SalePrice = 99000, IsActive = true, IsDeleted = false, IsFeatured = true,
-                ImagesJson = serializer.Serialize(new ProductImagesDocument
-                {
-                    Images =
-                    [
-                        new ProductImageDocument
-                        {
-                            Url = "/uploads/json-tao.jpg",
-                            StorageKey = "catalog/json-tao.jpg",
-                            IsPrimary = true,
-                            SortOrder = 0
-                        }
-                    ]
-                })
+                Price = 125000, SalePrice = 99000, IsActive = true, IsDeleted = false, IsFeatured = true
             },
             new Product
             {
@@ -81,11 +65,10 @@ public class SearchSuggestServiceTests
             ProductId = 1, ImageUrl = "/uploads/tao.jpg", IsPrimary = true, SortOrder = 0
         });
 
-        var now = DateTime.UtcNow;
-        db.ContentEntries.AddRange(
-            ContentEntryMapperSeed.HotKeyword("táo fuji", "tao fuji", weight: 50, isActive: true, now),
-            ContentEntryMapperSeed.HotKeyword("combo", "combo", weight: 10, isActive: true, now),
-            ContentEntryMapperSeed.HotKeyword("hidden", "hidden", weight: 99, isActive: false, now));
+        db.SearchHotKeywords.AddRange(
+            new SearchHotKeyword { Text = "táo fuji", NormalizedText = "tao fuji", Weight = 50, IsActive = true },
+            new SearchHotKeyword { Text = "combo", NormalizedText = "combo", Weight = 10, IsActive = true },
+            new SearchHotKeyword { Text = "hidden", NormalizedText = "hidden", Weight = 99, IsActive = false });
 
         await db.SaveChangesAsync();
     }
@@ -118,7 +101,7 @@ public class SearchSuggestServiceTests
         Assert.DoesNotContain(result.Products, p => p.Slug == "nho-my"); // inactive
         Assert.DoesNotContain(result.Products, p => p.Slug == "ca-rot"); // deleted
         Assert.Equal("/Shop/Detail/tao-fuji", result.Products.First(p => p.Slug == "tao-fuji").Url);
-        Assert.Equal("/uploads/json-tao.jpg", result.Products.First(p => p.Slug == "tao-fuji").ImageUrl);
+        Assert.Equal("/uploads/tao.jpg", result.Products.First(p => p.Slug == "tao-fuji").ImageUrl);
         Assert.Contains(result.Keywords, k => k.Text == "táo fuji");
         Assert.DoesNotContain(result.Keywords, k => k.Text == "hidden");
         Assert.StartsWith("/Shop?search=", result.ViewAllUrl);
@@ -197,24 +180,5 @@ public class SearchSuggestServiceTests
         Assert.Equal(2, result.Products.Count);
         Assert.Equal("tao-do", result.Products[0].Slug);
         Assert.Equal("hop-qua-tao", result.Products[1].Slug);
-    }
-}
-
-internal static class ContentEntryMapperSeed
-{
-    private static readonly VersionedJsonSerializer Serializer = new();
-
-    public static ContentEntry HotKeyword(string text, string normalized, int weight, bool isActive, DateTime now)
-    {
-        return Fruitables.Services.Infrastructure.Content.ContentEntryMapper.FromHotKeyword(
-            new SearchHotKeyword
-            {
-                Text = text,
-                NormalizedText = normalized,
-                Weight = weight,
-                IsActive = isActive,
-                CreatedAt = now
-            },
-            Serializer);
     }
 }
