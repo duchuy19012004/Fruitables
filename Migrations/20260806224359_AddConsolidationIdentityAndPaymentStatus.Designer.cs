@@ -1405,6 +1405,10 @@ namespace Fruitables.Migrations
                     b.Property<decimal>("AverageRating")
                         .HasColumnType("decimal(3,2)");
 
+                    b.Property<int>("AssetRevision")
+                        .HasColumnType("int")
+                        .HasDefaultValue(1);
+
                     b.Property<int>("CategoryId")
                         .HasColumnType("int");
 
@@ -1658,6 +1662,10 @@ namespace Fruitables.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
+                    b.Property<string>("CustomerCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
@@ -1698,6 +1706,10 @@ namespace Fruitables.Migrations
                     b.HasIndex("Code")
                         .IsUnique()
                         .HasFilter("[Code] IS NOT NULL");
+
+                    b.HasIndex("CustomerCode")
+                        .IsUnique()
+                        .HasFilter("[CustomerCode] IS NOT NULL");
 
                     b.HasIndex("Type");
 

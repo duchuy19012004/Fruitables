@@ -115,43 +115,11 @@ namespace Fruitables.Migrations
             migrationBuilder.DropTable(
                 name: "ReturnRequests");
 
-            migrationBuilder.AddColumn<string>(
-                name: "CustomerCode",
-                table: "Promotions",
-                type: "nvarchar(50)",
-                maxLength: 50,
-                nullable: true);
-
-            migrationBuilder.AddColumn<int>(
-                name: "AssetRevision",
-                table: "Products",
-                type: "int",
-                nullable: false,
-                defaultValue: 1);
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Promotions_CustomerCode",
-                table: "Promotions",
-                column: "CustomerCode",
-                unique: true,
-                filter: "[CustomerCode] IS NOT NULL");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropIndex(
-                name: "IX_Promotions_CustomerCode",
-                table: "Promotions");
-
-            migrationBuilder.DropColumn(
-                name: "CustomerCode",
-                table: "Promotions");
-
-            migrationBuilder.DropColumn(
-                name: "AssetRevision",
-                table: "Products");
-
             migrationBuilder.CreateTable(
                 name: "ChatMessages",
                 columns: table => new

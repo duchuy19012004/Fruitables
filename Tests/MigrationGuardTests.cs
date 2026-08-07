@@ -111,6 +111,26 @@ public sealed class MigrationGuardTests
     }
 
     [Fact]
+    public void Final_aggregate_columns_exist_before_contract_migration()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var additive = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "Migrations",
+            "20260806224359_AddConsolidationIdentityAndPaymentStatus.cs"));
+        var contract = File.ReadAllText(Directory.GetFiles(
+            Path.Combine(repositoryRoot, "Migrations"),
+            "*_ContractAggregateSchema.cs").Single());
+
+        var additiveUp = additive[..additive.IndexOf("protected override void Down", StringComparison.Ordinal)];
+        var contractUp = contract[..contract.IndexOf("protected override void Down", StringComparison.Ordinal)];
+        Assert.Contains("name: \"AssetRevision\"", additiveUp, StringComparison.Ordinal);
+        Assert.Contains("name: \"CustomerCode\"", additiveUp, StringComparison.Ordinal);
+        Assert.DoesNotContain("name: \"AssetRevision\"", contractUp, StringComparison.Ordinal);
+        Assert.DoesNotContain("name: \"CustomerCode\"", contractUp, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Consolidation_identity_migration_up_contains_reserved_historical_namespace()
     {
         var migrationBuilder = new MigrationBuilder("Microsoft.EntityFrameworkCore.SqlServer");

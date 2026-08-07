@@ -18,6 +18,20 @@ namespace Fruitables.Migrations
                 nullable: false,
                 defaultValue: 0);
 
+            migrationBuilder.AddColumn<int>(
+                name: "AssetRevision",
+                table: "Products",
+                type: "int",
+                nullable: false,
+                defaultValue: 1);
+
+            migrationBuilder.AddColumn<string>(
+                name: "CustomerCode",
+                table: "Promotions",
+                type: "nvarchar(50)",
+                maxLength: 50,
+                nullable: true);
+
             migrationBuilder.AddColumn<long>(
                 name: "SourceId",
                 table: "AuditLogs",
@@ -62,6 +76,13 @@ namespace Fruitables.Migrations
                 column: "ProviderEventStatus");
 
             migrationBuilder.CreateIndex(
+                name: "IX_Promotions_CustomerCode",
+                table: "Promotions",
+                column: "CustomerCode",
+                unique: true,
+                filter: "[CustomerCode] IS NOT NULL");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_AuditLogs_SourceType_SourceId",
                 table: "AuditLogs",
                 columns: new[] { "SourceType", "SourceId" },
@@ -76,12 +97,24 @@ namespace Fruitables.Migrations
                 table: "Payments");
 
             migrationBuilder.DropIndex(
+                name: "IX_Promotions_CustomerCode",
+                table: "Promotions");
+
+            migrationBuilder.DropIndex(
                 name: "IX_AuditLogs_SourceType_SourceId",
                 table: "AuditLogs");
 
             migrationBuilder.DropColumn(
                 name: "ProviderEventStatus",
                 table: "Payments");
+
+            migrationBuilder.DropColumn(
+                name: "CustomerCode",
+                table: "Promotions");
+
+            migrationBuilder.DropColumn(
+                name: "AssetRevision",
+                table: "Products");
 
             migrationBuilder.DropColumn(
                 name: "SourceId",
