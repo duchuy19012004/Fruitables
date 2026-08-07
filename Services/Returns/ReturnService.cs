@@ -1,8 +1,10 @@
 using System.ComponentModel.DataAnnotations;
 using Fruitables.Data;
 using Fruitables.Models;
+using Fruitables.Models.Json;
 using Fruitables.Models.Returns;
 using Fruitables.Services.Catalog.Products;
+using Fruitables.Services.Infrastructure.Json;
 using Fruitables.Services.Orders;
 using Fruitables.ViewModels;
 using Fruitables.ViewModels.Returns;
@@ -16,15 +18,18 @@ public sealed class ReturnService : IReturnService
 {
     private readonly ApplicationDbContext _context;
     private readonly IImageUploadService _imageUploadService;
+    private readonly IJsonDocumentSerializer _serializer;
     private readonly TimeProvider _timeProvider;
 
     public ReturnService(
         ApplicationDbContext context,
         IImageUploadService imageUploadService,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IJsonDocumentSerializer? serializer = null)
     {
         _context = context;
         _imageUploadService = imageUploadService;
+        _serializer = serializer ?? new VersionedJsonSerializer();
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
@@ -160,6 +165,7 @@ public sealed class ReturnService : IReturnService
 
             _context.ReturnRequests.Add(request);
             await _context.SaveChangesAsync();
+            await SyncReturnCaseAsync(request);
             if (transaction != null)
                 await transaction.CommitAsync();
 
@@ -388,6 +394,7 @@ public sealed class ReturnService : IReturnService
 
             TouchRowVersion(request);
             await _context.SaveChangesAsync();
+            await SyncReturnCaseAsync(request);
             if (transaction != null)
                 await transaction.CommitAsync();
             return Success(request);
@@ -463,6 +470,7 @@ public sealed class ReturnService : IReturnService
 
             TouchRowVersion(request);
             await _context.SaveChangesAsync();
+            await SyncReturnCaseAsync(request);
             if (transaction != null)
                 await transaction.CommitAsync();
             return Success(request);
@@ -544,6 +552,7 @@ public sealed class ReturnService : IReturnService
             AddEvent(request, ReturnEventType.CustomerInfoAdded, oldStatus, request.Status, userId, request.CustomerNote);
             TouchRowVersion(request);
             await _context.SaveChangesAsync();
+            await SyncReturnCaseAsync(request);
             if (transaction != null)
                 await transaction.CommitAsync();
 
@@ -597,12 +606,111 @@ public sealed class ReturnService : IReturnService
         {
             TouchRowVersion(request);
             await _context.SaveChangesAsync();
+            await SyncReturnCaseAsync(request);
             return Success(request);
         }
         catch (DbUpdateConcurrencyException)
         {
             return Fail("Yêu cầu đã được cập nhật. Vui lòng tải lại dữ liệu.");
         }
+    }
+
+    private async Task SyncReturnCaseAsync(ReturnRequest request)
+    {
+        // Expand-phase mirror into target Returns aggregate.
+        var loaded = await _context.ReturnRequests
+            .AsNoTracking()
+            .Include(item => item.Items)
+            .Include(item => item.Evidence)
+            .Include(item => item.Events)
+            .Include(item => item.Refund)
+            .FirstOrDefaultAsync(item => item.Id == request.Id);
+        if (loaded == null)
+            return;
+
+        var details = new ReturnDetailsDocument
+        {
+            Status = loaded.Status,
+            SubmittedAtUtc = loaded.SubmittedAtUtc,
+            ClaimDeadlineAtUtc = loaded.ClaimDeadlineAtUtc,
+            SupplementDeadlineAtUtc = loaded.SupplementDeadlineAtUtc,
+            SupplementCount = loaded.SupplementCount,
+            RequestedAmount = loaded.RequestedAmount,
+            ApprovedAmount = loaded.ApprovedAmount,
+            ApprovedShippingFeeAmount = loaded.ApprovedShippingFeeAmount,
+            CustomerNote = loaded.CustomerNote,
+            AdminNote = loaded.AdminNote,
+            Items = loaded.Items.Select(item => new ReturnItemDetails
+            {
+                OrderItemId = item.OrderItemId,
+                DecisionStatus = item.DecisionStatus,
+                RequestedQuantity = item.RequestedQuantity,
+                ApprovedQuantity = item.ApprovedQuantity,
+                Reason = item.Reason,
+                Description = item.Description,
+                DecisionReason = item.DecisionReason,
+                RequestedAmount = item.RequestedAmount,
+                ApprovedAmount = item.ApprovedAmount
+            }).ToList(),
+            Evidence = loaded.Evidence.Select(item => new ReturnEvidenceDetails
+            {
+                ReturnRequestItemId = item.ReturnRequestItemId,
+                StorageKey = item.StorageKey,
+                OriginalFileName = item.OriginalFileName,
+                ContentType = item.ContentType,
+                SizeBytes = item.SizeBytes,
+                UploadedByUserId = item.UploadedByUserId,
+                UploadedAtUtc = item.UploadedAtUtc
+            }).ToList(),
+            Events = loaded.Events.Select(item => new ReturnEventDetails
+            {
+                ReturnRequestItemId = item.ReturnRequestItemId,
+                OldStatus = item.OldStatus,
+                NewStatus = item.NewStatus,
+                EventType = item.EventType,
+                ActorUserId = item.ActorUserId,
+                Note = item.Note,
+                CreatedAtUtc = item.CreatedAtUtc
+            }).ToList(),
+            Refund = loaded.Refund == null ? null : new RefundDetails
+            {
+                Amount = loaded.Refund.Amount,
+                ShippingFeeAmount = loaded.Refund.ShippingFeeAmount,
+                Status = loaded.Refund.Status,
+                TransactionReference = loaded.Refund.TransactionReference,
+                FailureReason = loaded.Refund.FailureReason,
+                CreatedByUserId = loaded.Refund.CreatedByUserId,
+                ProcessedByUserId = loaded.Refund.ProcessedByUserId,
+                ProcessedAtUtc = loaded.Refund.ProcessedAtUtc,
+                CreatedAtUtc = loaded.Refund.CreatedAtUtc
+            }
+        };
+
+        var target = await _context.Returns.FirstOrDefaultAsync(item => item.OrderId == loaded.OrderId);
+        if (target == null)
+        {
+            target = new ReturnCase
+            {
+                ReturnNumber = loaded.ReturnNumber,
+                OrderId = loaded.OrderId,
+                UserId = loaded.UserId
+            };
+            _context.Returns.Add(target);
+        }
+
+        target.ReturnNumber = loaded.ReturnNumber;
+        target.UserId = loaded.UserId;
+        target.Status = loaded.Status;
+        target.SubmittedAtUtc = loaded.SubmittedAtUtc;
+        target.ClaimDeadlineAtUtc = loaded.ClaimDeadlineAtUtc;
+        target.SupplementDeadlineAtUtc = loaded.SupplementDeadlineAtUtc;
+        target.SupplementCount = loaded.SupplementCount;
+        target.RequestedAmount = loaded.RequestedAmount;
+        target.ApprovedAmount = loaded.ApprovedAmount;
+        target.ApprovedShippingFeeAmount = loaded.ApprovedShippingFeeAmount;
+        target.DetailsJson = _serializer.Serialize(details);
+        target.RowVersion = Guid.NewGuid().ToByteArray();
+        await _context.SaveChangesAsync();
     }
 
     private async Task<IDbContextTransaction?> BeginTransactionAsync()

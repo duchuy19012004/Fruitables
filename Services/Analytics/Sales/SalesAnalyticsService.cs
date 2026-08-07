@@ -47,10 +47,12 @@ public class SalesAnalyticsService : ISalesAnalyticsService
                     o.PaymentStatus,
                     o.Status,
                     o.CancelReason,
-                    o.ReturnRequest != null && o.ReturnRequest.Refund != null &&
-                    o.ReturnRequest.Refund.Status == RefundStatus.Succeeded
-                        ? o.ReturnRequest.Refund.Amount
-                        : 0m))
+                    o.ReturnCase != null && o.ReturnCase.Status == ReturnRequestStatus.Refunded
+                        ? o.ReturnCase.ApprovedAmount + o.ReturnCase.ApprovedShippingFeeAmount
+                        : o.ReturnRequest != null && o.ReturnRequest.Refund != null &&
+                          o.ReturnRequest.Refund.Status == RefundStatus.Succeeded
+                            ? o.ReturnRequest.Refund.Amount
+                            : 0m))
                 .ToListAsync();
 
             var cur = rows
