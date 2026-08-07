@@ -285,30 +285,47 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
                     .Where(item => item.CartId == cart.Id)
                     .OrderBy(item => item.Id)
                     .ToListAsync(cancellationToken);
-                var groups = (await _db.CartGroups
+                var groups = await _db.CartGroups
                     .AsNoTracking()
                     .Where(group => group.CartId == cart.Id)
-                    .Select(group => group.Id)
-                    .ToListAsync(cancellationToken)).ToHashSet();
+                    .ToDictionaryAsync(group => group.Id, cancellationToken);
 
                 var lines = new List<CartLineDocument>(items.Count);
+                var nextLineId = 1;
                 foreach (var item in items)
                 {
                     await RequireProductReferenceAsync(item.ProductId, item.ProductVariantId, $"CartItem:{item.Id}", cancellationToken);
-                    if (item.CartGroupId.HasValue && !groups.Contains(item.CartGroupId.Value))
+                    CartGroup? group = null;
+                    if (item.CartGroupId.HasValue && !groups.TryGetValue(item.CartGroupId.Value, out group))
                         throw new InvalidOperationException($"CartItem {item.Id} references missing cart group {item.CartGroupId.Value}.");
                     lines.Add(new CartLineDocument
                     {
+                        Id = item.Id > 0 ? item.Id : nextLineId,
                         ProductId = item.ProductId,
                         ProductVariantId = item.ProductVariantId,
                         CartGroupId = item.CartGroupId,
+                        ComboId = group?.ComboId,
+                        ComboRevision = group?.ComboRevision,
+                        ComboName = group?.ComboName,
+                        GroupQuantity = group?.Quantity,
+                        GroupOriginalTotal = group?.OriginalTotal,
+                        GroupFinalTotal = group?.FinalTotal,
+                        GroupDiscount = group?.Discount,
+                        AllowCouponStacking = group?.AllowCouponStacking,
                         Quantity = item.Quantity,
                         Price = item.Price,
                         ComboDiscount = item.ComboDiscount
                     });
+                    nextLineId = Math.Max(nextLineId, (item.Id > 0 ? item.Id : nextLineId) + 1);
                 }
 
-                var json = _serializer.Serialize(new CartLinesDocument { Lines = lines });
+                var nextGroupId = groups.Count == 0 ? 1 : groups.Keys.Max() + 1;
+                var json = _serializer.Serialize(new CartLinesDocument
+                {
+                    Lines = lines,
+                    NextLineId = Math.Max(nextLineId, lines.Select(line => line.Id).DefaultIfEmpty(0).Max() + 1),
+                    NextGroupId = nextGroupId
+                });
                 return await UpdateCartJsonAsync(cart.Id, json, report.Applied, cancellationToken);
             });
         }

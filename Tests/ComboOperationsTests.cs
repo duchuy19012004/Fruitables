@@ -246,19 +246,36 @@ public class ComboOperationsTests
         var options = TestDbContextFactory.CreateSqliteOptions();
         await using (var seed = new ApplicationDbContext(options))
         {
-            seed.Carts.Add(new Cart { Id = 1, SessionId = "expired-combo" });
+            var serializer = new Fruitables.Services.Infrastructure.Json.VersionedJsonSerializer();
+            seed.Carts.Add(new Cart
+            {
+                Id = 1,
+                SessionId = "expired-combo",
+                UpdatedAt = Now.UtcDateTime.AddDays(-2),
+                LinesJson = serializer.Serialize(new Fruitables.Models.Json.CartLinesDocument
+                {
+                    Lines =
+                    [
+                        new Fruitables.Models.Json.CartLineDocument
+                        {
+                            Id = 1,
+                            ProductId = 1,
+                            CartGroupId = 20,
+                            ComboId = 10,
+                            ComboRevision = 1,
+                            ComboName = "Combo",
+                            GroupQuantity = 1,
+                            Quantity = 1,
+                            Price = 10,
+                            ComboDiscount = 0
+                        }
+                    ],
+                    NextLineId = 2,
+                    NextGroupId = 21
+                })
+            });
             seed.Promotions.Add(ComboPromotion(10, revision: 2));
             seed.Combos.Add(new Combo { Id = 10, Name = "Combo", Slug = "combo" });
-            seed.CartGroups.Add(new CartGroup
-            {
-                Id = 20,
-                CartId = 1,
-                ComboId = 10,
-                ComboRevision = 1,
-                ComboName = "Combo",
-                UpdatedAt = Now.UtcDateTime.AddDays(-2),
-                ExpiresAt = Now.UtcDateTime.AddDays(10)
-            });
             await seed.SaveChangesAsync();
         }
 
@@ -272,6 +289,9 @@ public class ComboOperationsTests
 
         Assert.Equal(1, await worker.CleanupAsync(CancellationToken.None));
         await using var verify = new ApplicationDbContext(options);
-        Assert.Empty(await verify.CartGroups.ToListAsync());
+        var cart = await verify.Carts.SingleAsync();
+        var document = new Fruitables.Services.Infrastructure.Json.VersionedJsonSerializer()
+            .Deserialize<Fruitables.Models.Json.CartLinesDocument>(cart.LinesJson);
+        Assert.Empty(document.Lines);
     }
 }

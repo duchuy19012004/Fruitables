@@ -106,14 +106,15 @@ public class ComboCartGroupTests
         var result = await service.AddComboToCartAsync("bundle-cart", 10);
 
         Assert.True(result.Success);
-        var group = await context.CartGroups.Include(item => item.Items).SingleAsync();
+        var cart = await service.GetCartAsync("bundle-cart");
+        var group = Assert.Single(cart.Groups);
         Assert.Equal(1, group.Quantity);
         Assert.Equal(200_000m, group.OriginalTotal);
         Assert.Equal(170_000m, group.FinalTotal);
         Assert.Equal(30_000m, group.Discount);
         Assert.False(group.AllowCouponStacking);
         Assert.Equal(group.Discount, group.Items.Sum(item => item.ComboDiscount));
-        Assert.Equal(group.FinalTotal, group.Items.Sum(item => item.Price * item.Quantity - item.ComboDiscount));
+        Assert.Equal(group.FinalTotal, group.Items.Sum(item => item.Total));
     }
 
     [Fact]
@@ -126,7 +127,8 @@ public class ComboCartGroupTests
         Assert.True((await service.AddComboToCartAsync("bundle-merge", 10)).Success);
         Assert.True((await service.AddComboToCartAsync("bundle-merge", 10)).Success);
 
-        var group = await context.CartGroups.Include(item => item.Items).SingleAsync();
+        var cart = await service.GetCartAsync("bundle-merge");
+        var group = Assert.Single(cart.Groups);
         Assert.Equal(2, group.Quantity);
         Assert.Equal(400_000m, group.OriginalTotal);
         Assert.Equal(340_000m, group.FinalTotal);
@@ -143,11 +145,8 @@ public class ComboCartGroupTests
         Assert.True((await service.AddToCartAsync("bundle-separate", 1, 1)).Success);
         Assert.True((await service.AddComboToCartAsync("bundle-separate", 10)).Success);
 
-        var cart = await context.Carts.SingleAsync();
-        var appleLines = await context.CartItems
-            .Where(item => item.CartId == cart.Id && item.ProductId == 1)
-            .OrderBy(item => item.CartGroupId)
-            .ToListAsync();
+        var cart = await service.GetCartAsync("bundle-separate");
+        var appleLines = cart.Items.Where(item => item.ProductId == 1).ToList();
         Assert.Equal(2, appleLines.Count);
         Assert.Contains(appleLines, item => item.CartGroupId == null);
         Assert.Contains(appleLines, item => item.CartGroupId != null);

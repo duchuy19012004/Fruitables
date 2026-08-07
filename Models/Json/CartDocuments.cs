@@ -10,8 +10,26 @@ public sealed class CartLinesDocument : VersionedJsonDocument
     [JsonPropertyName("lines")]
     public List<CartLineDocument> Lines { get; init; } = [];
 
+    [JsonPropertyName("nextLineId")]
+    public int NextLineId { get; init; } = 1;
+
+    [JsonPropertyName("nextGroupId")]
+    public int NextGroupId { get; init; } = 1;
+
     [JsonIgnore]
     public override IReadOnlyCollection<string> RequiredProperties => RequiredPropertyNames;
+
+    public CartLinesDocument With(
+        List<CartLineDocument>? lines = null,
+        int? nextLineId = null,
+        int? nextGroupId = null) =>
+        new()
+        {
+            SchemaVersion = SchemaVersion,
+            Lines = lines ?? Lines,
+            NextLineId = nextLineId ?? NextLineId,
+            NextGroupId = nextGroupId ?? NextGroupId
+        };
 
     public override void Validate()
     {
@@ -42,9 +60,12 @@ public sealed class CartLinesDocument : VersionedJsonDocument
     }
 }
 
-public sealed class CartLineDocument
+public sealed record CartLineDocument
 {
     private static readonly string[] RequiredPropertyNames = ["productId", "quantity", "price", "comboDiscount"];
+
+    [JsonPropertyName("id")]
+    public int Id { get; init; }
 
     [JsonPropertyName("productId")]
     public int ProductId { get; init; }
@@ -54,6 +75,30 @@ public sealed class CartLineDocument
 
     [JsonPropertyName("cartGroupId")]
     public int? CartGroupId { get; init; }
+
+    [JsonPropertyName("comboId")]
+    public int? ComboId { get; init; }
+
+    [JsonPropertyName("comboRevision")]
+    public int? ComboRevision { get; init; }
+
+    [JsonPropertyName("comboName")]
+    public string? ComboName { get; init; }
+
+    [JsonPropertyName("groupQuantity")]
+    public int? GroupQuantity { get; init; }
+
+    [JsonPropertyName("groupOriginalTotal")]
+    public decimal? GroupOriginalTotal { get; init; }
+
+    [JsonPropertyName("groupFinalTotal")]
+    public decimal? GroupFinalTotal { get; init; }
+
+    [JsonPropertyName("groupDiscount")]
+    public decimal? GroupDiscount { get; init; }
+
+    [JsonPropertyName("allowCouponStacking")]
+    public bool? AllowCouponStacking { get; init; }
 
     [JsonPropertyName("quantity")]
     public decimal Quantity { get; init; }

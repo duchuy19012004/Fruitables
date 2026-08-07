@@ -134,6 +134,9 @@ public sealed class OrderNoteDocument
 {
     private static readonly string[] RequiredPropertyNames = ["adminId", "adminName", "content", "createdAt"];
 
+    [JsonPropertyName("id")]
+    public int Id { get; init; }
+
     [JsonPropertyName("adminId")]
     public int AdminId { get; init; }
 

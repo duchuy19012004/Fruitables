@@ -311,7 +311,6 @@ public class CartComboAtomicityTests
 
         Assert.False(result.Success);
         Assert.Empty(context.Carts);
-        Assert.Empty(context.CartItems);
     }
 
     [Fact]
@@ -332,9 +331,8 @@ public class CartComboAtomicityTests
         ]);
 
         Assert.True(result.Success);
-        var cart = Assert.Single(context.Carts);
-        var items = await context.CartItems.Where(item => item.CartId == cart.Id).OrderBy(item => item.ProductId).ToListAsync();
-        Assert.Collection(items,
+        var view = await service.GetCartAsync("combo-success");
+        Assert.Collection(view.Items.OrderBy(item => item.ProductId),
             item => Assert.Equal(2, item.Quantity),
             item => Assert.Equal(3, item.Quantity));
     }

@@ -1,35 +1,51 @@
-using Microsoft.Extensions.Logging;
+using System.Text.Json;
 using Fruitables.Data;
 using Fruitables.Models;
-using Fruitables.Services.Communications;
+using Fruitables.Services.Infrastructure.Auditing;
+using Fruitables.Services.Infrastructure.Json;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Fruitables.Services.Orders.OrderManagement;
 
 public class OrderLogService : IOrderLogService
 {
     private readonly ApplicationDbContext _context;
+    private readonly IJsonDocumentSerializer _serializer;
+    private readonly IAuditLogWriter _auditLogWriter;
     private readonly ILogger<OrderLogService> _logger;
 
-    public OrderLogService(ApplicationDbContext context, ILogger<OrderLogService> logger)
+    public OrderLogService(
+        ApplicationDbContext context,
+        ILogger<OrderLogService> logger,
+        IJsonDocumentSerializer? serializer = null,
+        IAuditLogWriter? auditLogWriter = null)
     {
         _context = context;
         _logger = logger;
+        _serializer = serializer ?? new VersionedJsonSerializer();
+        _auditLogWriter = auditLogWriter ?? new AuditLogWriter(context);
     }
 
     public async Task LogStatusChangeAsync(int orderId, OrderStatus oldStatus, OrderStatus newStatus, int adminId, string? notes)
     {
-        var history = new OrderStatusHistory
-        {
-            OrderId = orderId,
-            OldStatus = oldStatus,
-            NewStatus = newStatus,
-            AdminId = adminId,
-            Notes = notes,
-            CreatedAt = DateTime.UtcNow
-        };
+        var order = await _context.Orders.FirstOrDefaultAsync(item => item.Id == orderId);
+        if (order == null)
+            return;
 
-        _context.OrderStatusHistories.Add(history);
+        var history = OrderAggregateJson.ReadHistory(order.StatusHistoryJson, _serializer);
+        order.StatusHistoryJson = OrderAggregateJson.SerializeHistory(
+            OrderAggregateJson.AppendHistory(history, oldStatus, newStatus, adminId, notes, DateTime.UtcNow),
+            _serializer);
         await _context.SaveChangesAsync();
+
+        await _auditLogWriter.WriteAsync(
+            "StatusChanged",
+            "Order",
+            orderId,
+            adminId,
+            JsonSerializer.Serialize(new { Status = oldStatus.ToString() }),
+            JsonSerializer.Serialize(new { Status = newStatus.ToString(), Notes = notes }));
 
         _logger.LogInformation(
             "Order {OrderId} status changed from {OldStatus} to {NewStatus} by Admin {AdminId}",
@@ -38,32 +54,32 @@ public class OrderLogService : IOrderLogService
 
     public async Task LogPaymentStatusChangeAsync(int orderId, PaymentStatus oldStatus, PaymentStatus newStatus, int adminId, string? notes)
     {
-        // For payment status changes, we also create an OrderStatusHistory record
-        // with the current order status (since OrderStatusHistory tracks order status, not payment status)
-        // We use the Notes field to indicate this is a payment status change
-        var order = await _context.Orders.FindAsync(orderId);
-        if (order != null)
-        {
-            var history = new OrderStatusHistory
-            {
-                OrderId = orderId,
-                OldStatus = order.Status,
-                NewStatus = order.Status,
-                AdminId = adminId,
-                Notes = notes ?? $"Trạng thái thanh toán cập nhật từ {GetPaymentStatusDisplayName(oldStatus)} sang {GetPaymentStatusDisplayName(newStatus)}",
-                CreatedAt = DateTime.UtcNow
-            };
+        var order = await _context.Orders.FirstOrDefaultAsync(item => item.Id == orderId);
+        if (order == null)
+            return;
 
-            _context.OrderStatusHistories.Add(history);
-            await _context.SaveChangesAsync();
-        }
+        var message = notes ??
+            $"Trạng thái thanh toán cập nhật từ {GetPaymentStatusDisplayName(oldStatus)} sang {GetPaymentStatusDisplayName(newStatus)}";
+        var history = OrderAggregateJson.ReadHistory(order.StatusHistoryJson, _serializer);
+        order.StatusHistoryJson = OrderAggregateJson.SerializeHistory(
+            OrderAggregateJson.AppendHistory(history, order.Status, order.Status, adminId, message, DateTime.UtcNow),
+            _serializer);
+        await _context.SaveChangesAsync();
+
+        await _auditLogWriter.WriteAsync(
+            "PaymentStatusChanged",
+            "Order",
+            orderId,
+            adminId,
+            JsonSerializer.Serialize(new { PaymentStatus = oldStatus.ToString() }),
+            JsonSerializer.Serialize(new { PaymentStatus = newStatus.ToString(), Notes = message }));
 
         _logger.LogInformation(
             "Order {OrderId} payment status changed from {OldStatus} to {NewStatus} by Admin {AdminId}",
             orderId, oldStatus, newStatus, adminId);
     }
 
-    private string GetPaymentStatusDisplayName(PaymentStatus status) => status switch
+    private static string GetPaymentStatusDisplayName(PaymentStatus status) => status switch
     {
         PaymentStatus.Pending => "Chờ thanh toán",
         PaymentStatus.Paid => "Đã thanh toán",

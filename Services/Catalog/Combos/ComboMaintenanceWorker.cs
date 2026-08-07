@@ -52,49 +52,69 @@ public sealed class ComboMaintenanceWorker : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
-        var groupIds = await db.CartGroups
-            .Where(group => group.ExpiresAt <= now.UtcDateTime)
-            .OrderBy(group => group.Id)
-            .Select(group => group.Id)
+        var promotions = await db.Promotions.AsNoTracking()
+            .Where(promotion => promotion.Type == "combo")
+            .ToListAsync(cancellationToken);
+        var payloads = promotions
+            .Select(promotion =>
+                (Promotion: promotion, Payload: _serializer.Deserialize<ComboPayload>(promotion.PayloadJson)))
+            .ToList();
+
+        var carts = await db.Carts
+            .OrderBy(cart => cart.Id)
             .Take(1000)
             .ToListAsync(cancellationToken);
 
-        if (groupIds.Count < 1000)
+        var removedGroups = 0;
+        foreach (var cart in carts)
         {
-            var staleCandidates = await db.CartGroups
-                .AsNoTracking()
-                .Where(group => group.UpdatedAt <= staleBefore && !groupIds.Contains(group.Id))
-                .OrderBy(group => group.Id)
-                .Take(1000 - groupIds.Count)
-                .ToListAsync(cancellationToken);
-            var promotions = await db.Promotions.AsNoTracking()
-                .Where(promotion => promotion.Type == "combo")
-                .ToListAsync(cancellationToken);
-            var payloads = promotions
-                .Select(promotion =>
-                    (Promotion: promotion, Payload: _serializer.Deserialize<ComboPayload>(promotion.PayloadJson)))
-                .ToList();
-            groupIds.AddRange(staleCandidates
-                .Where(group => !TryResolveCombo(payloads, group.ComboId, out var combo) ||
-                    group.ComboRevision != combo.Payload.Revision ||
-                    !combo.Promotion.IsActive ||
-                    !combo.Payload.IsActive ||
-                    combo.Payload.Status is ComboLifecycleStatus.Draft or ComboLifecycleStatus.Archived ||
-                    (combo.Payload.EndsAt.HasValue && combo.Payload.EndsAt <= now))
-                .Select(group => group.Id));
+            if (string.IsNullOrWhiteSpace(cart.LinesJson) || cart.LinesJson.Trim() == "[]")
+                continue;
+
+            CartLinesDocument document;
+            try
+            {
+                document = _serializer.Deserialize<CartLinesDocument>(cart.LinesJson);
+            }
+            catch
+            {
+                continue;
+            }
+
+            var invalidGroupIds = document.Lines
+                .Where(line => line.CartGroupId.HasValue && line.ComboId.HasValue)
+                .GroupBy(line => line.CartGroupId!.Value)
+                .Where(group =>
+                {
+                    var first = group.First();
+                    if (!TryResolveCombo(payloads, first.ComboId!.Value, out var combo))
+                        return true;
+                    if (first.ComboRevision != combo.Payload.Revision)
+                        return cart.UpdatedAt <= staleBefore;
+                    return !combo.Promotion.IsActive ||
+                           !combo.Payload.IsActive ||
+                           combo.Payload.Status is ComboLifecycleStatus.Draft or ComboLifecycleStatus.Archived ||
+                           (combo.Payload.EndsAt.HasValue && combo.Payload.EndsAt <= now);
+                })
+                .Select(group => group.Key)
+                .ToHashSet();
+
+            if (invalidGroupIds.Count == 0)
+                continue;
+
+            var remaining = document.Lines.Where(line => !line.CartGroupId.HasValue || !invalidGroupIds.Contains(line.CartGroupId.Value)).ToList();
+            cart.LinesJson = _serializer.Serialize(document.With(lines: remaining));
+            cart.UpdatedAt = DateTime.UtcNow;
+            cart.RowVersion = Guid.NewGuid().ToByteArray();
+            removedGroups += invalidGroupIds.Count;
         }
 
-        if (groupIds.Count == 0) return 0;
+        if (removedGroups == 0)
+            return 0;
 
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        await db.CartItems.Where(item => item.CartGroupId.HasValue && groupIds.Contains(item.CartGroupId.Value))
-            .ExecuteDeleteAsync(cancellationToken);
-        await db.CartGroups.Where(group => groupIds.Contains(group.Id))
-            .ExecuteDeleteAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-
-        _logger.LogInformation("Removed {Count} expired or invalid combo cart groups.", groupIds.Count);
-        return groupIds.Count;
+        await db.SaveChangesAsync(cancellationToken);
+        _logger.LogInformation("Removed {Count} expired or invalid combo cart groups.", removedGroups);
+        return removedGroups;
     }
 
     private static bool TryResolveCombo(

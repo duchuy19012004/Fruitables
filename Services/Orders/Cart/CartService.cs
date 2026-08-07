@@ -1,14 +1,16 @@
-using Microsoft.EntityFrameworkCore;
+using System.Security.Cryptography;
+using System.Text;
 using Fruitables.Models;
+using Fruitables.Models.Json;
 using Fruitables.Repositories.Interfaces;
-using Fruitables.Services.Communications;
-using Fruitables.ViewModels;
+using Fruitables.Services.Catalog.Products;
+using Fruitables.Services.Infrastructure.Json;
+using Fruitables.Services.Orders;
 using Fruitables.Services.Pricing.Combos;
 using Fruitables.Services.Pricing.Coupons;
 using Fruitables.Services.Pricing.ProductPricing;
-using Fruitables.Services.Orders;
-using System.Security.Cryptography;
-using System.Text;
+using Fruitables.ViewModels;
+using Microsoft.EntityFrameworkCore;
 using CartEntity = Fruitables.Models.Cart;
 
 namespace Fruitables.Services.Orders.Cart;
@@ -18,120 +20,35 @@ public class CartService : ICartService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICouponService _couponService;
     private readonly IProductPricingService _pricing;
+    private readonly IJsonDocumentSerializer _serializer;
     private readonly TimeProvider _timeProvider;
 
-    public CartService(IUnitOfWork unitOfWork, ICouponService couponService, IProductPricingService pricing, TimeProvider? timeProvider = null)
+    public CartService(
+        IUnitOfWork unitOfWork,
+        ICouponService couponService,
+        IProductPricingService pricing,
+        IJsonDocumentSerializer? serializer = null,
+        TimeProvider? timeProvider = null)
     {
-        _unitOfWork    = unitOfWork;
+        _unitOfWork = unitOfWork;
         _couponService = couponService;
         _pricing = pricing;
+        _serializer = serializer ?? new VersionedJsonSerializer();
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public async Task<CartViewModel> GetCartAsync(string sessionId, string? district = null)
     {
-        var cart  = await GetOrCreateCartAsync(sessionId);
-        var items = await _unitOfWork.CartItems.Query()
-            .Where(ci => ci.CartId == cart.Id)
-            .Include(ci => ci.Product)
-            .ThenInclude(p => p.Images)
-            .Include(ci => ci.Product)
-            .ThenInclude(p => p.Variants)
-            .Include(ci => ci.ProductVariant)
-            .Include(ci => ci.CartGroup)
-            .ThenInclude(group => group!.Combo)
-            .ToListAsync();
-        if (await RefreshItemPricesAsync(items))
-            await _unitOfWork.SaveChangesAsync();
-
-        var cartViewModel = new CartViewModel
+        var cart = await GetOrCreateCartAsync(sessionId);
+        var document = ReadLines(cart.LinesJson);
+        var lines = document.Lines.Select(CloneLine).ToList();
+        if (await RefreshLinePricesAsync(lines))
         {
-            Items = items.Select(ci => new CartItemViewModel
-            {
-                CartItemId   = ci.Id,
-                ProductId     = ci.ProductId,
-                ProductVariantId = ci.ProductVariantId,
-                CartGroupId = ci.CartGroupId,
-                SourceComboId = ci.CartGroup?.ComboId,
-                ComboName = ci.CartGroup?.ComboName,
-                ComboRevision = ci.CartGroup?.ComboRevision,
-                ComboQuantity = ci.CartGroup?.Quantity,
-                AllowCouponStacking = ci.CartGroup?.AllowCouponStacking ?? true,
-                ComboDiscount = ci.ComboDiscount,
-                VariantName = ci.ProductVariant?.Name,
-                VariantSKU = ci.ProductVariant?.SKU,
-                ProductName   = ci.Product.Name,
-                Unit          = ci.Product.Unit,
-                MinOrderQuantity = ci.Product.MinOrderQuantity,
-                ProductSlug   = ci.Product.Slug,
-                ProductImage  = ci.Product.Images.FirstOrDefault(i => i.IsPrimary)?.ImageUrl
-                                ?? ci.Product.Images.FirstOrDefault()?.ImageUrl ?? "",
-                Price         = ci.Price,
-                Quantity      = ci.Quantity,
-                StockQuantity = ci.ProductVariant?.StockQuantity ?? ci.Product.StockQuantity,
-                IsAvailable = ci.Product.IsActive && !ci.Product.IsDeleted &&
-                    (ci.ProductVariantId.HasValue
-                        ? ci.ProductVariant?.IsActive == true
-                        : !ci.Product.Variants.Any(v => v.IsActive)) &&
-                    (ci.CartGroup == null ||
-                        (ci.CartGroup.Combo.IsAvailableAt(_timeProvider.GetUtcNow()) && ci.CartGroup.ComboRevision == ci.CartGroup.Combo.Revision))
-            }).ToList()
-        };
-
-        cartViewModel.Groups = items
-            .Where(item => item.CartGroup != null)
-            .GroupBy(item => item.CartGroup!)
-            .Select(group => new CartGroupViewModel
-            {
-                Id = group.Key.Id,
-                ComboId = group.Key.ComboId,
-                ComboRevision = group.Key.ComboRevision,
-                ComboName = group.Key.ComboName,
-                Quantity = group.Key.Quantity,
-                OriginalTotal = group.Key.OriginalTotal,
-                FinalTotal = group.Key.FinalTotal,
-                Discount = group.Key.Discount,
-                AllowCouponStacking = group.Key.AllowCouponStacking,
-                IsValid = group.Key.Combo.IsAvailableAt(_timeProvider.GetUtcNow()) && group.Key.ComboRevision == group.Key.Combo.Revision &&
-                    group.All(item => item.Product.IsActive && !item.Product.IsDeleted),
-                Items = cartViewModel.Items.Where(item => item.CartGroupId == group.Key.Id).ToList()
-            })
-            .ToList();
-        cartViewModel.Subtotal = cartViewModel.Items.Sum(i => i.Total);
-
-        var couponEligibleItems = cartViewModel.Items.Where(item => item.AllowCouponStacking).ToList();
-        var couponEligibleSubtotal = couponEligibleItems.Sum(item => item.Total);
-        var couponEligibleCount = couponEligibleItems.Sum(item => item.Quantity);
-        if (!string.IsNullOrWhiteSpace(cart.CouponCode))
-        {
-            var coupon = await _couponService.ApplyCouponAsync(cart.CouponCode, couponEligibleSubtotal,
-                couponEligibleCount);
-            if (coupon.Success)
-                cart.CouponDiscount = coupon.DiscountAmount;
-            else
-            {
-                cart.CouponCode = null;
-                cart.CouponDiscount = 0;
-            }
-            await _unitOfWork.SaveChangesAsync();
+            document = WithLines(document, lines);
+            await SaveDocumentAsync(cart, document);
         }
 
-        // Cart page loads without GHN address codes, so we cannot calculate a real
-        // shipping fee here. Leave ShippingInfo null and ShippingFee at zero;
-        // checkout (or AJAX callers) will compute shipping when GHN codes are known.
-        cartViewModel.ShippingInfo = null;
-        cartViewModel.ShippingFee  = 0m;
-
-        cartViewModel.CouponCode = cart.CouponCode;
-        cartViewModel.Discount   = cart.CouponDiscount;
-
-        cartViewModel.Total = cartViewModel.Subtotal + cartViewModel.ShippingFee - cartViewModel.Discount;
-        var tokenSource = string.Join('|', cartViewModel.Items.OrderBy(i => i.CartItemId)
-            .Select(i => $"{i.CartItemId}:{i.ProductId}:{i.ProductVariantId}:{i.CartGroupId}:{i.ComboRevision}:{i.Quantity}:{i.Price}:{i.ComboDiscount}:{i.StockQuantity}:{i.IsAvailable}"))
-            + $"|{cartViewModel.CouponCode}:{cartViewModel.Discount}";
-        cartViewModel.PricingToken = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(tokenSource)));
-
-        return cartViewModel;
+        return await BuildViewModelAsync(cart, document);
     }
 
     public async Task<CartMutationResult> AddToCartAsync(
@@ -141,91 +58,77 @@ public class CartService : ICartService
         int? variantId = null)
     {
         if (quantity <= 0)
-            return CartMutationResult.Fail("Sá»‘ lÆ°á»£ng pháº£i lá»›n hÆ¡n 0.");
+            return CartMutationResult.Fail("Số lượng phải lớn hơn 0.");
 
         var cart = await GetOrCreateCartAsync(sessionId);
         var product = await _unitOfWork.Products.Query()
             .Include(p => p.Variants)
-            .FirstOrDefaultAsync(p =>
-                p.Id == productId &&
-                p.IsActive &&
-                !p.IsDeleted);
+            .FirstOrDefaultAsync(p => p.Id == productId && p.IsActive && !p.IsDeleted);
 
         if (product == null)
-            return CartMutationResult.Fail("Sáº£n pháº©m khÃ´ng tá»“n táº¡i hoáº·c Ä‘Ã£ ngá»«ng bÃ¡n.");
+            return CartMutationResult.Fail("Sản phẩm không tồn tại hoặc đã ngừng bán.");
 
-        var activeVariants = product.Variants
-            .Where(variant => variant.IsActive)
-            .ToList();
-        var minimumStep = string.Equals(product.Unit?.Trim(), "kg", StringComparison.OrdinalIgnoreCase)
-            ? 0.1m
-            : 1m;
+        var activeVariants = product.Variants.Where(variant => variant.IsActive).ToList();
+        var minimumStep = string.Equals(product.Unit?.Trim(), "kg", StringComparison.OrdinalIgnoreCase) ? 0.1m : 1m;
         if (!QuantityRules.IsValid(product.Unit, quantity, minimumStep))
             return CartMutationResult.Fail("Số lượng không hợp lệ.");
 
         ProductVariant? variant = null;
-
         if (activeVariants.Count > 0)
         {
             variant = activeVariants.FirstOrDefault(item => item.Id == variantId);
             if (variant == null)
-                return CartMutationResult.Fail("Vui lÃ²ng chá»n má»™t biáº¿n thá»ƒ Ä‘ang bÃ¡n.");
-
+                return CartMutationResult.Fail("Vui lòng chọn một biến thể đang bán.");
             if (variant.StockQuantity <= 0)
-                return CartMutationResult.Fail("Biáº¿n thá»ƒ Ä‘Ã£ háº¿t hÃ ng.");
+                return CartMutationResult.Fail("Biến thể đã hết hàng.");
         }
         else
         {
             if (variantId.HasValue)
-                return CartMutationResult.Fail("Biáº¿n thá»ƒ khÃ´ng há»£p lá»‡.");
-
+                return CartMutationResult.Fail("Biến thể không hợp lệ.");
             if (product.StockQuantity <= 0)
-                return CartMutationResult.Fail("Sáº£n pháº©m Ä‘Ã£ háº¿t hÃ ng.");
+                return CartMutationResult.Fail("Sản phẩm đã hết hàng.");
         }
 
         var quote = await _pricing.GetQuoteAsync(productId, variantId);
         if (quote == null)
-        {
-            return CartMutationResult.Fail(
-                "KhÃ´ng thá»ƒ xÃ¡c Ä‘á»‹nh giÃ¡ hiá»‡n táº¡i cá»§a sáº£n pháº©m. Vui lÃ²ng táº£i láº¡i trang.");
-        }
+            return CartMutationResult.Fail("Không thể xác định giá hiện tại của sản phẩm. Vui lòng tải lại trang.");
 
-        var existingItem = await _unitOfWork.CartItems.Query()
-            .FirstOrDefaultAsync(item =>
-                item.CartId == cart.Id &&
-                item.CartGroupId == null &&
-                item.ProductId == productId &&
-                item.ProductVariantId == variantId);
+        var document = ReadLines(cart.LinesJson);
+        var lines = document.Lines.Select(CloneLine).ToList();
+        var existing = lines.FirstOrDefault(item =>
+            item.CartGroupId == null &&
+            item.ProductId == productId &&
+            item.ProductVariantId == variantId);
 
         var stock = variant?.StockQuantity ?? product.StockQuantity;
-        var desiredQuantity = (existingItem?.Quantity ?? 0m) + quantity;
+        var desiredQuantity = (existing?.Quantity ?? 0m) + quantity;
         if (!QuantityRules.IsValid(product.Unit, desiredQuantity, product.MinOrderQuantity))
             return CartMutationResult.Fail("Số lượng tối thiểu hoặc bước số lượng không hợp lệ.");
 
-        if (existingItem != null)
+        if (existing != null)
         {
-            existingItem.Quantity = Math.Min(
-                desiredQuantity,
-                stock);
-
-            existingItem.Price = quote.EffectivePrice;
-        }
-        else
-        {
-            await _unitOfWork.CartItems.AddAsync(new CartItem
+            ReplaceLine(lines, existing with
             {
-                CartId = cart.Id,
-                ProductId = productId,
-                ProductVariantId = variantId,
-                Quantity = Math.Min(quantity, stock),
+                Quantity = Math.Min(desiredQuantity, stock),
                 Price = quote.EffectivePrice
             });
         }
+        else
+        {
+            lines.Add(new CartLineDocument
+            {
+                Id = document.NextLineId,
+                ProductId = productId,
+                ProductVariantId = variantId,
+                Quantity = Math.Min(quantity, stock),
+                Price = quote.EffectivePrice,
+                ComboDiscount = 0
+            });
+            document = document.With(nextLineId: document.NextLineId + 1);
+        }
 
-        cart.UpdatedAt = DateTime.UtcNow;
-        await _unitOfWork.SaveChangesAsync();
-
-        return CartMutationResult.Ok("ÄÃ£ thÃªm sáº£n pháº©m vÃ o giá» hÃ ng.");
+        return await PersistAsync(cart, WithLines(document, lines), "Đã thêm sản phẩm vào giỏ hàng.");
     }
 
     public async Task<CartMutationResult> AddItemsToCartAsync(
@@ -258,9 +161,7 @@ public class CartService : ICartService
         foreach (var request in groupedItems)
         {
             var product = products[request.ProductId];
-            var minimumStep = string.Equals(product.Unit?.Trim(), "kg", StringComparison.OrdinalIgnoreCase)
-                ? 0.1m
-                : 1m;
+            var minimumStep = string.Equals(product.Unit?.Trim(), "kg", StringComparison.OrdinalIgnoreCase) ? 0.1m : 1m;
             if (!QuantityRules.IsValid(product.Unit, request.Quantity, minimumStep))
                 return CartMutationResult.Fail($"Số lượng của '{product.Name}' không hợp lệ.");
 
@@ -286,13 +187,10 @@ public class CartService : ICartService
         if (targets.Any(target => !quotes.ContainsKey(target)))
             return CartMutationResult.Fail("Không thể xác định giá hiện tại của một số sản phẩm.");
 
-        var cart = await _unitOfWork.Carts.Query()
-            .FirstOrDefaultAsync(item => item.SessionId == sessionId);
-        var existingItems = cart == null
-            ? new List<CartItem>()
-            : await _unitOfWork.CartItems.Query()
-                .Where(item => item.CartId == cart.Id && item.CartGroupId == null && productIds.Contains(item.ProductId))
-                .ToListAsync();
+        var cart = await GetOrCreateCartAsync(sessionId);
+        var document = ReadLines(cart.LinesJson);
+        var lines = document.Lines.Select(CloneLine).ToList();
+        var nextLineId = Math.Max(1, document.NextLineId);
 
         foreach (var request in groupedItems)
         {
@@ -300,7 +198,8 @@ public class CartService : ICartService
             var variant = request.ProductVariantId.HasValue
                 ? product.Variants.First(item => item.Id == request.ProductVariantId.Value)
                 : null;
-            var existing = existingItems.FirstOrDefault(item =>
+            var existing = lines.FirstOrDefault(item =>
+                item.CartGroupId == null &&
                 item.ProductId == request.ProductId &&
                 item.ProductVariantId == request.ProductVariantId);
             var stock = variant?.StockQuantity ?? product.StockQuantity;
@@ -309,42 +208,32 @@ public class CartService : ICartService
                 return CartMutationResult.Fail($"Số lượng tối thiểu hoặc bước số lượng của '{product.Name}' không hợp lệ.");
             if (desiredQuantity > stock)
                 return CartMutationResult.Fail($"'{product.Name}' không đủ tồn kho cho số lượng trong giỏ.");
-        }
 
-        if (cart == null)
-        {
-            cart = new CartEntity { SessionId = sessionId };
-            await _unitOfWork.Carts.AddAsync(cart);
-        }
-
-        foreach (var request in groupedItems)
-        {
             var key = new PriceTargetKey(request.ProductId, request.ProductVariantId);
-            var existing = existingItems.FirstOrDefault(item =>
-                item.ProductId == request.ProductId &&
-                item.ProductVariantId == request.ProductVariantId);
-
             if (existing != null)
             {
-                existing.Quantity += request.Quantity;
-                existing.Price = quotes[key].EffectivePrice;
+                ReplaceLine(lines, existing with
+                {
+                    Quantity = desiredQuantity,
+                    Price = quotes[key].EffectivePrice
+                });
             }
             else
             {
-                await _unitOfWork.CartItems.AddAsync(new CartItem
+                lines.Add(new CartLineDocument
                 {
-                    Cart = cart,
+                    Id = nextLineId++,
                     ProductId = request.ProductId,
                     ProductVariantId = request.ProductVariantId,
                     Quantity = request.Quantity,
-                    Price = quotes[key].EffectivePrice
+                    Price = quotes[key].EffectivePrice,
+                    ComboDiscount = 0
                 });
             }
         }
 
-        cart.UpdatedAt = DateTime.UtcNow;
-        await _unitOfWork.SaveChangesAsync();
-        return CartMutationResult.Ok("Đã thêm toàn bộ combo vào giỏ hàng.");
+        document = document.With(nextLineId: nextLineId);
+        return await PersistAsync(cart, WithLines(document, lines), "Đã thêm toàn bộ combo vào giỏ hàng.");
     }
 
     public async Task<CartMutationResult> AddComboToCartAsync(string sessionId, int comboId)
@@ -376,14 +265,13 @@ public class CartService : ICartService
                 return CartMutationResult.Fail($"'{item.Product.Name}' không đủ điều kiện bán trong combo.");
         }
 
-        var cart = await _unitOfWork.Carts.Query().FirstOrDefaultAsync(item => item.SessionId == sessionId);
-        var existingCartItems = cart == null
-            ? new List<CartItem>()
-            : await _unitOfWork.CartItems.Query().Where(item => item.CartId == cart.Id).ToListAsync();
+        var cart = await GetOrCreateCartAsync(sessionId);
+        var document = ReadLines(cart.LinesJson);
+        var lines = document.Lines.Select(CloneLine).ToList();
 
         foreach (var comboItem in combo.Items)
         {
-            var alreadyInCart = existingCartItems
+            var alreadyInCart = lines
                 .Where(item => item.ProductId == comboItem.ProductId && item.ProductVariantId == comboItem.ProductVariantId)
                 .Sum(item => item.Quantity);
             var stock = comboItem.ProductVariant?.StockQuantity ?? comboItem.Product.StockQuantity;
@@ -391,94 +279,87 @@ public class CartService : ICartService
                 return CartMutationResult.Fail($"'{comboItem.Product.Name}' không đủ tồn kho cho combo.");
         }
 
-        if (cart == null)
-        {
-            cart = new CartEntity { SessionId = sessionId };
-            await _unitOfWork.Carts.AddAsync(cart);
-        }
+        var existingGroupId = lines
+            .Where(item => item.ComboId == combo.Id && item.ComboRevision == combo.Revision && item.CartGroupId.HasValue)
+            .Select(item => item.CartGroupId!.Value)
+            .FirstOrDefault();
 
-        var group = cart.Id == 0
-            ? null
-            : await _unitOfWork.CartGroups.Query()
-                .Include(item => item.Items)
-                .FirstOrDefaultAsync(item => item.CartId == cart.Id && item.ComboId == combo.Id && item.ComboRevision == combo.Revision);
-
-        if (group == null)
+        if (existingGroupId == 0)
         {
-            group = new CartGroup
-            {
-                Cart = cart,
-                ComboId = combo.Id,
-                ComboRevision = combo.Revision,
-                ComboName = combo.Name,
-                Quantity = 1,
-                AllowCouponStacking = combo.AllowCouponStacking,
-                ExpiresAt = DateTime.UtcNow.AddDays(30)
-            };
-            await _unitOfWork.CartGroups.AddAsync(group);
+            var groupId = Math.Max(1, document.NextGroupId);
+            var nextLineId = Math.Max(1, document.NextLineId);
+            var groupLines = new List<CartLineDocument>();
             foreach (var comboItem in combo.Items.OrderBy(item => item.SortOrder))
             {
                 var key = new PriceTargetKey(comboItem.ProductId, comboItem.ProductVariantId);
-                var cartItem = new CartItem
+                groupLines.Add(new CartLineDocument
                 {
-                    Cart = cart,
-                    CartGroup = group,
+                    Id = nextLineId++,
                     ProductId = comboItem.ProductId,
                     ProductVariantId = comboItem.ProductVariantId,
+                    CartGroupId = groupId,
+                    ComboId = combo.Id,
+                    ComboRevision = combo.Revision,
+                    ComboName = combo.Name,
+                    GroupQuantity = 1,
+                    AllowCouponStacking = combo.AllowCouponStacking,
                     Quantity = comboItem.Quantity,
-                    Price = quotes[key].EffectivePrice
-                };
-                group.Items.Add(cartItem);
-                await _unitOfWork.CartItems.AddAsync(cartItem);
+                    Price = quotes[key].EffectivePrice,
+                    ComboDiscount = 0
+                });
             }
+
+            ApplyComboPricing(groupLines, combo, quotes, groupQuantity: 1);
+            lines.AddRange(groupLines);
+            document = document.With(nextLineId: nextLineId, nextGroupId: groupId + 1);
         }
         else
         {
-            group.Quantity++;
+            var groupLines = lines.Where(item => item.CartGroupId == existingGroupId).Select(CloneLine).ToList();
+            var groupQuantity = (groupLines.FirstOrDefault()?.GroupQuantity ?? 1) + 1;
             foreach (var comboItem in combo.Items)
             {
-                var cartItem = group.Items.First(item =>
+                var line = groupLines.First(item =>
                     item.ProductId == comboItem.ProductId && item.ProductVariantId == comboItem.ProductVariantId);
-                cartItem.Quantity += comboItem.Quantity;
+                ReplaceLine(groupLines, line with { Quantity = comboItem.Quantity * groupQuantity });
             }
+
+            ApplyComboPricing(groupLines, combo, quotes, groupQuantity);
+            lines = lines.Where(item => item.CartGroupId != existingGroupId).Concat(groupLines).ToList();
         }
 
-        ApplyComboPricing(group, combo, quotes);
-        group.UpdatedAt = DateTime.UtcNow;
-        cart.UpdatedAt = DateTime.UtcNow;
-        await _unitOfWork.SaveChangesAsync();
-        return CartMutationResult.Ok($"Đã thêm combo '{combo.Name}' vào giỏ hàng.");
+        return await PersistAsync(cart, WithLines(document, lines), $"Đã thêm combo '{combo.Name}' vào giỏ hàng.");
     }
 
     public async Task<CartMutationResult> UpdateComboQuantityAsync(string sessionId, int cartGroupId, int quantity)
     {
-        var group = await _unitOfWork.CartGroups.Query()
-            .Include(item => item.Cart)
-            .Include(item => item.Items)
-            .Include(item => item.Combo)
-                .ThenInclude(combo => combo.Items)
-                    .ThenInclude(item => item.Product)
-                        .ThenInclude(product => product.Variants)
-            .Include(item => item.Combo)
-                .ThenInclude(combo => combo.Items)
-                    .ThenInclude(item => item.ProductVariant)
-            .FirstOrDefaultAsync(item => item.Id == cartGroupId && item.Cart.SessionId == sessionId);
-        if (group == null) return CartMutationResult.Fail("Không tìm thấy combo trong giỏ hàng.");
+        var cart = await GetOrCreateCartAsync(sessionId);
+        var document = ReadLines(cart.LinesJson);
+        var lines = document.Lines.Select(CloneLine).ToList();
+        var groupLines = lines.Where(item => item.CartGroupId == cartGroupId).ToList();
+        if (groupLines.Count == 0)
+            return CartMutationResult.Fail("Không tìm thấy combo trong giỏ hàng.");
 
         if (quantity <= 0)
         {
-            _unitOfWork.CartItems.RemoveRange(group.Items);
-            _unitOfWork.CartGroups.Remove(group);
-            await _unitOfWork.SaveChangesAsync();
-            return CartMutationResult.Ok("Đã xóa combo khỏi giỏ hàng.");
+            lines = lines.Where(item => item.CartGroupId != cartGroupId).ToList();
+            return await PersistAsync(cart, WithLines(document, lines), "Đã xóa combo khỏi giỏ hàng.");
         }
 
-        var combo = group.Combo;
-        if (!combo.IsAvailableAt(_timeProvider.GetUtcNow()) || combo.Revision != group.ComboRevision)
+        var comboId = groupLines[0].ComboId ?? 0;
+        var comboRevision = groupLines[0].ComboRevision ?? 0;
+        var combo = await _unitOfWork.Combos.Query()
+            .Where(item => item.Id == comboId)
+            .Include(item => item.Items)
+                .ThenInclude(item => item.Product)
+                    .ThenInclude(product => product.Variants)
+            .Include(item => item.Items)
+                .ThenInclude(item => item.ProductVariant)
+            .FirstOrDefaultAsync();
+        if (combo == null || !combo.IsAvailableAt(_timeProvider.GetUtcNow()) || combo.Revision != comboRevision)
             return CartMutationResult.Fail("Combo đã thay đổi hoặc ngừng bán. Vui lòng xóa và thêm lại.");
-        var otherItems = await _unitOfWork.CartItems.Query()
-            .Where(item => item.CartId == group.CartId && item.CartGroupId != group.Id)
-            .ToListAsync();
+
+        var otherItems = lines.Where(item => item.CartGroupId != cartGroupId).ToList();
         foreach (var comboItem in combo.Items)
         {
             var desired = comboItem.Quantity * quantity;
@@ -495,114 +376,116 @@ public class CartService : ICartService
         if (targets.Any(target => !quotes.ContainsKey(target)))
             return CartMutationResult.Fail("Không thể xác định giá hiện tại của combo.");
 
-        group.Quantity = quantity;
+        var updatedGroup = groupLines.Select(CloneLine).ToList();
         foreach (var comboItem in combo.Items)
         {
-            var cartItem = group.Items.First(item =>
+            var line = updatedGroup.First(item =>
                 item.ProductId == comboItem.ProductId && item.ProductVariantId == comboItem.ProductVariantId);
-            cartItem.Quantity = comboItem.Quantity * quantity;
-            cartItem.Price = quotes[new PriceTargetKey(comboItem.ProductId, comboItem.ProductVariantId)].EffectivePrice;
+            ReplaceLine(updatedGroup, line with
+            {
+                Quantity = comboItem.Quantity * quantity,
+                Price = quotes[new PriceTargetKey(comboItem.ProductId, comboItem.ProductVariantId)].EffectivePrice
+            });
         }
-        ApplyComboPricing(group, combo, quotes);
-        group.UpdatedAt = DateTime.UtcNow;
-        group.Cart.UpdatedAt = DateTime.UtcNow;
-        await _unitOfWork.SaveChangesAsync();
-        return CartMutationResult.Ok("Đã cập nhật số lượng combo.");
+
+        ApplyComboPricing(updatedGroup, combo, quotes, quantity);
+        lines = lines.Where(item => item.CartGroupId != cartGroupId).Concat(updatedGroup).ToList();
+        return await PersistAsync(cart, WithLines(document, lines), "Đã cập nhật số lượng combo.");
     }
 
     public async Task RemoveComboAsync(string sessionId, int cartGroupId)
     {
-        var group = await _unitOfWork.CartGroups.Query()
-            .Include(item => item.Cart)
-            .Include(item => item.Items)
-            .FirstOrDefaultAsync(item => item.Id == cartGroupId && item.Cart.SessionId == sessionId);
-        if (group == null) return;
+        var cart = await _unitOfWork.Carts.Query().FirstOrDefaultAsync(c => c.SessionId == sessionId);
+        if (cart == null) return;
 
-        _unitOfWork.CartItems.RemoveRange(group.Items);
-        _unitOfWork.CartGroups.Remove(group);
-        await _unitOfWork.SaveChangesAsync();
+        var document = ReadLines(cart.LinesJson);
+        var lines = document.Lines.Where(item => item.CartGroupId != cartGroupId).ToList();
+        if (lines.Count == document.Lines.Count) return;
+        await PersistAsync(cart, WithLines(document, lines), "Đã xóa combo.");
     }
 
     public async Task UpdateQuantityAsync(string sessionId, int cartItemId, decimal quantity)
     {
         var cart = await GetOrCreateCartAsync(sessionId);
-        var item = await _unitOfWork.CartItems.Query()
-            .Include(ci => ci.Product)
-            .Include(ci => ci.ProductVariant)
-            .FirstOrDefaultAsync(ci => ci.CartId == cart.Id && ci.Id == cartItemId);
+        var document = ReadLines(cart.LinesJson);
+        var lines = document.Lines.Select(CloneLine).ToList();
+        var item = lines.FirstOrDefault(line => line.Id == cartItemId && line.CartGroupId == null);
+        if (item == null) return;
 
-        if (item != null && item.CartGroupId == null)
+        var product = await _unitOfWork.Products.Query()
+            .Include(p => p.Variants)
+            .FirstOrDefaultAsync(p => p.Id == item.ProductId);
+        if (product == null)
         {
-            var isUnavailable = !item.Product.IsActive || item.Product.IsDeleted ||
-                (item.ProductVariantId.HasValue && item.ProductVariant?.IsActive != true);
-            var stock = item.ProductVariant?.StockQuantity ?? item.Product.StockQuantity;
-            if (quantity <= 0 || isUnavailable || stock <= 0)
-                _unitOfWork.CartItems.Remove(item);
-            else if (QuantityRules.IsValid(item.Product.Unit, quantity, item.Product.MinOrderQuantity))
-                item.Quantity = Math.Min(quantity, stock);
-
-            cart.UpdatedAt = DateTime.UtcNow;
-            await _unitOfWork.SaveChangesAsync();
+            lines.RemoveAll(line => line.Id == cartItemId);
+            await PersistAsync(cart, WithLines(document, lines), "removed");
+            return;
         }
+
+        var variant = item.ProductVariantId.HasValue
+            ? product.Variants.FirstOrDefault(v => v.Id == item.ProductVariantId.Value)
+            : null;
+        var isUnavailable = !product.IsActive || product.IsDeleted ||
+            (item.ProductVariantId.HasValue && variant?.IsActive != true);
+        var stock = variant?.StockQuantity ?? product.StockQuantity;
+
+        if (quantity <= 0 || isUnavailable || stock <= 0)
+            lines.RemoveAll(line => line.Id == cartItemId);
+        else if (QuantityRules.IsValid(product.Unit, quantity, product.MinOrderQuantity))
+            ReplaceLine(lines, item with { Quantity = Math.Min(quantity, stock) });
+
+        await PersistAsync(cart, WithLines(document, lines), "updated");
     }
 
     public async Task RemoveFromCartAsync(string sessionId, int cartItemId)
     {
         var cart = await GetOrCreateCartAsync(sessionId);
-        var item = await _unitOfWork.CartItems.Query()
-            .FirstOrDefaultAsync(ci => ci.CartId == cart.Id && ci.Id == cartItemId);
-
-        if (item != null && item.CartGroupId == null)
-        {
-            _unitOfWork.CartItems.Remove(item);
-            cart.UpdatedAt = DateTime.UtcNow;
-            await _unitOfWork.SaveChangesAsync();
-        }
+        var document = ReadLines(cart.LinesJson);
+        var lines = document.Lines.Where(line => !(line.Id == cartItemId && line.CartGroupId == null)).ToList();
+        if (lines.Count == document.Lines.Count) return;
+        await PersistAsync(cart, WithLines(document, lines), "removed");
     }
 
     public async Task ClearCartAsync(string sessionId)
     {
-        var cart = await _unitOfWork.Carts.Query()
-            .Include(c => c.Items)
-            .FirstOrDefaultAsync(c => c.SessionId == sessionId);
-
-        if (cart != null)
-        {
-            _unitOfWork.CartItems.RemoveRange(cart.Items);
-            var groups = await _unitOfWork.CartGroups.Query().Where(group => group.CartId == cart.Id).ToListAsync();
-            _unitOfWork.CartGroups.RemoveRange(groups);
-            await _unitOfWork.SaveChangesAsync();
-        }
+        var cart = await _unitOfWork.Carts.Query().FirstOrDefaultAsync(c => c.SessionId == sessionId);
+        if (cart == null) return;
+        await PersistAsync(cart, new CartLinesDocument(), "cleared");
     }
 
     public async Task<decimal> GetCartCountAsync(string sessionId)
     {
-        var cart = await _unitOfWork.Carts.Query()
-            .FirstOrDefaultAsync(c => c.SessionId == sessionId);
-
+        var cart = await _unitOfWork.Carts.Query().FirstOrDefaultAsync(c => c.SessionId == sessionId);
         if (cart == null) return 0;
-
-        return await _unitOfWork.CartItems.Query()
-            .Where(ci => ci.CartId == cart.Id)
-            .SumAsync(ci => ci.Quantity);
+        return ReadLines(cart.LinesJson).Lines.Sum(line => line.Quantity);
     }
 
     public async Task<CouponApplyResult> ApplyCouponAsync(string sessionId, string couponCode)
     {
-        var cart  = await GetOrCreateCartAsync(sessionId);
+        var cart = await GetOrCreateCartAsync(sessionId);
         var pricedCart = await GetCartAsync(sessionId);
         var eligibleItems = pricedCart.Items.Where(item => item.AllowCouponStacking).ToList();
         decimal subtotal = eligibleItems.Sum(item => item.Total);
         decimal itemCount = eligibleItems.Sum(item => item.Quantity);
 
         var result = await _couponService.ApplyCouponAsync(couponCode, subtotal, itemCount);
-
         if (result.Success)
         {
-            cart.CouponCode     = result.CouponCode;
+            cart.CouponCode = result.CouponCode;
             cart.CouponDiscount = result.DiscountAmount;
-            cart.UpdatedAt      = DateTime.UtcNow;
-            await _unitOfWork.SaveChangesAsync();
+            cart.UpdatedAt = DateTime.UtcNow;
+            try
+            {
+                await _unitOfWork.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                return new CouponApplyResult
+                {
+                    Success = false,
+                    Message = "Giỏ hàng đã được cập nhật bởi thao tác khác. Vui lòng thử lại."
+                };
+            }
         }
 
         return result;
@@ -610,121 +493,360 @@ public class CartService : ICartService
 
     public async Task RemoveCouponAsync(string sessionId)
     {
-        var cart = await _unitOfWork.Carts.Query()
-            .FirstOrDefaultAsync(c => c.SessionId == sessionId);
+        var cart = await _unitOfWork.Carts.Query().FirstOrDefaultAsync(c => c.SessionId == sessionId);
+        if (cart == null) return;
 
-        if (cart != null)
+        cart.CouponCode = null;
+        cart.CouponDiscount = 0;
+        cart.UpdatedAt = DateTime.UtcNow;
+        try
         {
-            cart.CouponCode     = null;
-            cart.CouponDiscount = 0;
-            cart.UpdatedAt      = DateTime.UtcNow;
             await _unitOfWork.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // silent clear conflict; next read wins
         }
     }
 
     public Task<CartViewModel> RepriceForCheckoutAsync(string sessionId) => GetCartAsync(sessionId);
 
-    private async Task<bool> RefreshItemPricesAsync(List<CartItem> items)
+    private async Task<CartViewModel> BuildViewModelAsync(CartEntity cart, CartLinesDocument document)
     {
-        if (items.Count == 0) return false;
-        var targets = items.Select(item => new PriceTargetKey(item.ProductId, item.ProductVariantId)).Distinct().ToList();
+        var productIds = document.Lines.Select(line => line.ProductId).Distinct().ToList();
+        var products = productIds.Count == 0
+            ? new Dictionary<int, Product>()
+            : await _unitOfWork.Products.Query()
+                .Where(product => productIds.Contains(product.Id))
+                .Include(product => product.Variants)
+                .ToDictionaryAsync(product => product.Id);
+
+        if (products.Count > 0)
+            ProductAggregateJson.Hydrate(products.Values, _serializer);
+
+        var comboIds = document.Lines.Where(line => line.ComboId.HasValue).Select(line => line.ComboId!.Value).Distinct().ToList();
+        var combos = comboIds.Count == 0
+            ? new Dictionary<int, Combo>()
+            : await _unitOfWork.Combos.Query()
+                .Where(combo => comboIds.Contains(combo.Id))
+                .ToDictionaryAsync(combo => combo.Id);
+
+        var cartViewModel = new CartViewModel
+        {
+            Items = document.Lines.Select(line =>
+            {
+                products.TryGetValue(line.ProductId, out var product);
+                var variant = line.ProductVariantId.HasValue
+                    ? product?.Variants.FirstOrDefault(item => item.Id == line.ProductVariantId.Value)
+                    : null;
+                combos.TryGetValue(line.ComboId ?? 0, out var combo);
+                var comboValid = line.CartGroupId == null ||
+                    (combo != null &&
+                     combo.IsAvailableAt(_timeProvider.GetUtcNow()) &&
+                     line.ComboRevision == combo.Revision);
+
+                return new CartItemViewModel
+                {
+                    CartItemId = line.Id,
+                    ProductId = line.ProductId,
+                    ProductVariantId = line.ProductVariantId,
+                    CartGroupId = line.CartGroupId,
+                    SourceComboId = line.ComboId,
+                    ComboName = line.ComboName,
+                    ComboRevision = line.ComboRevision,
+                    ComboQuantity = line.GroupQuantity,
+                    AllowCouponStacking = line.AllowCouponStacking ?? true,
+                    ComboDiscount = line.ComboDiscount,
+                    VariantName = variant?.Name,
+                    VariantSKU = variant?.SKU,
+                    ProductName = product?.Name ?? string.Empty,
+                    Unit = product?.Unit ?? "kg",
+                    MinOrderQuantity = product?.MinOrderQuantity ?? 1,
+                    ProductSlug = product?.Slug ?? string.Empty,
+                    ProductImage = product?.Images.FirstOrDefault(i => i.IsPrimary)?.ImageUrl
+                        ?? product?.Images.FirstOrDefault()?.ImageUrl
+                        ?? string.Empty,
+                    Price = line.Price,
+                    Quantity = line.Quantity,
+                    StockQuantity = variant?.StockQuantity ?? product?.StockQuantity ?? 0,
+                    IsAvailable = product is { IsActive: true, IsDeleted: false } &&
+                        (line.ProductVariantId.HasValue
+                            ? variant?.IsActive == true
+                            : product.Variants.All(v => !v.IsActive)) &&
+                        comboValid
+                };
+            }).ToList()
+        };
+
+        cartViewModel.Groups = document.Lines
+            .Where(line => line.CartGroupId.HasValue)
+            .GroupBy(line => line.CartGroupId!.Value)
+            .Select(group =>
+            {
+                var first = group.First();
+                combos.TryGetValue(first.ComboId ?? 0, out var combo);
+                var items = cartViewModel.Items.Where(item => item.CartGroupId == group.Key).ToList();
+                return new CartGroupViewModel
+                {
+                    Id = group.Key,
+                    ComboId = first.ComboId ?? 0,
+                    ComboRevision = first.ComboRevision ?? 0,
+                    ComboName = first.ComboName ?? string.Empty,
+                    Quantity = first.GroupQuantity ?? 1,
+                    OriginalTotal = first.GroupOriginalTotal ?? items.Sum(item => item.Price * item.Quantity),
+                    FinalTotal = first.GroupFinalTotal ?? items.Sum(item => item.Total),
+                    Discount = first.GroupDiscount ?? items.Sum(item => item.ComboDiscount),
+                    AllowCouponStacking = first.AllowCouponStacking ?? true,
+                    IsValid = combo != null &&
+                        combo.IsAvailableAt(_timeProvider.GetUtcNow()) &&
+                        first.ComboRevision == combo.Revision &&
+                        items.All(item => item.IsAvailable || item.SourceComboId == first.ComboId),
+                    Items = items
+                };
+            })
+            .ToList();
+
+        cartViewModel.Subtotal = cartViewModel.Items.Sum(i => i.Total);
+
+        var couponEligibleItems = cartViewModel.Items.Where(item => item.AllowCouponStacking).ToList();
+        var couponEligibleSubtotal = couponEligibleItems.Sum(item => item.Total);
+        var couponEligibleCount = couponEligibleItems.Sum(item => item.Quantity);
+        if (!string.IsNullOrWhiteSpace(cart.CouponCode))
+        {
+            var coupon = await _couponService.ApplyCouponAsync(cart.CouponCode, couponEligibleSubtotal, couponEligibleCount);
+            if (coupon.Success)
+                cart.CouponDiscount = coupon.DiscountAmount;
+            else
+            {
+                cart.CouponCode = null;
+                cart.CouponDiscount = 0;
+            }
+
+            try
+            {
+                await _unitOfWork.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                // next load will recompute coupon state
+            }
+        }
+
+        cartViewModel.ShippingInfo = null;
+        cartViewModel.ShippingFee = 0m;
+        cartViewModel.CouponCode = cart.CouponCode;
+        cartViewModel.Discount = cart.CouponDiscount;
+        cartViewModel.Total = cartViewModel.Subtotal + cartViewModel.ShippingFee - cartViewModel.Discount;
+
+        var tokenSource = string.Join('|', cartViewModel.Items.OrderBy(i => i.CartItemId)
+            .Select(i => $"{i.CartItemId}:{i.ProductId}:{i.ProductVariantId}:{i.CartGroupId}:{i.ComboRevision}:{i.Quantity}:{i.Price}:{i.ComboDiscount}:{i.StockQuantity}:{i.IsAvailable}"))
+            + $"|{cartViewModel.CouponCode}:{cartViewModel.Discount}";
+        cartViewModel.PricingToken = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(tokenSource)));
+        return cartViewModel;
+    }
+
+    private async Task<bool> RefreshLinePricesAsync(List<CartLineDocument> lines)
+    {
+        if (lines.Count == 0) return false;
+
+        var targets = lines.Select(item => new PriceTargetKey(item.ProductId, item.ProductVariantId)).Distinct().ToList();
         var quotes = await _pricing.GetQuotesAsync(targets);
         var changed = false;
 
-        foreach (var item in items.Where(item => item.CartGroupId == null))
+        for (var index = 0; index < lines.Count; index++)
         {
+            var item = lines[index];
+            if (item.CartGroupId != null) continue;
             if (!quotes.TryGetValue(new PriceTargetKey(item.ProductId, item.ProductVariantId), out var quote))
                 continue;
             if (item.Price != quote.EffectivePrice || item.ComboDiscount != 0)
             {
-                item.Price = quote.EffectivePrice;
-                item.ComboDiscount = 0;
+                lines[index] = item with { Price = quote.EffectivePrice, ComboDiscount = 0 };
                 changed = true;
             }
         }
 
-        foreach (var group in items
-            .Where(item => item.CartGroup != null)
-            .GroupBy(item => item.CartGroup!)
-            .Select(itemsByGroup => itemsByGroup.Key))
+        var comboIds = lines.Where(line => line.ComboId.HasValue).Select(line => line.ComboId!.Value).Distinct().ToList();
+        if (comboIds.Count == 0) return changed;
+
+        var combos = await _unitOfWork.Combos.Query()
+            .Where(combo => comboIds.Contains(combo.Id))
+            .ToDictionaryAsync(combo => combo.Id);
+
+        foreach (var group in lines.Where(line => line.CartGroupId.HasValue).GroupBy(line => line.CartGroupId!.Value))
         {
-            if (!group.Combo.IsAvailableAt(_timeProvider.GetUtcNow()) || group.ComboRevision != group.Combo.Revision ||
-                group.Items.Any(item => !quotes.ContainsKey(new PriceTargetKey(item.ProductId, item.ProductVariantId))))
+            var groupLines = group.Select(CloneLine).ToList();
+            var first = groupLines[0];
+            if (!combos.TryGetValue(first.ComboId ?? 0, out var combo))
+                continue;
+            if (!combo.IsAvailableAt(_timeProvider.GetUtcNow()) || first.ComboRevision != combo.Revision)
+                continue;
+            if (groupLines.Any(item => !quotes.ContainsKey(new PriceTargetKey(item.ProductId, item.ProductVariantId))))
                 continue;
 
-            var oldOriginal = group.OriginalTotal;
-            var oldFinal = group.FinalTotal;
-            var oldDiscount = group.Discount;
-            var oldItemValues = group.Items.Select(item => (item.Id, item.Price, item.ComboDiscount)).ToList();
-            ApplyComboPricing(group, group.Combo, quotes);
-            changed |= oldOriginal != group.OriginalTotal || oldFinal != group.FinalTotal || oldDiscount != group.Discount ||
-                oldItemValues.Any(old => group.Items.Any(item => item.Id == old.Id &&
-                    (item.Price != old.Price || item.ComboDiscount != old.ComboDiscount)));
+            var old = groupLines.Select(item => (item.Id, item.Price, item.ComboDiscount, item.GroupOriginalTotal, item.GroupFinalTotal, item.GroupDiscount)).ToList();
+            ApplyComboPricing(groupLines, combo, quotes, first.GroupQuantity ?? 1);
+            for (var i = 0; i < groupLines.Count; i++)
+            {
+                var updated = groupLines[i];
+                var existingIndex = lines.FindIndex(line => line.Id == updated.Id);
+                if (existingIndex >= 0)
+                    lines[existingIndex] = updated;
+            }
+
+            changed |= old.Any(before =>
+            {
+                var after = groupLines.First(item => item.Id == before.Id);
+                return before.Price != after.Price ||
+                       before.ComboDiscount != after.ComboDiscount ||
+                       before.GroupOriginalTotal != after.GroupOriginalTotal ||
+                       before.GroupFinalTotal != after.GroupFinalTotal ||
+                       before.GroupDiscount != after.GroupDiscount;
+            });
         }
+
         return changed;
     }
 
     private static void ApplyComboPricing(
-        CartGroup group,
+        List<CartLineDocument> groupLines,
         Combo combo,
-        IReadOnlyDictionary<PriceTargetKey, PriceQuote> quotes)
+        IReadOnlyDictionary<PriceTargetKey, PriceQuote> quotes,
+        int groupQuantity)
     {
-        var grossLines = group.Items
+        var grossLines = groupLines
             .OrderBy(item => item.Id)
             .Select(item =>
             {
                 var quote = quotes[new PriceTargetKey(item.ProductId, item.ProductVariantId)];
-                item.Price = quote.EffectivePrice;
-                return (Item: item, Gross: quote.EffectivePrice * item.Quantity);
+                var updated = item with { Price = quote.EffectivePrice };
+                return (Item: updated, Gross: quote.EffectivePrice * updated.Quantity);
             })
             .ToList();
+
         var aggregateOriginal = grossLines.Sum(line => line.Gross);
-        var unitOriginal = group.Quantity > 0 ? aggregateOriginal / group.Quantity : aggregateOriginal;
+        var unitOriginal = groupQuantity > 0 ? aggregateOriginal / groupQuantity : aggregateOriginal;
         var unitPrice = ComboPricingCalculator.Calculate(
             combo.PricingType,
             unitOriginal,
             combo.FixedPrice,
             combo.DiscountValue);
 
-        group.ComboName = combo.Name;
-        group.AllowCouponStacking = combo.AllowCouponStacking;
-        group.UpdatedAt = DateTime.UtcNow;
-        group.ExpiresAt = DateTime.UtcNow.AddDays(30);
-        group.OriginalTotal = decimal.Round(unitPrice.OriginalTotal * group.Quantity, 2);
-        group.FinalTotal = decimal.Round(unitPrice.FinalTotal * group.Quantity, 2);
-        group.Discount = decimal.Round(group.OriginalTotal - group.FinalTotal, 2);
-
-        if (aggregateOriginal <= 0)
-        {
-            foreach (var line in grossLines)
-                line.Item.ComboDiscount = 0;
-            return;
-        }
+        var originalTotal = decimal.Round(unitPrice.OriginalTotal * groupQuantity, 2);
+        var finalTotal = decimal.Round(unitPrice.FinalTotal * groupQuantity, 2);
+        var discount = decimal.Round(originalTotal - finalTotal, 2);
 
         var allocated = 0m;
+        var result = new List<CartLineDocument>(grossLines.Count);
         for (var index = 0; index < grossLines.Count; index++)
         {
             var line = grossLines[index];
-            var discount = index == grossLines.Count - 1
-                ? group.Discount - allocated
-                : decimal.Round(group.Discount * line.Gross / aggregateOriginal, 2);
-            line.Item.ComboDiscount = Math.Max(0, discount);
-            allocated += line.Item.ComboDiscount;
+            var lineDiscount = aggregateOriginal <= 0
+                ? 0m
+                : index == grossLines.Count - 1
+                    ? discount - allocated
+                    : decimal.Round(discount * line.Gross / aggregateOriginal, 2);
+            allocated += Math.Max(0, lineDiscount);
+            result.Add(line.Item with
+            {
+                ComboId = combo.Id,
+                ComboRevision = combo.Revision,
+                ComboName = combo.Name,
+                GroupQuantity = groupQuantity,
+                GroupOriginalTotal = originalTotal,
+                GroupFinalTotal = finalTotal,
+                GroupDiscount = discount,
+                AllowCouponStacking = combo.AllowCouponStacking,
+                ComboDiscount = Math.Max(0, lineDiscount)
+            });
         }
+
+        groupLines.Clear();
+        groupLines.AddRange(result);
+    }
+
+    private async Task<CartMutationResult> PersistAsync(CartEntity cart, CartLinesDocument document, string successMessage)
+    {
+        try
+        {
+            await SaveDocumentAsync(cart, document);
+            return CartMutationResult.Ok(successMessage);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return CartMutationResult.Fail("Giỏ hàng đã được cập nhật bởi thao tác khác. Vui lòng tải lại.");
+        }
+    }
+
+    private async Task SaveDocumentAsync(CartEntity cart, CartLinesDocument document)
+    {
+        cart.LinesJson = _serializer.Serialize(document);
+        cart.UpdatedAt = DateTime.UtcNow;
+        cart.RowVersion = Guid.NewGuid().ToByteArray();
+        await _unitOfWork.SaveChangesAsync();
+    }
+
+    private CartLinesDocument ReadLines(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json) || json.Trim() == "[]")
+            return new CartLinesDocument();
+
+        var document = _serializer.Deserialize<CartLinesDocument>(json);
+        var lines = document.Lines ?? [];
+        var nextLineId = document.NextLineId > 0
+            ? document.NextLineId
+            : Math.Max(1, lines.Select(line => line.Id).DefaultIfEmpty(0).Max() + 1);
+        var nextGroupId = document.NextGroupId > 0
+            ? document.NextGroupId
+            : Math.Max(1, lines.Where(line => line.CartGroupId.HasValue).Select(line => line.CartGroupId!.Value).DefaultIfEmpty(0).Max() + 1);
+
+        // Backfill-era documents may omit line ids; assign stable ones in memory.
+        if (lines.Any(line => line.Id <= 0))
+        {
+            var assigned = nextLineId;
+            lines = lines.Select(line => line.Id > 0 ? line : line with { Id = assigned++ }).ToList();
+            nextLineId = assigned;
+        }
+
+        return document.With(lines: lines, nextLineId: nextLineId, nextGroupId: nextGroupId);
+    }
+
+    private static CartLinesDocument WithLines(CartLinesDocument document, List<CartLineDocument> lines) =>
+        document.With(lines: lines);
+
+    private static CartLineDocument CloneLine(CartLineDocument line) => line with { };
+
+    private static void ReplaceLine(List<CartLineDocument> lines, CartLineDocument updated)
+    {
+        var index = lines.FindIndex(line => line.Id == updated.Id &&
+            line.ProductId == updated.ProductId &&
+            line.ProductVariantId == updated.ProductVariantId &&
+            line.CartGroupId == updated.CartGroupId);
+        if (index < 0)
+            index = lines.FindIndex(line =>
+                line.ProductId == updated.ProductId &&
+                line.ProductVariantId == updated.ProductVariantId &&
+                line.CartGroupId == updated.CartGroupId);
+        if (index >= 0)
+            lines[index] = updated;
+        else
+            lines.Add(updated);
     }
 
     private async Task<CartEntity> GetOrCreateCartAsync(string sessionId)
     {
-        var cart = await _unitOfWork.Carts.Query()
-            .FirstOrDefaultAsync(c => c.SessionId == sessionId);
+        var cart = await _unitOfWork.Carts.Query().FirstOrDefaultAsync(c => c.SessionId == sessionId);
+        if (cart != null)
+            return cart;
 
-        if (cart == null)
+        cart = new CartEntity
         {
-            cart = new CartEntity { SessionId = sessionId };
-            await _unitOfWork.Carts.AddAsync(cart);
-            await _unitOfWork.SaveChangesAsync();
-        }
-
+            SessionId = sessionId,
+            LinesJson = _serializer.Serialize(new CartLinesDocument()),
+            RowVersion = Guid.NewGuid().ToByteArray()
+        };
+        await _unitOfWork.Carts.AddAsync(cart);
+        await _unitOfWork.SaveChangesAsync();
         return cart;
     }
 }

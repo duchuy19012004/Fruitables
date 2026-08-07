@@ -2,14 +2,20 @@ using Microsoft.EntityFrameworkCore;
 using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Repositories.Interfaces;
+using Fruitables.Services.Catalog.Products;
+using Fruitables.Services.Infrastructure.Json;
+using Fruitables.Services.Orders.OrderManagement;
 using Fruitables.ViewModels;
 
 namespace Fruitables.Repositories;
 
 public class OrderRepository : Repository<Order>, IOrderRepository
 {
-    public OrderRepository(ApplicationDbContext context) : base(context)
+    private readonly IJsonDocumentSerializer _serializer;
+
+    public OrderRepository(ApplicationDbContext context, IJsonDocumentSerializer? serializer = null) : base(context)
     {
+        _serializer = serializer ?? new VersionedJsonSerializer();
     }
 
     /// <summary>
@@ -72,17 +78,32 @@ public class OrderRepository : Repository<Order>, IOrderRepository
     /// </summary>
     public async Task<Order?> GetOrderWithDetailsAsync(int orderId, int userId)
     {
-        return await _dbSet
+        var order = await _dbSet
             .Where(o => o.Id == orderId && o.UserId == userId)
             .Include(o => o.Items)
             .ThenInclude(oi => oi.Product)
-            .ThenInclude(p => p.Images)
             .Include(o => o.Items)
             .ThenInclude(oi => oi.ProductVariant)
-            .Include(o => o.StatusHistory)
-            .ThenInclude(sh => sh.Admin)
             .Include(o => o.Address)
             .FirstOrDefaultAsync();
+        if (order == null)
+            return null;
+
+        var products = order.Items
+            .Where(item => item.Product != null)
+            .Select(item => item.Product!)
+            .GroupBy(product => product.Id)
+            .Select(group => group.First())
+            .ToList();
+        ProductAggregateJson.Hydrate(products, _serializer);
+
+        var history = OrderAggregateJson.ReadHistory(order.StatusHistoryJson, _serializer);
+        var adminIds = history.Entries.Select(entry => entry.AdminId).Distinct().ToList();
+        var admins = adminIds.Count == 0
+            ? new Dictionary<int, User>()
+            : await _context.Users.Where(user => adminIds.Contains(user.Id)).ToDictionaryAsync(user => user.Id);
+        order.StatusHistory = OrderAggregateJson.ToHistoryEntities(order.Id, history, admins);
+        return order;
     }
 
     /// <summary>
@@ -90,11 +111,18 @@ public class OrderRepository : Repository<Order>, IOrderRepository
     /// </summary>
     public async Task<List<OrderStatusHistory>> GetOrderStatusHistoryAsync(int orderId)
     {
-        return await _context.Set<OrderStatusHistory>()
-            .Where(osh => osh.OrderId == orderId)
-            .Include(osh => osh.Admin)
-            .OrderByDescending(osh => osh.CreatedAt)
-            .ToListAsync();
+        var order = await _dbSet.AsNoTracking().FirstOrDefaultAsync(item => item.Id == orderId);
+        if (order == null)
+            return [];
+
+        var history = OrderAggregateJson.ReadHistory(order.StatusHistoryJson, _serializer);
+        var adminIds = history.Entries.Select(entry => entry.AdminId).Distinct().ToList();
+        var admins = adminIds.Count == 0
+            ? new Dictionary<int, User>()
+            : await _context.Users.AsNoTracking().Where(user => adminIds.Contains(user.Id)).ToDictionaryAsync(user => user.Id);
+        return OrderAggregateJson.ToHistoryEntities(order.Id, history, admins)
+            .OrderByDescending(item => item.CreatedAt)
+            .ToList();
     }
 
     /// <summary>
@@ -235,17 +263,16 @@ public class OrderRepository : Repository<Order>, IOrderRepository
             var stockInfo = string.Join(", ", restoredItems.Select(r => $"{r.ProductName}: +{r.QuantityRestored}"));
             var notes = $"{cancelReason}. Hoàn trả stock: {stockInfo}";
 
-            var statusHistory = new OrderStatusHistory
-            {
-                OrderId = orderId,
-                OldStatus = oldStatus,
-                NewStatus = OrderStatus.Cancelled,
-                AdminId = userId ?? order.UserId ?? 1,
-                Notes = notes,
-                CreatedAt = DateTime.UtcNow
-            };
-
-            _context.Set<OrderStatusHistory>().Add(statusHistory);
+            var history = OrderAggregateJson.ReadHistory(order.StatusHistoryJson, _serializer);
+            order.StatusHistoryJson = OrderAggregateJson.SerializeHistory(
+                OrderAggregateJson.AppendHistory(
+                    history,
+                    oldStatus,
+                    OrderStatus.Cancelled,
+                    userId ?? order.UserId ?? 1,
+                    notes,
+                    DateTime.UtcNow),
+                _serializer);
 
             // 5. Save and commit
             await _context.SaveChangesAsync();
