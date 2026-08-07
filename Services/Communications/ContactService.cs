@@ -1,17 +1,17 @@
+using Fruitables.Data;
 using Microsoft.EntityFrameworkCore;
 using Fruitables.Models;
-using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Communications;
 
 namespace Fruitables.Services.Communications;
 
 public class ContactService : IContactService
 {
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly ApplicationDbContext _db;
 
-    public ContactService(IUnitOfWork unitOfWork)
+    public ContactService(ApplicationDbContext db)
     {
-        _unitOfWork = unitOfWork;
+        _db = db;
     }
 
     public async Task<ContactMessage> SendMessageAsync(string name, string email, string message)
@@ -23,26 +23,26 @@ public class ContactService : IContactService
             Message = message
         };
 
-        await _unitOfWork.Contacts.AddAsync(contactMessage);
-        await _unitOfWork.SaveChangesAsync();
+        await _db.ContactMessages.AddAsync(contactMessage);
+        await _db.SaveChangesAsync();
 
         return contactMessage;
     }
 
     public async Task<List<ContactMessage>> GetAllMessagesAsync()
     {
-        return await _unitOfWork.Contacts.Query()
+        return await _db.ContactMessages
             .OrderByDescending(m => m.CreatedAt)
             .ToListAsync();
     }
 
     public async Task MarkAsReadAsync(int id)
     {
-        var message = await _unitOfWork.Contacts.GetByIdAsync(id);
+        var message = await _db.ContactMessages.FindAsync(id);
         if (message != null)
         {
             message.IsRead = true;
-            await _unitOfWork.SaveChangesAsync();
+            await _db.SaveChangesAsync();
         }
     }
 }

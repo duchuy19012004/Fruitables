@@ -32,7 +32,7 @@ public static class AnalyticsPeriodHelper
         }
         else
         {
-            // ToDateRange returns inclusive end-of-day; convert to exclusive next-day midnight.
+            // Preset ranges use inclusive end-of-day; convert to exclusive next-day midnight.
             // When tests inject vietnamToday, re-resolve against that fixed day.
             var (s, eInclusive) = ResolvePresetAgainstToday(preset, today, firstOrderDate);
             start = s.Date;

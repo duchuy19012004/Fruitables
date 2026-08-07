@@ -69,8 +69,7 @@ public class SalesAnalyticsServiceTests
             Tab = SalesAnalyticsTab.Overview
         };
 
-        var uow = new UnitOfWork(ctx);
-        var sut = new SalesAnalyticsService(uow);
+        var sut = new SalesAnalyticsService(ctx);
         var hub = await sut.GetHubAsync(filter);
 
         Assert.Null(hub.Error);
@@ -127,7 +126,7 @@ public class SalesAnalyticsServiceTests
             Take = 50
         };
 
-        var hub = await new SalesAnalyticsService(new UnitOfWork(ctx)).GetHubAsync(filter);
+        var hub = await new SalesAnalyticsService(ctx).GetHubAsync(filter);
 
         Assert.Null(hub.Error);
         Assert.NotNull(hub.Merch);
@@ -217,7 +216,7 @@ public class SalesAnalyticsServiceTests
             Dimension = MerchDimension.Product
         };
 
-        var hub = await new SalesAnalyticsService(new UnitOfWork(ctx)).GetHubAsync(filter);
+        var hub = await new SalesAnalyticsService(ctx).GetHubAsync(filter);
 
         Assert.NotNull(hub.Merch);
         var row = Assert.Single(hub.Merch!.Rows);
@@ -266,7 +265,7 @@ public class SalesAnalyticsServiceTests
             Dimension = MerchDimension.Category
         };
 
-        var hub = await new SalesAnalyticsService(new UnitOfWork(ctx)).GetHubAsync(filter);
+        var hub = await new SalesAnalyticsService(ctx).GetHubAsync(filter);
 
         Assert.NotNull(hub.Merch);
         Assert.Equal(2, hub.Merch!.Rows.Count);
@@ -320,7 +319,7 @@ public class SalesAnalyticsServiceTests
             Tab = SalesAnalyticsTab.Overview
         };
 
-        var hub = await new SalesAnalyticsService(new UnitOfWork(ctx)).GetHubAsync(filter);
+        var hub = await new SalesAnalyticsService(ctx).GetHubAsync(filter);
 
         Assert.NotNull(hub.Overview);
         Assert.Single(hub.Overview!.TopProducts);
@@ -410,7 +409,7 @@ public class SalesAnalyticsServiceTests
             Tab = SalesAnalyticsTab.Cancellations
         };
 
-        var hub = await new SalesAnalyticsService(new UnitOfWork(ctx)).GetHubAsync(filter);
+        var hub = await new SalesAnalyticsService(ctx).GetHubAsync(filter);
 
         Assert.Null(hub.Error);
         Assert.NotNull(hub.Cancellations);
@@ -474,7 +473,7 @@ public class SalesAnalyticsServiceTests
             Take = 50
         };
 
-        var hub = await new SalesAnalyticsService(new UnitOfWork(ctx)).GetHubAsync(filter);
+        var hub = await new SalesAnalyticsService(ctx).GetHubAsync(filter);
 
         Assert.Null(hub.Error);
         Assert.NotNull(hub.Merch);
@@ -523,7 +522,7 @@ public class SalesAnalyticsServiceTests
             Tab = SalesAnalyticsTab.Cancellations
         };
 
-        var hub = await new SalesAnalyticsService(new UnitOfWork(ctx)).GetHubAsync(filter);
+        var hub = await new SalesAnalyticsService(ctx).GetHubAsync(filter);
 
         Assert.NotNull(hub.Cancellations);
         var trend = hub.Cancellations!.CancelTrend;
@@ -582,7 +581,7 @@ public class SalesAnalyticsServiceTests
             Dimension = MerchDimension.Product
         };
 
-        var hub = await new SalesAnalyticsService(new UnitOfWork(ctx)).GetHubAsync(filter);
+        var hub = await new SalesAnalyticsService(ctx).GetHubAsync(filter);
 
         Assert.NotNull(hub.Merch);
         Assert.Single(hub.Merch!.Rows);
@@ -597,7 +596,7 @@ public class SalesAnalyticsServiceTests
     {
         var options = TestDbContextFactory.CreateSqliteOptions();
         await using var ctx = new ApplicationDbContext(options);
-        var sut = new SalesAnalyticsService(new UnitOfWork(ctx));
+        var sut = new SalesAnalyticsService(ctx);
 
         var filter = new SalesAnalyticsFilterVm
         {
@@ -678,7 +677,7 @@ public class SalesAnalyticsServiceTests
             Dimension = MerchDimension.Product
         };
 
-        var hub = await new SalesAnalyticsService(new UnitOfWork(ctx)).GetHubAsync(filter);
+        var hub = await new SalesAnalyticsService(ctx).GetHubAsync(filter);
 
         var row = Assert.Single(hub.Merch!.Rows);
         Assert.Equal(30m, row.NetRevenue);
@@ -739,7 +738,7 @@ public class SalesAnalyticsServiceTests
             Tab = SalesAnalyticsTab.Overview
         };
 
-        var hub = await new SalesAnalyticsService(new UnitOfWork(ctx)).GetHubAsync(filter);
+        var hub = await new SalesAnalyticsService(ctx).GetHubAsync(filter);
 
         Assert.Null(hub.Error);
         Assert.NotNull(hub.Overview);
@@ -798,7 +797,7 @@ public class SalesAnalyticsServiceTests
             Tab = SalesAnalyticsTab.Overview
         };
 
-        var hub = await new SalesAnalyticsService(new UnitOfWork(ctx)).GetHubAsync(filter);
+        var hub = await new SalesAnalyticsService(ctx).GetHubAsync(filter);
 
         Assert.Null(hub.Error);
         Assert.Equal(100m, hub.Overview!.Net.Value);
@@ -844,7 +843,7 @@ public class SalesAnalyticsServiceTests
             Tab = SalesAnalyticsTab.Overview
         };
 
-        var hub = await new SalesAnalyticsService(new UnitOfWork(ctx)).GetHubAsync(filter);
+        var hub = await new SalesAnalyticsService(ctx).GetHubAsync(filter);
 
         Assert.NotNull(hub.Overview);
         var trend = hub.Overview!.Trend;
@@ -902,7 +901,7 @@ public class SalesAnalyticsServiceTests
             Tab = SalesAnalyticsTab.Cancellations
         };
 
-        var hub = await new SalesAnalyticsService(new UnitOfWork(ctx)).GetHubAsync(filter);
+        var hub = await new SalesAnalyticsService(ctx).GetHubAsync(filter);
 
         Assert.Null(hub.Error);
         Assert.NotNull(hub.Cancellations);
@@ -989,7 +988,7 @@ public class SalesAnalyticsServiceTests
             Tab = SalesAnalyticsTab.Cancellations
         };
 
-        var hub = await new SalesAnalyticsService(new UnitOfWork(ctx)).GetHubAsync(filter);
+        var hub = await new SalesAnalyticsService(ctx).GetHubAsync(filter);
 
         Assert.NotNull(hub.Cancellations);
         var reasons = hub.Cancellations!.Reasons;
@@ -1010,7 +1009,7 @@ public class SalesAnalyticsServiceTests
         await using var ctx = new ApplicationDbContext(options);
         await SeedRefundScenarioAsync(ctx, RefundStatus.Succeeded);
 
-        var hub = await new SalesAnalyticsService(new UnitOfWork(ctx)).GetHubAsync(CreateOverviewFilter());
+        var hub = await new SalesAnalyticsService(ctx).GetHubAsync(CreateOverviewFilter());
 
         Assert.Equal(180m, hub.Overview!.Net.Value);
     }
@@ -1025,7 +1024,7 @@ public class SalesAnalyticsServiceTests
         var filter = CreateOverviewFilter();
         filter.Tab = SalesAnalyticsTab.Merch;
         filter.Dimension = MerchDimension.Product;
-        var hub = await new SalesAnalyticsService(new UnitOfWork(ctx)).GetHubAsync(filter);
+        var hub = await new SalesAnalyticsService(ctx).GetHubAsync(filter);
 
         Assert.Equal(180m, hub.Merch!.Rows.Single().NetRevenue);
     }
@@ -1037,7 +1036,7 @@ public class SalesAnalyticsServiceTests
         await using var ctx = new ApplicationDbContext(options);
         await SeedRefundScenarioAsync(ctx, RefundStatus.Failed);
 
-        var hub = await new SalesAnalyticsService(new UnitOfWork(ctx)).GetHubAsync(CreateOverviewFilter());
+        var hub = await new SalesAnalyticsService(ctx).GetHubAsync(CreateOverviewFilter());
 
         Assert.Equal(200m, hub.Overview!.Net.Value);
     }

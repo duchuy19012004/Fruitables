@@ -60,9 +60,10 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 // Add Memory Cache
 builder.Services.AddMemoryCache();
 
-// Add Repositories
-builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+// Add custom query repositories
 builder.Services.AddScoped<IOrderRepository, OrderRepository>();
+builder.Services.AddScoped<IReviewRepository, ReviewRepository>();
+builder.Services.AddScoped<IReviewReportRepository, ReviewReportRepository>();
 
 // Add Services
 builder.Services.AddScoped<IProductService, ProductService>();
@@ -72,7 +73,6 @@ builder.Services.AddScoped<IOrderService, OrderService>();
 builder.Services.AddScoped<IContactService, ContactService>();
 builder.Services.AddScoped<IReviewService, ReviewService>();
 builder.Services.AddScoped<ITestimonialService, TestimonialService>();
-builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 builder.Services.AddScoped<ISettingsService, SettingsService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IProductAdminService, ProductAdminService>();
@@ -84,7 +84,6 @@ builder.Services.AddHostedService<PriceScheduleWorker>();
 builder.Services.AddHostedService<ComboMaintenanceWorker>();
 builder.Services.AddScoped<IImageUploadService, ImageUploadService>();
 builder.Services.AddScoped<ProductImageNormalizationService>();
-builder.Services.AddScoped<IProductLogService, ProductLogService>();
 builder.Services.AddScoped<IAddressService, AddressService>();
 builder.Services.AddScoped<IOrderAdminService, OrderAdminService>();
 builder.Services.AddScoped<IOrderLogService, OrderLogService>();

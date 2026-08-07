@@ -635,6 +635,30 @@ public class SentimentModuleTests
     }
 
     [Fact]
+    public async Task GetDashboardAsync_CustomRange_FiltersDashboardDataAndTrend()
+    {
+        await using var db = CreateContext();
+        var (user, _, product) = SeedCatalog(db);
+        var inRange = AddReview(db, product.Id, user.Id, 1, "Hàng hỏng", DateTime.UtcNow.Date.AddDays(-1).AddHours(10));
+        var outsideRange = AddReview(db, product.Id, user.Id, 5, "Rất ngon", DateTime.UtcNow.Date.AddDays(-10));
+
+        db.ReviewSentiments.AddRange(
+            new ReviewSentiment { ReviewId = inRange.Id, Sentiment = SentimentLabel.Negative, Severity = 2, Source = SentimentSource.AiModel },
+            new ReviewSentiment { ReviewId = outsideRange.Id, Sentiment = SentimentLabel.Positive, Source = SentimentSource.AiModel });
+        await db.SaveChangesAsync();
+
+        var from = DateTime.UtcNow.Date.AddDays(-3);
+        var to = DateTime.UtcNow.Date;
+        var data = await CreateService(db, new FakeLlmClient()).GetDashboardAsync(from, to);
+
+        Assert.Equal(1, data.TotalAnalyzed);
+        Assert.Equal(0, data.PositiveCount);
+        Assert.Equal(1, data.NegativeCount);
+        Assert.Equal(4, data.Trend.Count);
+        Assert.Single(data.TopNegativeProducts);
+    }
+
+    [Fact]
     public async Task GetDashboardAsync_ExcludesPendingConflictFromOperationalKpis()
     {
         await using var db = CreateContext();
@@ -683,7 +707,9 @@ public class SentimentModuleTests
         var (user, _, product) = SeedCatalog(db);
 
         var service = new ReviewService(
-            new Fruitables.Repositories.UnitOfWork(db),
+            db,
+            new ReviewRepository(db),
+            new ReviewReportRepository(db),
             Mock.Of<Fruitables.Services.Reviews.IWordMaskingService>(),
             new MemoryCache(new MemoryCacheOptions()),
             NullLogger<ReviewService>.Instance,
@@ -726,7 +752,9 @@ public class SentimentModuleTests
         await using (var db = new ApplicationDbContext(options))
         {
             var service = new ReviewService(
-                new UnitOfWork(db),
+                db,
+                new ReviewRepository(db),
+                new ReviewReportRepository(db),
                 Mock.Of<Fruitables.Services.Reviews.IWordMaskingService>(),
                 new MemoryCache(new MemoryCacheOptions()),
                 NullLogger<ReviewService>.Instance,
@@ -799,7 +827,7 @@ public class SentimentModuleTests
         Assert.Equal(SentimentLabel.Positive, storedSentiment.RatingSentiment);
         Assert.Equal(SentimentLabel.Positive, storedSentiment.CommentSentiment);
 
-        var service = new TestimonialService(new UnitOfWork(db));
+        var service = new TestimonialService(db);
         var testimonial = await service.SuggestFromReviewAsync(review.Id);
 
         Assert.NotNull(testimonial);
@@ -832,7 +860,7 @@ public class SentimentModuleTests
             });
         await db.SaveChangesAsync();
 
-        var service = new TestimonialService(new UnitOfWork(db));
+        var service = new TestimonialService(db);
 
         Assert.Null(await service.SuggestFromReviewAsync(neg.Id));
         Assert.Null(await service.SuggestFromReviewAsync(low.Id));
@@ -917,7 +945,7 @@ public class SentimentModuleTests
             new ReviewSentiment { ReviewId = old.Id, Sentiment = SentimentLabel.Positive, Source = SentimentSource.RatingFallback });
         await db.SaveChangesAsync();
 
-        var dashboard = new DashboardService(new UnitOfWork(db));
+        var dashboard = new DashboardService(db);
         var stats = await dashboard.GetSentimentStatisticsAsync();
 
         Assert.Equal(1, stats.Negative7d);    // chỉ review 7 ngày

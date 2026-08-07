@@ -1,3 +1,4 @@
+using Fruitables.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -16,14 +17,14 @@ public class ComboController : Controller
 {
     private readonly IComboService _comboService;
     private readonly IImageUploadService _imageUploadService;
-    private readonly Fruitables.Repositories.Interfaces.IUnitOfWork _unitOfWork;
+    private readonly ApplicationDbContext _db;
     private readonly ILogger<ComboController> _logger;
 
-    public ComboController(IComboService comboService, IImageUploadService imageUploadService, Fruitables.Repositories.Interfaces.IUnitOfWork unitOfWork, ILogger<ComboController> logger)
+    public ComboController(IComboService comboService, IImageUploadService imageUploadService, ApplicationDbContext db, ILogger<ComboController> logger)
     {
         _comboService = comboService;
         _imageUploadService = imageUploadService;
-        _unitOfWork = unitOfWork;
+        _db = db;
         _logger = logger;
     }
 
@@ -40,7 +41,7 @@ public class ComboController : Controller
         var warnings = new Dictionary<int, List<string>>();
         try
         {
-            var combos = await _unitOfWork.Combos.Query()
+            var combos = await _db.Combos
                 .Include(c => c.Items)
                 .Where(c => !c.IsActive || c.Items.Any())
                 .ToListAsync();
@@ -49,8 +50,8 @@ public class ComboController : Controller
             if (productIds.Count == 0) return warnings;
 
             var sentiments = await (
-                from r in _unitOfWork.Reviews.Query()
-                join s in _unitOfWork.ReviewSentiments.Query() on r.Id equals s.ReviewId
+                from r in _db.Reviews
+                join s in _db.ReviewSentiments on r.Id equals s.ReviewId
                 where productIds.Contains(r.ProductId) && !r.IsDeleted
                 group s by r.ProductId into g
                 select new

@@ -121,6 +121,10 @@ namespace Fruitables.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("SessionId")
+                        .IsUnique()
+                        .HasFilter("[SessionId] IS NOT NULL");
+
                     b.HasIndex("UserId")
                         .IsUnique()
                         .HasFilter("[UserId] IS NOT NULL");
@@ -769,6 +773,14 @@ namespace Fruitables.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<string>("CheckoutRequestId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("CheckoutSessionId")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
@@ -835,6 +847,10 @@ namespace Fruitables.Migrations
                         .HasFilter("[PaymentCode] IS NOT NULL");
 
                     b.HasIndex("Status");
+
+                    b.HasIndex("CheckoutSessionId", "CheckoutRequestId")
+                        .IsUnique()
+                        .HasFilter("[CheckoutSessionId] IS NOT NULL AND [CheckoutRequestId] IS NOT NULL");
 
                     b.HasIndex("UserId", "CreatedAt");
 

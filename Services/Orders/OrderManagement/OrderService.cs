@@ -1,7 +1,7 @@
+using Fruitables.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Cryptography;
 using Fruitables.Models;
-using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 using Fruitables.Helpers;
@@ -16,20 +16,20 @@ public class OrderService : IOrderService
     private const string PaymentCodePrefix = "FTB";
     private const string PaymentCodeAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly ApplicationDbContext _db;
     private readonly ICartService _cartService;
     private readonly IRealtimeNotifier _notifier;
     private readonly IProductPricingService _pricing;
     private readonly ILogger<OrderService> _logger;
 
     public OrderService(
-        IUnitOfWork unitOfWork,
+        ApplicationDbContext db,
         ICartService cartService,
         IRealtimeNotifier notifier,
         IProductPricingService pricing,
         ILogger<OrderService> logger)
     {
-        _unitOfWork = unitOfWork;
+        _db = db;
         _cartService = cartService;
         _notifier = notifier;
         _pricing = pricing;
@@ -41,17 +41,43 @@ public class OrderService : IOrderService
         decimal StockQuantity,
         int? ProductVariantId);
 
+    public async Task<Order?> GetOrderByCheckoutRequestAsync(string sessionId, string checkoutRequestId)
+    {
+        var normalizedRequestId = checkoutRequestId.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedRequestId))
+            return null;
+
+        return await _db.Orders
+            .AsNoTracking()
+            .Include(order => order.Items)
+            .FirstOrDefaultAsync(order =>
+                order.CheckoutSessionId == sessionId &&
+                order.CheckoutRequestId == normalizedRequestId);
+    }
+
     public async Task<Order> CreateOrderAsync(CheckoutViewModel model, string sessionId, int? userId = null)
     {
+        var checkoutRequestId = model.CheckoutRequestId?.Trim();
+        if (!string.IsNullOrWhiteSpace(checkoutRequestId))
+        {
+            var existingOrder = await GetOrderByCheckoutRequestAsync(sessionId, checkoutRequestId);
+            if (existingOrder != null)
+            {
+                await TryRecoverCartCleanupAsync(existingOrder, sessionId);
+                return existingOrder;
+            }
+        }
+
         Order? committedOrder = null;
+        var replayedOrder = false;
         var stockNotifications = new List<StockNotification>();
-        var providerName = _unitOfWork.DatabaseProviderName ?? string.Empty;
+        var providerName = _db.Database.ProviderName ?? string.Empty;
         var isInMemory = providerName.Contains("InMemory", StringComparison.OrdinalIgnoreCase);
         Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? transaction = null;
 
         if (!isInMemory)
         {
-            transaction = await _unitOfWork.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
         }
 
         try
@@ -78,7 +104,7 @@ public class OrderService : IOrderService
         foreach (var item in cart.Items)
         {
             var key = new PriceTargetKey(item.ProductId, item.ProductVariantId);
-            if (!quotes.TryGetValue(key, out var quote))
+            if (!quotes.TryGetValue(key, out var quote) || !VndPriceRules.IsValidPrice(quote.EffectivePrice))
                 throw new InvalidOperationException("Một số sản phẩm không còn được bán.");
 
             if (item.Price != quote.EffectivePrice)
@@ -88,17 +114,17 @@ public class OrderService : IOrderService
 
         // Load products batch and validate before any mutation.
         var productIds = cart.Items.Select(i => i.ProductId).Distinct().ToList();
-        var products = await _unitOfWork.Products.Query()
+        var products = await _db.Products
             .Where(p => productIds.Contains(p.Id) && p.IsActive && !p.IsDeleted)
             .ToDictionaryAsync(p => p.Id);
 
         var missingProductIds = productIds.Except(products.Keys).ToList();
         var variantIds = cart.Items.Where(i => i.ProductVariantId.HasValue)
             .Select(i => i.ProductVariantId!.Value).Distinct().ToList();
-        var variants = await _unitOfWork.ProductVariants.Query()
+        var variants = await _db.ProductVariants
             .Where(v => variantIds.Contains(v.Id) && v.IsActive)
             .ToDictionaryAsync(v => v.Id);
-        var variantManagedProductIds = await _unitOfWork.ProductVariants.Query()
+        var variantManagedProductIds = await _db.ProductVariants
             .Where(v => productIds.Contains(v.ProductId) && v.IsActive)
             .Select(v => v.ProductId).Distinct().ToListAsync();
         if (variantIds.Except(variants.Keys).Any())
@@ -140,6 +166,8 @@ public class OrderService : IOrderService
         var order = new Order
         {
             UserId = userId,
+            CheckoutSessionId = sessionId,
+            CheckoutRequestId = checkoutRequestId,
             OrderNumber = GenerateOrderNumber(),
             Status = OrderStatus.Pending,
             Subtotal = cart.Subtotal,
@@ -191,7 +219,7 @@ public class OrderService : IOrderService
 
         if (model.SelectedAddressId.HasValue)
         {
-            shippingAddress = await _unitOfWork.Addresses.Query()
+            shippingAddress = await _db.Addresses
                 .FirstOrDefaultAsync(a =>
                     a.Id == model.SelectedAddressId.Value
                     && userId.HasValue
@@ -226,11 +254,11 @@ public class OrderService : IOrderService
         // Stage the new address + order + stock changes; one save commits all of them.
         if (model.SelectedAddressId == null && !string.IsNullOrEmpty(model.StreetAddress) && shippingAddress != null)
         {
-            await _unitOfWork.Addresses.AddAsync(shippingAddress);
+            await _db.Addresses.AddAsync(shippingAddress);
             order.Address = shippingAddress;
         }
 
-        await _unitOfWork.Orders.AddAsync(order);
+        await _db.Orders.AddAsync(order);
 
             if (isInMemory)
             {
@@ -250,11 +278,11 @@ public class OrderService : IOrderService
                 foreach (var group in productGroups)
                 {
                     var rows = group.ProductVariantId.HasValue
-                        ? await _unitOfWork.ProductVariants.Query()
+                        ? await _db.ProductVariants
                             .Where(v => v.Id == group.ProductVariantId.Value && v.ProductId == group.ProductId &&
                                 v.IsActive && v.Product.IsActive && !v.Product.IsDeleted && v.StockQuantity >= group.Quantity)
                             .ExecuteUpdateAsync(s => s.SetProperty(v => v.StockQuantity, v => v.StockQuantity - group.Quantity))
-                        : await _unitOfWork.Products.Query()
+                        : await _db.Products
                             .Where(p => p.Id == group.ProductId && p.IsActive && !p.IsDeleted &&
                                 !p.Variants.Any(v => v.IsActive) && p.StockQuantity >= group.Quantity)
                             .ExecuteUpdateAsync(s => s.SetProperty(p => p.StockQuantity, p => p.StockQuantity - group.Quantity));
@@ -266,7 +294,7 @@ public class OrderService : IOrderService
                 }
             }
 
-            await _unitOfWork.SaveChangesAsync();
+            await _db.SaveChangesAsync();
 
             foreach (var group in productGroups)
             {
@@ -301,6 +329,23 @@ public class OrderService : IOrderService
 
             committedOrder = order;
         }
+        catch (DbUpdateException) when (!string.IsNullOrWhiteSpace(checkoutRequestId))
+        {
+            if (transaction != null)
+                await transaction.RollbackAsync();
+
+            var existingOrder = await _db.Orders
+                .AsNoTracking()
+                .Include(order => order.Items)
+                .FirstOrDefaultAsync(order =>
+                    order.CheckoutSessionId == sessionId &&
+                    order.CheckoutRequestId == checkoutRequestId);
+            if (existingOrder == null)
+                throw;
+
+            committedOrder = existingOrder;
+            replayedOrder = true;
+        }
         catch
         {
             if (transaction != null)
@@ -316,6 +361,12 @@ public class OrderService : IOrderService
         if (committedOrder == null)
             throw new InvalidOperationException("KhÃ´ng thá»ƒ xÃ¡c nháº­n Ä‘Æ¡n hÃ ng Ä‘Ã£ Ä‘Æ°á»£c lÆ°u.");
 
+        if (replayedOrder)
+        {
+            await TryRecoverCartCleanupAsync(committedOrder, sessionId);
+            return committedOrder;
+        }
+
         await RunPostCommitActionsAsync(
             committedOrder,
             sessionId,
@@ -329,18 +380,7 @@ public class OrderService : IOrderService
         string sessionId,
         IReadOnlyList<StockNotification> stockNotifications)
     {
-        try
-        {
-            await _cartService.ClearCartAsync(sessionId);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(
-                ex,
-                "Order {OrderId} committed but cart cleanup failed for session {SessionId}",
-                order.Id,
-                sessionId);
-        }
+        await TryClearCartAsync(order, sessionId);
 
         try
         {
@@ -375,23 +415,99 @@ public class OrderService : IOrderService
         }
     }
 
+    private async Task TryClearCartAsync(Order order, string sessionId)
+    {
+        try
+        {
+            await _cartService.ClearCartAsync(sessionId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Order {OrderId} committed but cart cleanup failed for session {SessionId}",
+                order.Id,
+                sessionId);
+        }
+    }
+
+    private async Task TryRecoverCartCleanupAsync(Order order, string sessionId)
+    {
+        try
+        {
+            var cart = await _cartService.RepriceForCheckoutAsync(sessionId);
+            if (cart == null || cart.Items.Count == 0)
+                return;
+
+            var cartLines = cart.Items
+                .GroupBy(item => new { item.ProductId, item.ProductVariantId, item.SourceComboId })
+                .Select(group => new
+                {
+                    group.Key.ProductId,
+                    group.Key.ProductVariantId,
+                    group.Key.SourceComboId,
+                    Quantity = group.Sum(item => item.Quantity)
+                })
+                .OrderBy(line => line.ProductId)
+                .ThenBy(line => line.ProductVariantId)
+                .ThenBy(line => line.SourceComboId)
+                .ToList();
+            var orderLines = order.Items
+                .GroupBy(item => new { item.ProductId, item.ProductVariantId, item.SourceComboId })
+                .Select(group => new
+                {
+                    group.Key.ProductId,
+                    group.Key.ProductVariantId,
+                    group.Key.SourceComboId,
+                    Quantity = group.Sum(item => item.Quantity)
+                })
+                .OrderBy(line => line.ProductId)
+                .ThenBy(line => line.ProductVariantId)
+                .ThenBy(line => line.SourceComboId)
+                .ToList();
+
+            if (cartLines.Count != orderLines.Count ||
+                cartLines.Where((line, index) =>
+                    line.ProductId != orderLines[index].ProductId ||
+                    line.ProductVariantId != orderLines[index].ProductVariantId ||
+                    line.SourceComboId != orderLines[index].SourceComboId ||
+                    line.Quantity != orderLines[index].Quantity).Any())
+            {
+                _logger.LogWarning(
+                    "Skipping cart cleanup recovery for order {OrderId}; cart contents changed after checkout",
+                    order.Id);
+                return;
+            }
+
+            await TryClearCartAsync(order, sessionId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Order {OrderId} replay cleanup recovery failed for session {SessionId}",
+                order.Id,
+                sessionId);
+        }
+    }
+
     public async Task<Order?> GetOrderByIdAsync(int id)
     {
-        return await _unitOfWork.Orders.Query()
+        return await _db.Orders
             .Include(o => o.Items)
             .FirstOrDefaultAsync(o => o.Id == id);
     }
 
     public async Task<Order?> GetOrderByNumberAsync(string orderNumber)
     {
-        return await _unitOfWork.Orders.Query()
+        return await _db.Orders
             .Include(o => o.Items)
             .FirstOrDefaultAsync(o => o.OrderNumber == orderNumber);
     }
 
     public async Task<List<Order>> GetOrdersByUserIdAsync(int userId)
     {
-        return await _unitOfWork.Orders.Query()
+        return await _db.Orders
             .Where(o => o.UserId == userId)
             .Include(o => o.Items)
             .OrderByDescending(o => o.CreatedAt)
@@ -400,7 +516,7 @@ public class OrderService : IOrderService
 
     public async Task<Address?> GetShippingAddressFromSnapshotAsync(int orderId)
     {
-        var order = await _unitOfWork.Orders.GetByIdAsync(orderId);
+        var order = await _db.Orders.FindAsync(orderId);
         if (order == null || string.IsNullOrEmpty(order.ShippingSnapshot))
             return null;
 
@@ -412,7 +528,7 @@ public class OrderService : IOrderService
         for (var attempt = 0; attempt < 10; attempt++)
         {
             var code = PaymentCodePrefix + RandomNumberGenerator.GetString(PaymentCodeAlphabet, 8);
-            var exists = await _unitOfWork.Orders.Query().AnyAsync(o => o.PaymentCode == code);
+            var exists = await _db.Orders.AnyAsync(o => o.PaymentCode == code);
             if (!exists)
                 return code;
         }

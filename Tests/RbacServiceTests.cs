@@ -30,11 +30,10 @@ namespace Fruitables.Tests
             // Arrange
             var options = CreateNewContextOptions();
             using var context = new ApplicationDbContext(options);
-            var unitOfWork = new UnitOfWork(context);
 
             var cacheMock = new Mock<IMemoryCache>();
             var loggerMock = new Mock<ILogger<RbacService>>();
-            var rbacService = new RbacService(unitOfWork, cacheMock.Object, loggerMock.Object);
+            var rbacService = new RbacService(context, cacheMock.Object, loggerMock.Object);
 
             // Act & Assert
             var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -72,7 +71,6 @@ namespace Fruitables.Tests
             context.UserRoleMappings.Add(oldMapping);
             await context.SaveChangesAsync();
 
-            var unitOfWork = new UnitOfWork(context);
 
             var cacheMock = new Mock<IMemoryCache>();
             object? value;
@@ -80,7 +78,7 @@ namespace Fruitables.Tests
             cacheMock.Setup(c => c.CreateEntry(It.IsAny<object>())).Returns(Mock.Of<ICacheEntry>());
 
             var loggerMock = new Mock<ILogger<RbacService>>();
-            var rbacService = new RbacService(unitOfWork, cacheMock.Object, loggerMock.Object);
+            var rbacService = new RbacService(context, cacheMock.Object, loggerMock.Object);
 
             // Act
             await rbacService.AssignRolesToUserAsync(100, new List<int> { 20 }, 200);
@@ -156,7 +154,7 @@ namespace Fruitables.Tests
             cacheMock.Setup(c => c.TryGetValue(It.IsAny<object>(), out value)).Returns(false);
             cacheMock.Setup(c => c.CreateEntry(It.IsAny<object>())).Returns(Mock.Of<ICacheEntry>());
             var loggerMock = new Mock<ILogger<RbacService>>();
-            var rbacService = new RbacService(new UnitOfWork(context), cacheMock.Object, loggerMock.Object);
+            var rbacService = new RbacService(context, cacheMock.Object, loggerMock.Object);
 
             await rbacService.AssignRoleToUserAsync(100, 20, 200);
 
@@ -215,7 +213,7 @@ namespace Fruitables.Tests
             cacheMock.Setup(c => c.TryGetValue(It.IsAny<object>(), out value)).Returns(false);
             cacheMock.Setup(c => c.CreateEntry(It.IsAny<object>())).Returns(Mock.Of<ICacheEntry>());
             var loggerMock = new Mock<ILogger<RbacService>>();
-            var rbacService = new RbacService(new UnitOfWork(context), cacheMock.Object, loggerMock.Object);
+            var rbacService = new RbacService(context, cacheMock.Object, loggerMock.Object);
 
             await rbacService.AssignRolesToUserAsync(100, new List<int> { 20 }, 200);
 

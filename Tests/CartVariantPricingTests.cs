@@ -29,9 +29,8 @@ public class CartVariantPricingTests
             StartsAt = DateTimeOffset.UtcNow.AddDays(-1), EndsAt = null
         });
         await context.SaveChangesAsync();
-        var uow = new UnitOfWork(context);
-        var pricing = new ProductPricingService(uow, TimeProvider.System);
-        var cart = new CartService(uow, Mock.Of<ICouponService>(), pricing);
+        var pricing = new ProductPricingService(context, TimeProvider.System);
+        var cart = new CartService(context, Mock.Of<ICouponService>(), pricing);
 
         await cart.AddToCartAsync("session", 1, 1, 11);
         await cart.AddToCartAsync("session", 1, 1, 12);

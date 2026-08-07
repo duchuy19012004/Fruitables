@@ -52,6 +52,27 @@ public class PriceManagementServiceTests
     }
 
     [Fact]
+    public async Task CreateSchedule_rejects_percentage_that_rounds_to_zero_vnd()
+    {
+        await using var context = CreateContext();
+        context.Products.Add(new Product { Id = 1, Name = "Táo nhỏ", Slug = "tao-nho", Price = 1 });
+        await context.SaveChangesAsync();
+
+        var result = await CreateService(context).CreateScheduleAsync(new SavePriceScheduleRequest
+        {
+            ProductId = 1,
+            DiscountType = DiscountType.Percentage,
+            Value = 99,
+            StartsAt = Now.AddHours(1),
+            EndsAt = Now.AddHours(2)
+        }, 7);
+
+        Assert.False(result.Success);
+        Assert.Contains("lớn hơn 0", result.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(context.PriceSchedules);
+    }
+
+    [Fact]
     public async Task CreateSchedule_rejects_schedule_already_ended()
     {
         await using var context = CreateContext();
@@ -224,6 +245,33 @@ public class PriceManagementServiceTests
 
         Assert.False(result.Success);
         Assert.Equal(100_000, context.Products.Find(1)!.Price);
+    }
+
+    [Fact]
+    public async Task Base_price_change_is_rejected_if_a_percentage_schedule_would_round_to_zero()
+    {
+        await using var context = CreateContext();
+        context.Products.Add(new Product { Id = 1, Name = "Táo nhỏ", Slug = "tao-nho-percent", Price = 100 });
+        context.PriceSchedules.Add(new PriceSchedule
+        {
+            ProductId = 1,
+            DiscountType = DiscountType.Percentage,
+            Value = 99,
+            StartsAt = Now.AddHours(1)
+        });
+        await context.SaveChangesAsync();
+
+        var result = await CreateService(context).UpdateBasePriceAsync(new UpdateBasePriceRequest
+        {
+            ProductId = 1,
+            NewPrice = 1,
+            ExpectedBasePrice = 100,
+            ExpectedRevision = 1
+        }, 7);
+
+        Assert.False(result.Success);
+        Assert.Contains("phần trăm", result.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(100, context.Products.Find(1)!.Price);
     }
 
     [Fact]
@@ -456,6 +504,66 @@ public class PriceManagementServiceTests
     }
 
     [Fact]
+    public async Task BulkUpdate_rejects_an_unbounded_target_list()
+    {
+        await using var context = CreateContext();
+        var result = await CreateService(context).BulkUpdateBasePricesAsync(new BulkPriceUpdateRequest
+        {
+            AdjustmentType = PriceAdjustmentType.Amount,
+            Direction = PriceAdjustmentDirection.Increase,
+            Value = 1_000,
+            Targets = Enumerable.Range(1, 501)
+                .Select(productId => new BulkPriceTargetRequest
+                {
+                    ProductId = productId,
+                    ExpectedBasePrice = 100_000,
+                    ExpectedRevision = 1
+                })
+                .ToList()
+        }, 7);
+
+        Assert.False(result.Success);
+        Assert.Contains("tối đa", result.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task BulkUpdate_loads_candidate_schedules_once_for_all_targets()
+    {
+        var interceptor = new CountingQueryInterceptor();
+        interceptor.Register("PriceSchedules");
+        var options = TestDbContextFactory.CreateSqliteOptions(interceptor);
+        await using var context = new ApplicationDbContext(options);
+        context.Users.Add(new User
+        {
+            Id = 7,
+            Name = "Admin bulk",
+            Email = "admin-bulk@example.com",
+            Password = "x"
+        });
+        context.Categories.Add(new Category { Id = 1, Name = "Fruit", Slug = "fruit-bulk" });
+        context.Products.AddRange(
+            new Product { Id = 1, CategoryId = 1, Name = "Táo bulk", Slug = "tao-bulk", Price = 100_000 },
+            new Product { Id = 2, CategoryId = 1, Name = "Cam bulk", Slug = "cam-bulk", Price = 120_000 });
+        await context.SaveChangesAsync();
+
+        var service = new PriceManagementService(context, new FixedTimeProvider(Now));
+        var result = await service.BulkUpdateBasePricesAsync(new BulkPriceUpdateRequest
+        {
+            AdjustmentType = PriceAdjustmentType.Amount,
+            Direction = PriceAdjustmentDirection.Increase,
+            Value = 1_000,
+            Targets =
+            [
+                new BulkPriceTargetRequest { ProductId = 1, ExpectedBasePrice = 100_000, ExpectedRevision = 1 },
+                new BulkPriceTargetRequest { ProductId = 2, ExpectedBasePrice = 120_000, ExpectedRevision = 1 }
+            ]
+        }, 7);
+
+        Assert.True(result.Success);
+        Assert.Equal(1, interceptor.GetCount("PriceSchedules"));
+    }
+
+    [Fact]
     public async Task CreateSchedule_accepts_decimal_percentage_inside_range()
     {
         await using var context = CreateContext();
@@ -534,7 +642,7 @@ public class PriceManagementServiceTests
             Now.AddMilliseconds(1));
 
         var service = new PriceManagementService(
-            new UnitOfWork(context),
+            context,
             clock);
 
         var result = await service.CancelScheduleAsync(
@@ -555,12 +663,45 @@ public class PriceManagementServiceTests
             schedule.GetStatus(Now));
     }
 
+    [Fact]
+    public async Task Dashboard_counts_cancellation_at_start_as_stopped_early()
+    {
+        await using var context = CreateContext();
+        context.Products.Add(new Product
+        {
+            Id = 1,
+            Name = "Táo boundary",
+            Slug = "tao-boundary",
+            Price = 100_000
+        });
+        context.PriceSchedules.Add(new PriceSchedule
+        {
+            Id = 9,
+            ProductId = 1,
+            DiscountType = DiscountType.Percentage,
+            Value = 10,
+            StartsAt = Now,
+            EndsAt = Now.AddHours(1),
+            IsCancelled = true,
+            CancelledAt = Now
+        });
+        await context.SaveChangesAsync();
+
+        var dashboard = await CreateService(context).GetDashboardAsync(new PriceDashboardQuery
+        {
+            Tab = "schedules"
+        });
+
+        Assert.Equal(1, dashboard.ScheduleStatusCounts["stopped"]);
+        Assert.Equal(0, dashboard.ScheduleStatusCounts["cancelled"]);
+    }
+
     private static ApplicationDbContext CreateContext() => new(
         new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
 
     private static PriceManagementService CreateService(ApplicationDbContext context) =>
-        new(new UnitOfWork(context), new FixedTimeProvider(Now));
+        new(context, new FixedTimeProvider(Now));
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {

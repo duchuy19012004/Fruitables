@@ -1,7 +1,7 @@
+using Fruitables.Data;
 using System.Text.RegularExpressions;
 using Fruitables.Models;
 using Fruitables.Models.Returns;
-using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Communications;
 using Fruitables.Services.Pricing.Combos;
 using Fruitables.Services.Pricing.ProductPricing;
@@ -14,14 +14,14 @@ namespace Fruitables.Services.Catalog.Combos;
 
 public class ComboService : IComboService
 {
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly ApplicationDbContext _db;
     private readonly IProductPricingService _pricing;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<ComboService>? _logger;
 
-    public ComboService(IUnitOfWork unitOfWork, IProductPricingService pricing, TimeProvider? timeProvider = null, ILogger<ComboService>? logger = null)
+    public ComboService(ApplicationDbContext db, IProductPricingService pricing, TimeProvider? timeProvider = null, ILogger<ComboService>? logger = null)
     {
-        _unitOfWork = unitOfWork;
+        _db = db;
         _pricing = pricing;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _logger = logger;
@@ -29,7 +29,7 @@ public class ComboService : IComboService
 
     public async Task<IReadOnlyList<ComboListRowViewModel>> GetAdminListAsync()
     {
-        var combos = await _unitOfWork.Combos.Query()
+        var combos = await _db.Combos
             .Include(c => c.Items)
             .ThenInclude(i => i.Product)
             .OrderBy(c => c.SortOrder)
@@ -64,7 +64,7 @@ public class ComboService : IComboService
 
     public async Task<ComboFormViewModel?> GetForEditAsync(int id)
     {
-        var combo = await _unitOfWork.Combos.Query()
+        var combo = await _db.Combos
             .Include(c => c.Items)
             .ThenInclude(i => i.Product)
             .Include(c => c.Items)
@@ -132,16 +132,16 @@ public class ComboService : IComboService
             Items = BuildItems(model.Items)
         };
 
-        await _unitOfWork.Combos.AddAsync(combo);
+        await _db.Combos.AddAsync(combo);
         await AddAuditAsync(combo, adminId, ComboAuditActions.Create, Describe(combo));
-        await _unitOfWork.SaveChangesAsync();
+        await _db.SaveChangesAsync();
         _logger?.LogInformation("Combo {ComboId} created at revision {Revision} by admin {AdminId}", combo.Id, combo.Revision, adminId);
         return ComboResult.Ok(combo);
     }
 
     public async Task<ComboResult> UpdateAsync(int id, ComboFormViewModel model, int? adminId = null)
     {
-        var combo = await _unitOfWork.Combos.Query()
+        var combo = await _db.Combos
             .Include(c => c.Items)
             .FirstOrDefaultAsync(c => c.Id == id);
 
@@ -184,7 +184,7 @@ public class ComboService : IComboService
         var itemsToRemove = combo.Items
             .Where(item => !desiredKeys.Contains((item.ProductId, item.ProductVariantId)))
             .ToList();
-        _unitOfWork.ComboItems.RemoveRange(itemsToRemove);
+        _db.ComboItems.RemoveRange(itemsToRemove);
 
         foreach (var desired in desiredItems)
         {
@@ -199,11 +199,11 @@ public class ComboService : IComboService
             }
         }
 
-        _unitOfWork.Combos.Update(combo);
+        _db.Combos.Update(combo);
         await AddAuditAsync(combo, adminId, ComboAuditActions.Update, Describe(combo));
         try
         {
-            await _unitOfWork.SaveChangesAsync();
+            await _db.SaveChangesAsync();
         }
         catch (DbUpdateConcurrencyException)
         {
@@ -215,7 +215,7 @@ public class ComboService : IComboService
 
     public async Task<ComboResult> DeleteAsync(int id, int? adminId = null)
     {
-        var combo = await _unitOfWork.Combos.GetByIdAsync(id);
+        var combo = await _db.Combos.FindAsync(id);
         if (combo == null)
             return ComboResult.Fail("Không tìm thấy combo.");
 
@@ -223,11 +223,11 @@ public class ComboService : IComboService
         combo.Status = ComboLifecycleStatus.Archived;
         combo.Revision++;
         combo.UpdatedAt = DateTime.UtcNow;
-        _unitOfWork.Combos.Update(combo);
+        _db.Combos.Update(combo);
         await AddAuditAsync(combo, adminId, ComboAuditActions.Archive, "Lưu trữ combo.");
         try
         {
-            await _unitOfWork.SaveChangesAsync();
+            await _db.SaveChangesAsync();
         }
         catch (DbUpdateConcurrencyException)
         {
@@ -239,7 +239,7 @@ public class ComboService : IComboService
 
     public async Task<IReadOnlyList<ComboProductOptionViewModel>> GetProductOptionsAsync()
     {
-        var products = await _unitOfWork.Products.Query()
+        var products = await _db.Products
             .Where(p => p.IsActive && !p.IsDeleted)
             .Include(p => p.Variants)
             .OrderBy(p => p.Name)
@@ -268,7 +268,7 @@ public class ComboService : IComboService
     public async Task<IReadOnlyList<ComboCardViewModel>> GetActiveComboCardsAsync()
     {
         var now = _timeProvider.GetUtcNow();
-        var combos = await _unitOfWork.Combos.Query()
+        var combos = await _db.Combos
             .Where(c => c.IsActive &&
                 (c.Status == ComboLifecycleStatus.Active || c.Status == ComboLifecycleStatus.Scheduled) &&
                 (!c.StartsAt.HasValue || c.StartsAt <= now) &&
@@ -295,7 +295,7 @@ public class ComboService : IComboService
 
     public async Task<AddComboToCartResult> AddComboToCartAsync(string sessionId, int comboId, ICartService cartService)
     {
-        var combo = await _unitOfWork.Combos.Query()
+        var combo = await _db.Combos
             .Where(c => c.IsActive)
             .Include(c => c.Items)
             .ThenInclude(i => i.Product)
@@ -415,13 +415,13 @@ public class ComboService : IComboService
 
     public async Task<ComboAuditViewModel?> GetAuditAsync(int comboId, int take = 100)
     {
-        var combo = await _unitOfWork.Combos.Query().AsNoTracking()
+        var combo = await _db.Combos.AsNoTracking()
             .Where(item => item.Id == comboId)
             .Select(item => new { item.Id, item.Name })
             .FirstOrDefaultAsync();
         if (combo == null) return null;
 
-        var items = await _unitOfWork.ComboAuditLogs.Query().AsNoTracking()
+        var items = await _db.ComboAuditLogs.AsNoTracking()
             .Where(log => log.ComboId == comboId)
             .Include(log => log.Admin)
             .OrderByDescending(log => log.CreatedAt)
@@ -449,7 +449,7 @@ public class ComboService : IComboService
             normalizedFrom = normalizedTo.AddDays(-366);
         var exclusiveTo = normalizedTo.AddDays(1);
 
-        var orders = await _unitOfWork.Orders.Query()
+        var orders = await _db.Orders
             .AsNoTracking()
             .Where(order => order.CreatedAt >= normalizedFrom && order.CreatedAt < exclusiveTo &&
                 order.Items.Any(item => item.SourceComboId.HasValue))
@@ -508,7 +508,7 @@ public class ComboService : IComboService
 
     private async Task AddAuditAsync(Combo combo, int? adminId, string action, string details)
     {
-        await _unitOfWork.ComboAuditLogs.AddAsync(new ComboAuditLog
+        await _db.ComboAuditLogs.AddAsync(new ComboAuditLog
         {
             Combo = combo,
             AdminId = adminId,
@@ -542,7 +542,7 @@ public class ComboService : IComboService
             return "Combo không được chứa sản phẩm hoặc biến thể trùng nhau.";
 
         var productIds = model.Items.Select(item => item.ProductId).Distinct().ToList();
-        var products = await _unitOfWork.Products.Query()
+        var products = await _db.Products
             .Where(product => productIds.Contains(product.Id))
             .Include(product => product.Variants)
             .ToDictionaryAsync(product => product.Id);
@@ -637,7 +637,7 @@ public class ComboService : IComboService
         if (string.IsNullOrWhiteSpace(slug))
             return null;
 
-        var existing = await _unitOfWork.Combos.Query()
+        var existing = await _db.Combos
             .Where(c => c.Slug == slug && (!excludeId.HasValue || c.Id != excludeId.Value))
             .FirstOrDefaultAsync();
 

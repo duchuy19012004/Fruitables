@@ -65,4 +65,21 @@ public class PricingModelConfigurationTests
         Assert.Equal(1, scheduleRevision.GetDefaultValue());
         Assert.True(scheduleRevision.IsConcurrencyToken);
     }
+
+    [Fact]
+    public void Cart_session_id_has_a_unique_filtered_index()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        using var context = new ApplicationDbContext(options);
+        var index = context.Model
+            .FindEntityType(typeof(Cart))!
+            .GetIndexes()
+            .Single(item => item.Properties.Single().Name == nameof(Cart.SessionId));
+
+        Assert.True(index.IsUnique);
+        Assert.Equal("[SessionId] IS NOT NULL", index.GetFilter());
+    }
 }

@@ -54,6 +54,35 @@ public class ProductPricingServiceTests
     }
 
     [Fact]
+    public void Quote_does_not_expose_zero_effective_price()
+    {
+        var schedule = new PriceSchedule
+        {
+            ProductId = 1,
+            DiscountType = DiscountType.Percentage,
+            Value = 99,
+            StartsAt = Now.AddMinutes(-1)
+        };
+
+        var quote = PriceCalculator.CalculateQuote(1, [schedule], Now);
+
+        Assert.Equal(1, quote.EffectivePrice);
+        Assert.Null(quote.ScheduleId);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(100_000.5)]
+    [InlineData(100_000_000)]
+    public void Quote_rejects_an_invalid_base_price_when_no_schedule_applies(decimal basePrice)
+    {
+        var quote = PriceCalculator.CalculateQuote(basePrice, [], Now);
+
+        Assert.Equal(0, quote.EffectivePrice);
+        Assert.Null(quote.ScheduleId);
+    }
+
+    [Fact]
     public async Task GetQuoteAsync_prices_a_variant_independently_from_its_product()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -76,7 +105,7 @@ public class ProductPricingServiceTests
         });
         await context.SaveChangesAsync();
 
-        var service = new ProductPricingService(new UnitOfWork(context), new FixedTimeProvider(Now));
+        var service = new ProductPricingService(context, new FixedTimeProvider(Now));
         var quote = await service.GetQuoteAsync(1, 2);
 
         Assert.NotNull(quote);
@@ -154,7 +183,7 @@ public class ProductPricingServiceTests
             });
         await context.SaveChangesAsync();
 
-        var service = new ProductPricingService(new UnitOfWork(context), new FixedTimeProvider(Now));
+        var service = new ProductPricingService(context, new FixedTimeProvider(Now));
 
         var projections = service.ProjectCatalogPrices(context.Products.Where(p => p.IsActive))
             .OrderBy(p => p.ProductId)

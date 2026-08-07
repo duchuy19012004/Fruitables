@@ -1,8 +1,9 @@
+using Fruitables.Data;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
-using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Catalog.Products;
 
 namespace Fruitables.Areas.Admin.Controllers;
@@ -12,13 +13,13 @@ namespace Fruitables.Areas.Admin.Controllers;
 public class ProductController : Controller
 {
     private readonly IProductAdminService _productAdminService;
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly ApplicationDbContext _db;
     private readonly IRealtimeNotifier _notifier;
 
-    public ProductController(IProductAdminService productAdminService, IUnitOfWork unitOfWork, IRealtimeNotifier notifier)
+    public ProductController(IProductAdminService productAdminService, ApplicationDbContext db, IRealtimeNotifier notifier)
     {
         _productAdminService = productAdminService;
-        _unitOfWork = unitOfWork;
+        _db = db;
         _notifier = notifier;
     }
 
@@ -36,7 +37,7 @@ public class ProductController : Controller
         };
 
         var result = await _productAdminService.GetProductsAsync(request);
-        var categories = await _unitOfWork.Categories.GetAllAsync();
+        var categories = await _db.Categories.ToListAsync();
 
         // Badge cảm xúc: tóm tắt review theo cảm xúc cho từng sản phẩm trong trang
         ViewBag.Sentiments = await _productAdminService.GetSentimentSummariesAsync(result.Products.Select(p => p.Id).ToList());
@@ -65,7 +66,7 @@ public class ProductController : Controller
     // GET: Admin/Product/Create
     public async Task<IActionResult> Create()
     {
-        var categories = await _unitOfWork.Categories.GetAllAsync();
+        var categories = await _db.Categories.ToListAsync();
         var viewModel = new CreateProductViewModel
         {
             Categories = categories.Where(c => !c.IsDeleted).ToList()
@@ -80,7 +81,7 @@ public class ProductController : Controller
     {
         if (!ModelState.IsValid)
         {
-            model.Categories = (await _unitOfWork.Categories.GetAllAsync()).Where(c => !c.IsDeleted).ToList();
+            model.Categories = (await _db.Categories.ToListAsync()).Where(c => !c.IsDeleted).ToList();
             return View(model);
         }
 
@@ -89,7 +90,7 @@ public class ProductController : Controller
         if (!result.Success)
         {
             ModelState.AddModelError("", result.ErrorMessage ?? "Có lỗi xảy ra");
-            model.Categories = (await _unitOfWork.Categories.GetAllAsync()).Where(c => !c.IsDeleted).ToList();
+            model.Categories = (await _db.Categories.ToListAsync()).Where(c => !c.IsDeleted).ToList();
             return View(model);
         }
 
@@ -118,8 +119,8 @@ public class ProductController : Controller
             return RedirectToAction(nameof(Index));
         }
 
-        var categories = await _unitOfWork.Categories.GetAllAsync();
-        var allProductTags = await _unitOfWork.ProductTags.GetAllAsync();
+        var categories = await _db.Categories.ToListAsync();
+        var allProductTags = await _db.ProductTags.ToListAsync();
 
         var viewModel = new EditProductViewModel
         {
@@ -149,8 +150,8 @@ public class ProductController : Controller
         if (!ModelState.IsValid)
         {
 
-            var categories = await _unitOfWork.Categories.GetAllAsync();
-            var allProductTags = await _unitOfWork.ProductTags.GetAllAsync();
+            var categories = await _db.Categories.ToListAsync();
+            var allProductTags = await _db.ProductTags.ToListAsync();
 
             var viewModel = new EditProductViewModel
             {
@@ -173,8 +174,8 @@ public class ProductController : Controller
                 return RedirectToAction(nameof(Index));
             }
 
-            var categories = await _unitOfWork.Categories.GetAllAsync();
-            var allProductTags = await _unitOfWork.ProductTags.GetAllAsync();
+            var categories = await _db.Categories.ToListAsync();
+            var allProductTags = await _db.ProductTags.ToListAsync();
 
             var viewModel = new EditProductViewModel
             {

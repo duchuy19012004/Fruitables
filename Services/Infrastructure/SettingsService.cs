@@ -1,3 +1,4 @@
+using Fruitables.Data;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -6,7 +7,6 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Fruitables.Constants;
 using Fruitables.Models;
-using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Communications;
 using Fruitables.Services.Chat.Knowledge;
 
@@ -15,7 +15,7 @@ namespace Fruitables.Services.Infrastructure;
 // Quản lý cấu hình website, dữ liệu được cache 30 phút
 public class SettingsService : ISettingsService
 {
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly ApplicationDbContext _db;
     private readonly IMemoryCache _cache;
     private readonly IWebHostEnvironment _webHostEnvironment;
     private readonly IIndexingService _indexing;
@@ -30,13 +30,13 @@ public class SettingsService : ISettingsService
     private const string UploadsFolder = "uploads/settings";
 
     public SettingsService(
-        IUnitOfWork unitOfWork,
+        ApplicationDbContext db,
         IMemoryCache cache,
         IWebHostEnvironment webHostEnvironment,
         IIndexingService indexing,
         ILogger<SettingsService> logger)
     {
-        _unitOfWork = unitOfWork;
+        _db = db;
         _cache = cache;
         _webHostEnvironment = webHostEnvironment;
         _indexing = indexing;
@@ -65,7 +65,7 @@ public class SettingsService : ISettingsService
         if (_cache.TryGetValue(cacheKey, out string? cachedValue))
             return cachedValue ?? defaultValue;
 
-        var setting = await _unitOfWork.Settings.Query()
+        var setting = await _db.Settings
             .AsNoTracking()
             .FirstOrDefaultAsync(s => s.Key == key);
 
@@ -117,7 +117,7 @@ public class SettingsService : ISettingsService
 
     public async Task<Dictionary<string, string?>> GetSettingsByGroupAsync(string group)
     {
-        var settings = await _unitOfWork.Settings.Query()
+        var settings = await _db.Settings
             .AsNoTracking()
             .Where(s => s.Group == group)
             .ToListAsync();
@@ -130,7 +130,7 @@ public class SettingsService : ISettingsService
         if (_cache.TryGetValue(AllSettingsCacheKey, out List<Setting>? cachedSettings) && cachedSettings != null)
             return cachedSettings;
 
-        var settings = await _unitOfWork.Settings.Query()
+        var settings = await _db.Settings
             .AsNoTracking()
             .ToListAsync();
 
@@ -154,12 +154,12 @@ public class SettingsService : ISettingsService
                     return SettingResult.Error("URL không đúng định dạng");
             }
 
-            var setting = await _unitOfWork.Settings.Query().FirstOrDefaultAsync(s => s.Key == key);
+            var setting = await _db.Settings.FirstOrDefaultAsync(s => s.Key == key);
 
             if (setting == null)
             {
                 setting = new Setting { Key = key, Value = value, Group = group };
-                await _unitOfWork.Settings.AddAsync(setting);
+                await _db.Settings.AddAsync(setting);
             }
             else
             {
@@ -167,7 +167,7 @@ public class SettingsService : ISettingsService
                 if (group != null) setting.Group = group;
             }
 
-            await _unitOfWork.SaveChangesAsync();
+            await _db.SaveChangesAsync();
             InvalidateCache(key);
 
             await TryIndexAllowlistedSettingsIfNeededAsync(new[] { key });
@@ -185,7 +185,7 @@ public class SettingsService : ISettingsService
         try
         {
             var keys = settings.Keys.ToList();
-            var existingSettings = await _unitOfWork.Settings.Query()
+            var existingSettings = await _db.Settings
                 .Where(s => keys.Contains(s.Key))
                 .ToDictionaryAsync(s => s.Key);
 
@@ -194,7 +194,7 @@ public class SettingsService : ISettingsService
                 if (!existingSettings.TryGetValue(kvp.Key, out var setting))
                 {
                     setting = new Setting { Key = kvp.Key, Value = kvp.Value, Group = group };
-                    await _unitOfWork.Settings.AddAsync(setting);
+                    await _db.Settings.AddAsync(setting);
                 }
                 else
                 {
@@ -203,7 +203,7 @@ public class SettingsService : ISettingsService
                 }
             }
 
-            await _unitOfWork.SaveChangesAsync();
+            await _db.SaveChangesAsync();
 
             foreach (var key in settings.Keys)
                 InvalidateCache(key);

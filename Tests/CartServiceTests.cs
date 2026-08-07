@@ -1,6 +1,5 @@
 using Fruitables.Data;
 using Fruitables.Models;
-using Fruitables.Repositories;
 using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 using Microsoft.EntityFrameworkCore;
@@ -132,8 +131,7 @@ public class CartServiceTests
         await context.SaveChangesAsync();
 
         var couponServiceMock = new Mock<ICouponService>();
-        var unitOfWork = new UnitOfWork(context);
-        var cartService = new CartService(unitOfWork, couponServiceMock.Object, CreateDefaultPricing());
+        var cartService = new CartService(context, couponServiceMock.Object, CreateDefaultPricing());
 
         var result = await cartService.GetCartAsync("test-session");
 
@@ -155,8 +153,7 @@ public class CartServiceTests
         await context.SaveChangesAsync();
 
         var couponServiceMock = new Mock<ICouponService>();
-        var unitOfWork = new UnitOfWork(context);
-        var cartService = new CartService(unitOfWork, couponServiceMock.Object, CreateDefaultPricing());
+        var cartService = new CartService(context, couponServiceMock.Object, CreateDefaultPricing());
 
         var result = await cartService.GetCartAsync("empty-session");
 
@@ -209,8 +206,7 @@ public class CartServiceTests
         await context.SaveChangesAsync();
 
         var couponServiceMock = new Mock<ICouponService>();
-        var unitOfWork = new UnitOfWork(context);
-        var cartService = new CartService(unitOfWork, couponServiceMock.Object, CreateDefaultPricing());
+        var cartService = new CartService(context, couponServiceMock.Object, CreateDefaultPricing());
 
         var result = await cartService.GetCartAsync("multi-session");
 
@@ -251,7 +247,7 @@ public class CartServiceTests
             .ReturnsAsync((PriceQuote?)null);
 
         var service = new CartService(
-            new UnitOfWork(context),
+            context,
             Mock.Of<ICouponService>(),
             pricing.Object);
 
@@ -262,6 +258,65 @@ public class CartServiceTests
 
         Assert.False(result.Success);
         Assert.Contains("xÃ¡c Ä‘á»‹nh giÃ¡", result.Message);
+        Assert.Empty(await context.CartItems.ToListAsync());
+    }
+
+    [Fact]
+    public async Task AddItemsToCartAsync_adds_to_an_existing_cart()
+    {
+        var options = TestDbContextFactory.CreateSqliteOptions();
+        await using var context = new ApplicationDbContext(options);
+        var category = new Category { Id = 1, Name = "Fruit", Slug = "fruit-race" };
+        var product = new Product
+        {
+            Id = 1,
+            CategoryId = category.Id,
+            Name = "Apple",
+            Slug = "apple-race",
+            Price = 100_000,
+            StockQuantity = 10,
+            MinOrderQuantity = 1,
+            Unit = "piece",
+            IsActive = true
+        };
+        var existingCart = new Cart { Id = 1, SessionId = "race-session" };
+        context.AddRange(category, product, existingCart);
+        await context.SaveChangesAsync();
+
+        var result = await new CartService(
+            context,
+            Mock.Of<ICouponService>(),
+            CreateDefaultPricing())
+            .AddItemsToCartAsync("race-session", [new CartAddItemRequest(1, 1, null)]);
+
+        Assert.True(result.Success);
+        Assert.Equal(1, await context.CartItems.CountAsync(item => item.CartId == existingCart.Id));
+    }
+
+    [Fact]
+    public async Task AddToCartAsync_rejects_a_product_with_an_invalid_base_price()
+    {
+        var options = CreateInMemoryOptions();
+        await using var context = new ApplicationDbContext(options);
+        context.Products.Add(new Product
+        {
+            Id = 1,
+            Name = "Invalid Apple",
+            Slug = "invalid-apple",
+            Price = 0,
+            StockQuantity = 10,
+            MinOrderQuantity = 1,
+            IsActive = true
+        });
+        await context.SaveChangesAsync();
+
+        var result = await new CartService(
+            context,
+            Mock.Of<ICouponService>(),
+            new ProductPricingService(context, TimeProvider.System))
+            .AddToCartAsync("invalid-price-session", 1, 1);
+
+        Assert.False(result.Success);
         Assert.Empty(await context.CartItems.ToListAsync());
     }
 }

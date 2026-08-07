@@ -3,8 +3,8 @@ using Fruitables.ViewModels;
 
 namespace Fruitables.Repositories.Interfaces;
 
-// Interface repository đơn hàng: mở rộng IRepository<Order> với các truy vấn đặc thù.
-public interface IOrderRepository : IRepository<Order>
+// Interface repository đơn hàng cho các truy vấn đặc thù.
+public interface IOrderRepository
 {
     // Lấy danh sách đơn hàng của 1 user với phân trang + lọc (trạng thái, ngày, search)
     Task<PagedResult<Order>> GetOrdersByUserIdAsync(int userId, OrderHistoryFilter filter);

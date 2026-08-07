@@ -4,7 +4,7 @@ using Fruitables.ViewModels;
 namespace Fruitables.Repositories.Interfaces;
 
 // Interface repository cho Review entity: thêm các truy vấn đặc thù ngoài CRUD cơ bản.
-public interface IReviewRepository : IRepository<Review>
+public interface IReviewRepository
 {
     // Lấy danh sách review của 1 sản phẩm với phân trang, sắp xếp, lọc
     Task<PagedResult<Review>> GetProductReviewsAsync(ReviewFilterDto filter);

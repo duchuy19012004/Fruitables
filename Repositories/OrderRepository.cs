@@ -6,10 +6,15 @@ using Fruitables.ViewModels;
 
 namespace Fruitables.Repositories;
 
-public class OrderRepository : Repository<Order>, IOrderRepository
+public class OrderRepository : IOrderRepository
 {
-    public OrderRepository(ApplicationDbContext context) : base(context)
+    private readonly ApplicationDbContext _context;
+    private readonly DbSet<Order> _dbSet;
+
+    public OrderRepository(ApplicationDbContext context)
     {
+        _context = context;
+        _dbSet = context.Orders;
     }
 
     /// <summary>

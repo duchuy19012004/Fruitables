@@ -6,6 +6,7 @@ namespace Fruitables.Services.Orders.OrderManagement;
 public interface IOrderService
 {
     Task<Order> CreateOrderAsync(CheckoutViewModel model, string sessionId, int? userId = null);
+    Task<Order?> GetOrderByCheckoutRequestAsync(string sessionId, string checkoutRequestId);
     Task<Order?> GetOrderByIdAsync(int id);
     Task<Order?> GetOrderByNumberAsync(string orderNumber);
     Task<List<Order>> GetOrdersByUserIdAsync(int userId);

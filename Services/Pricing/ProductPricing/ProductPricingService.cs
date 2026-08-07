@@ -1,5 +1,5 @@
+using Fruitables.Data;
 using Fruitables.Models;
-using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 using Microsoft.EntityFrameworkCore;
@@ -8,12 +8,12 @@ namespace Fruitables.Services.Pricing.ProductPricing;
 
 public sealed class ProductPricingService : IProductPricingService
 {
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly ApplicationDbContext _db;
     private readonly TimeProvider _timeProvider;
 
-    public ProductPricingService(IUnitOfWork unitOfWork, TimeProvider timeProvider)
+    public ProductPricingService(ApplicationDbContext db, TimeProvider timeProvider)
     {
-        _unitOfWork = unitOfWork;
+        _db = db;
         _timeProvider = timeProvider;
     }
 
@@ -31,14 +31,14 @@ public sealed class ProductPricingService : IProductPricingService
         var keys = targets.Distinct().ToList();
         var productIds = keys.Select(k => k.ProductId).Distinct().ToList();
         var variantIds = keys.Where(k => k.ProductVariantId.HasValue).Select(k => k.ProductVariantId!.Value).Distinct().ToList();
-        var products = await _unitOfWork.Products.Query()
+        var products = await _db.Products
             .Where(p => productIds.Contains(p.Id) && p.IsActive && !p.IsDeleted)
             .ToDictionaryAsync(p => p.Id);
-        var variants = await _unitOfWork.ProductVariants.Query()
+        var variants = await _db.ProductVariants
             .Where(v => variantIds.Contains(v.Id) && v.IsActive)
             .ToDictionaryAsync(v => v.Id);
         var instant = at ?? _timeProvider.GetUtcNow();
-        var schedules = await _unitOfWork.PriceSchedules.Query()
+        var schedules = await _db.PriceSchedules
             .Where(s => productIds.Contains(s.ProductId) && !s.IsCancelled && s.StartsAt <= instant &&
                 (!s.EndsAt.HasValue || instant < s.EndsAt.Value))
             .ToListAsync();

@@ -1,6 +1,6 @@
+using Fruitables.Data;
 using Fruitables.Constants;
 using Fruitables.Models;
-using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 using Microsoft.EntityFrameworkCore;
@@ -10,12 +10,12 @@ namespace Fruitables.Services.Identity.Authentication;
 
 public class GoogleAuthService : IGoogleAuthService
 {
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly ApplicationDbContext _db;
     private readonly ISettingsService _settingsService;
 
-    public GoogleAuthService(IUnitOfWork unitOfWork, ISettingsService settingsService)
+    public GoogleAuthService(ApplicationDbContext db, ISettingsService settingsService)
     {
-        _unitOfWork = unitOfWork;
+        _db = db;
         _settingsService = settingsService;
     }
 
@@ -43,7 +43,7 @@ public class GoogleAuthService : IGoogleAuthService
 
         user.LastLoginAt = DateTime.UtcNow;
         user.UpdatedAt = DateTime.UtcNow;
-        await _unitOfWork.SaveChangesAsync();
+        await _db.SaveChangesAsync();
 
         return GoogleAuthResult.Succeeded(user);
     }
@@ -51,7 +51,7 @@ public class GoogleAuthService : IGoogleAuthService
     public async Task<(User? User, string? LockReason)> GetOrCreateUserFromGoogleAsync(string email, string? name, string googleId)
     {
         var normalizedEmail = email.ToLower();
-        var existingUser = await _unitOfWork.Users
+        var existingUser = await _db.Users
             .FirstOrDefaultAsync(u => u.Email == normalizedEmail);
 
         if (existingUser != null)
@@ -69,7 +69,7 @@ public class GoogleAuthService : IGoogleAuthService
                 existingUser.LockedAt = null;
                 existingUser.LockExpiresAt = null;
                 existingUser.LockedByAdminId = null;
-                await _unitOfWork.SaveChangesAsync();
+                await _db.SaveChangesAsync();
             }
 
             if (!existingUser.IsActive)
@@ -98,8 +98,8 @@ public class GoogleAuthService : IGoogleAuthService
             UpdatedAt = DateTime.UtcNow
         };
 
-        await _unitOfWork.Users.AddAsync(newUser);
-        await _unitOfWork.SaveChangesAsync();
+        await _db.Users.AddAsync(newUser);
+        await _db.SaveChangesAsync();
 
         return (newUser, null);
     }

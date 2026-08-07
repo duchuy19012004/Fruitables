@@ -14,8 +14,8 @@ public interface ISentimentAnalysisService
     // Enqueue backfill: chia review chưa phân tích thành chunks vào outbox
     Task<int> EnqueueBackfillAsync(CancellationToken ct = default);
 
-    // Dashboard: phân bố cảm xúc, xu hướng, top khía cạnh, top sản phẩm
-    Task<SentimentDashboardData> GetDashboardAsync(CancellationToken ct = default);
+    // Dashboard: phân bố cảm xúc, xu hướng, top khía cạnh, top sản phẩm theo khoảng ngày.
+    Task<SentimentDashboardData> GetDashboardAsync(DateTime? from = null, DateTime? to = null, CancellationToken ct = default);
 
     // Danh sách review theo bộ lọc (admin). maxPageSize chặn trần PageSize (mặc định 100; export truyền giá trị lớn hơn).
     Task<PagedSentimentReviews> GetReviewsAsync(SentimentReviewFilter filter, int maxPageSize = 100, CancellationToken ct = default);
@@ -61,7 +61,7 @@ public sealed class SentimentDashboardData
     public int SafetyRiskCount { get; set; }
     public int UnanalyzedCount { get; set; }
     public float NegativeRate { get; set; }       // % tiêu cực
-    public List<SentimentTrendPoint> Trend { get; set; } = new();          // 14 ngày gần nhất
+    public List<SentimentTrendPoint> Trend { get; set; } = new();          // theo khoảng ngày đã chọn
     public List<AspectCount> TopNegativeAspects { get; set; } = new();     // khía cạnh bị chê nhiều
     public List<ProductSentiment> TopNegativeProducts { get; set; } = new(); // sản phẩm bị chê nhiều
 }

@@ -1,6 +1,6 @@
+using Fruitables.Data;
 using Microsoft.EntityFrameworkCore;
 using Fruitables.Models;
-using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 using Fruitables.Services.Pricing.Combos;
@@ -15,14 +15,14 @@ namespace Fruitables.Services.Orders.Cart;
 
 public class CartService : ICartService
 {
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly ApplicationDbContext _db;
     private readonly ICouponService _couponService;
     private readonly IProductPricingService _pricing;
     private readonly TimeProvider _timeProvider;
 
-    public CartService(IUnitOfWork unitOfWork, ICouponService couponService, IProductPricingService pricing, TimeProvider? timeProvider = null)
+    public CartService(ApplicationDbContext db, ICouponService couponService, IProductPricingService pricing, TimeProvider? timeProvider = null)
     {
-        _unitOfWork    = unitOfWork;
+        _db    = db;
         _couponService = couponService;
         _pricing = pricing;
         _timeProvider = timeProvider ?? TimeProvider.System;
@@ -31,7 +31,7 @@ public class CartService : ICartService
     public async Task<CartViewModel> GetCartAsync(string sessionId, string? district = null)
     {
         var cart  = await GetOrCreateCartAsync(sessionId);
-        var items = await _unitOfWork.CartItems.Query()
+        var items = await _db.CartItems
             .Where(ci => ci.CartId == cart.Id)
             .Include(ci => ci.Product)
             .ThenInclude(p => p.Images)
@@ -42,7 +42,7 @@ public class CartService : ICartService
             .ThenInclude(group => group!.Combo)
             .ToListAsync();
         if (await RefreshItemPricesAsync(items))
-            await _unitOfWork.SaveChangesAsync();
+            await _db.SaveChangesAsync();
 
         var cartViewModel = new CartViewModel
         {
@@ -113,7 +113,7 @@ public class CartService : ICartService
                 cart.CouponCode = null;
                 cart.CouponDiscount = 0;
             }
-            await _unitOfWork.SaveChangesAsync();
+            await _db.SaveChangesAsync();
         }
 
         // Cart page loads without GHN address codes, so we cannot calculate a real
@@ -144,7 +144,7 @@ public class CartService : ICartService
             return CartMutationResult.Fail("Sá»‘ lÆ°á»£ng pháº£i lá»›n hÆ¡n 0.");
 
         var cart = await GetOrCreateCartAsync(sessionId);
-        var product = await _unitOfWork.Products.Query()
+        var product = await _db.Products
             .Include(p => p.Variants)
             .FirstOrDefaultAsync(p =>
                 p.Id == productId &&
@@ -184,13 +184,13 @@ public class CartService : ICartService
         }
 
         var quote = await _pricing.GetQuoteAsync(productId, variantId);
-        if (quote == null)
+        if (quote == null || !VndPriceRules.IsValidPrice(quote.EffectivePrice))
         {
             return CartMutationResult.Fail(
                 "KhÃ´ng thá»ƒ xÃ¡c Ä‘á»‹nh giÃ¡ hiá»‡n táº¡i cá»§a sáº£n pháº©m. Vui lÃ²ng táº£i láº¡i trang.");
         }
 
-        var existingItem = await _unitOfWork.CartItems.Query()
+        var existingItem = await _db.CartItems
             .FirstOrDefaultAsync(item =>
                 item.CartId == cart.Id &&
                 item.CartGroupId == null &&
@@ -212,7 +212,7 @@ public class CartService : ICartService
         }
         else
         {
-            await _unitOfWork.CartItems.AddAsync(new CartItem
+            await _db.CartItems.AddAsync(new CartItem
             {
                 CartId = cart.Id,
                 ProductId = productId,
@@ -223,7 +223,7 @@ public class CartService : ICartService
         }
 
         cart.UpdatedAt = DateTime.UtcNow;
-        await _unitOfWork.SaveChangesAsync();
+        await _db.SaveChangesAsync();
 
         return CartMutationResult.Ok("ÄÃ£ thÃªm sáº£n pháº©m vÃ o giá» hÃ ng.");
     }
@@ -247,7 +247,7 @@ public class CartService : ICartService
             return CartMutationResult.Fail("Sản phẩm hoặc số lượng không hợp lệ.");
 
         var productIds = groupedItems.Select(item => item.ProductId).Distinct().ToList();
-        var products = await _unitOfWork.Products.Query()
+        var products = await _db.Products
             .Where(product => productIds.Contains(product.Id) && product.IsActive && !product.IsDeleted)
             .Include(product => product.Variants)
             .ToDictionaryAsync(product => product.Id);
@@ -283,16 +283,14 @@ public class CartService : ICartService
             .Select(item => new PriceTargetKey(item.ProductId, item.ProductVariantId))
             .ToList();
         var quotes = await _pricing.GetQuotesAsync(targets);
-        if (targets.Any(target => !quotes.ContainsKey(target)))
+        if (targets.Any(target => !quotes.TryGetValue(target, out var quote) ||
+            !VndPriceRules.IsValidPrice(quote.EffectivePrice)))
             return CartMutationResult.Fail("Không thể xác định giá hiện tại của một số sản phẩm.");
 
-        var cart = await _unitOfWork.Carts.Query()
-            .FirstOrDefaultAsync(item => item.SessionId == sessionId);
-        var existingItems = cart == null
-            ? new List<CartItem>()
-            : await _unitOfWork.CartItems.Query()
-                .Where(item => item.CartId == cart.Id && item.CartGroupId == null && productIds.Contains(item.ProductId))
-                .ToListAsync();
+        var cart = await GetOrCreateCartAsync(sessionId);
+        var existingItems = await _db.CartItems
+            .Where(item => item.CartId == cart.Id && item.CartGroupId == null && productIds.Contains(item.ProductId))
+            .ToListAsync();
 
         foreach (var request in groupedItems)
         {
@@ -311,12 +309,6 @@ public class CartService : ICartService
                 return CartMutationResult.Fail($"'{product.Name}' không đủ tồn kho cho số lượng trong giỏ.");
         }
 
-        if (cart == null)
-        {
-            cart = new CartEntity { SessionId = sessionId };
-            await _unitOfWork.Carts.AddAsync(cart);
-        }
-
         foreach (var request in groupedItems)
         {
             var key = new PriceTargetKey(request.ProductId, request.ProductVariantId);
@@ -331,7 +323,7 @@ public class CartService : ICartService
             }
             else
             {
-                await _unitOfWork.CartItems.AddAsync(new CartItem
+                await _db.CartItems.AddAsync(new CartItem
                 {
                     Cart = cart,
                     ProductId = request.ProductId,
@@ -343,13 +335,13 @@ public class CartService : ICartService
         }
 
         cart.UpdatedAt = DateTime.UtcNow;
-        await _unitOfWork.SaveChangesAsync();
+        await _db.SaveChangesAsync();
         return CartMutationResult.Ok("Đã thêm toàn bộ combo vào giỏ hàng.");
     }
 
     public async Task<CartMutationResult> AddComboToCartAsync(string sessionId, int comboId)
     {
-        var combo = await _unitOfWork.Combos.Query()
+        var combo = await _db.Combos
             .Where(item => item.Id == comboId && item.IsActive)
             .Include(item => item.Items)
                 .ThenInclude(item => item.Product)
@@ -364,7 +356,8 @@ public class CartService : ICartService
             .Select(item => new PriceTargetKey(item.ProductId, item.ProductVariantId))
             .ToList();
         var quotes = await _pricing.GetQuotesAsync(targets);
-        if (targets.Any(target => !quotes.ContainsKey(target)))
+        if (targets.Any(target => !quotes.TryGetValue(target, out var quote) ||
+            !VndPriceRules.IsValidPrice(quote.EffectivePrice)))
             return CartMutationResult.Fail("Một số sản phẩm trong combo không còn được bán.");
 
         foreach (var item in combo.Items)
@@ -376,10 +369,10 @@ public class CartService : ICartService
                 return CartMutationResult.Fail($"'{item.Product.Name}' không đủ điều kiện bán trong combo.");
         }
 
-        var cart = await _unitOfWork.Carts.Query().FirstOrDefaultAsync(item => item.SessionId == sessionId);
-        var existingCartItems = cart == null
-            ? new List<CartItem>()
-            : await _unitOfWork.CartItems.Query().Where(item => item.CartId == cart.Id).ToListAsync();
+        var cart = await GetOrCreateCartAsync(sessionId);
+        var existingCartItems = await _db.CartItems
+            .Where(item => item.CartId == cart.Id)
+            .ToListAsync();
 
         foreach (var comboItem in combo.Items)
         {
@@ -391,17 +384,9 @@ public class CartService : ICartService
                 return CartMutationResult.Fail($"'{comboItem.Product.Name}' không đủ tồn kho cho combo.");
         }
 
-        if (cart == null)
-        {
-            cart = new CartEntity { SessionId = sessionId };
-            await _unitOfWork.Carts.AddAsync(cart);
-        }
-
-        var group = cart.Id == 0
-            ? null
-            : await _unitOfWork.CartGroups.Query()
-                .Include(item => item.Items)
-                .FirstOrDefaultAsync(item => item.CartId == cart.Id && item.ComboId == combo.Id && item.ComboRevision == combo.Revision);
+        var group = await _db.CartGroups
+            .Include(item => item.Items)
+            .FirstOrDefaultAsync(item => item.CartId == cart.Id && item.ComboId == combo.Id && item.ComboRevision == combo.Revision);
 
         if (group == null)
         {
@@ -415,7 +400,7 @@ public class CartService : ICartService
                 AllowCouponStacking = combo.AllowCouponStacking,
                 ExpiresAt = DateTime.UtcNow.AddDays(30)
             };
-            await _unitOfWork.CartGroups.AddAsync(group);
+            await _db.CartGroups.AddAsync(group);
             foreach (var comboItem in combo.Items.OrderBy(item => item.SortOrder))
             {
                 var key = new PriceTargetKey(comboItem.ProductId, comboItem.ProductVariantId);
@@ -429,7 +414,7 @@ public class CartService : ICartService
                     Price = quotes[key].EffectivePrice
                 };
                 group.Items.Add(cartItem);
-                await _unitOfWork.CartItems.AddAsync(cartItem);
+                await _db.CartItems.AddAsync(cartItem);
             }
         }
         else
@@ -446,13 +431,13 @@ public class CartService : ICartService
         ApplyComboPricing(group, combo, quotes);
         group.UpdatedAt = DateTime.UtcNow;
         cart.UpdatedAt = DateTime.UtcNow;
-        await _unitOfWork.SaveChangesAsync();
+        await _db.SaveChangesAsync();
         return CartMutationResult.Ok($"Đã thêm combo '{combo.Name}' vào giỏ hàng.");
     }
 
     public async Task<CartMutationResult> UpdateComboQuantityAsync(string sessionId, int cartGroupId, int quantity)
     {
-        var group = await _unitOfWork.CartGroups.Query()
+        var group = await _db.CartGroups
             .Include(item => item.Cart)
             .Include(item => item.Items)
             .Include(item => item.Combo)
@@ -467,16 +452,16 @@ public class CartService : ICartService
 
         if (quantity <= 0)
         {
-            _unitOfWork.CartItems.RemoveRange(group.Items);
-            _unitOfWork.CartGroups.Remove(group);
-            await _unitOfWork.SaveChangesAsync();
+            _db.CartItems.RemoveRange(group.Items);
+            _db.CartGroups.Remove(group);
+            await _db.SaveChangesAsync();
             return CartMutationResult.Ok("Đã xóa combo khỏi giỏ hàng.");
         }
 
         var combo = group.Combo;
         if (!combo.IsAvailableAt(_timeProvider.GetUtcNow()) || combo.Revision != group.ComboRevision)
             return CartMutationResult.Fail("Combo đã thay đổi hoặc ngừng bán. Vui lòng xóa và thêm lại.");
-        var otherItems = await _unitOfWork.CartItems.Query()
+        var otherItems = await _db.CartItems
             .Where(item => item.CartId == group.CartId && item.CartGroupId != group.Id)
             .ToListAsync();
         foreach (var comboItem in combo.Items)
@@ -506,27 +491,27 @@ public class CartService : ICartService
         ApplyComboPricing(group, combo, quotes);
         group.UpdatedAt = DateTime.UtcNow;
         group.Cart.UpdatedAt = DateTime.UtcNow;
-        await _unitOfWork.SaveChangesAsync();
+        await _db.SaveChangesAsync();
         return CartMutationResult.Ok("Đã cập nhật số lượng combo.");
     }
 
     public async Task RemoveComboAsync(string sessionId, int cartGroupId)
     {
-        var group = await _unitOfWork.CartGroups.Query()
+        var group = await _db.CartGroups
             .Include(item => item.Cart)
             .Include(item => item.Items)
             .FirstOrDefaultAsync(item => item.Id == cartGroupId && item.Cart.SessionId == sessionId);
         if (group == null) return;
 
-        _unitOfWork.CartItems.RemoveRange(group.Items);
-        _unitOfWork.CartGroups.Remove(group);
-        await _unitOfWork.SaveChangesAsync();
+        _db.CartItems.RemoveRange(group.Items);
+        _db.CartGroups.Remove(group);
+        await _db.SaveChangesAsync();
     }
 
     public async Task UpdateQuantityAsync(string sessionId, int cartItemId, decimal quantity)
     {
         var cart = await GetOrCreateCartAsync(sessionId);
-        var item = await _unitOfWork.CartItems.Query()
+        var item = await _db.CartItems
             .Include(ci => ci.Product)
             .Include(ci => ci.ProductVariant)
             .FirstOrDefaultAsync(ci => ci.CartId == cart.Id && ci.Id == cartItemId);
@@ -537,52 +522,52 @@ public class CartService : ICartService
                 (item.ProductVariantId.HasValue && item.ProductVariant?.IsActive != true);
             var stock = item.ProductVariant?.StockQuantity ?? item.Product.StockQuantity;
             if (quantity <= 0 || isUnavailable || stock <= 0)
-                _unitOfWork.CartItems.Remove(item);
+                _db.CartItems.Remove(item);
             else if (QuantityRules.IsValid(item.Product.Unit, quantity, item.Product.MinOrderQuantity))
                 item.Quantity = Math.Min(quantity, stock);
 
             cart.UpdatedAt = DateTime.UtcNow;
-            await _unitOfWork.SaveChangesAsync();
+            await _db.SaveChangesAsync();
         }
     }
 
     public async Task RemoveFromCartAsync(string sessionId, int cartItemId)
     {
         var cart = await GetOrCreateCartAsync(sessionId);
-        var item = await _unitOfWork.CartItems.Query()
+        var item = await _db.CartItems
             .FirstOrDefaultAsync(ci => ci.CartId == cart.Id && ci.Id == cartItemId);
 
         if (item != null && item.CartGroupId == null)
         {
-            _unitOfWork.CartItems.Remove(item);
+            _db.CartItems.Remove(item);
             cart.UpdatedAt = DateTime.UtcNow;
-            await _unitOfWork.SaveChangesAsync();
+            await _db.SaveChangesAsync();
         }
     }
 
     public async Task ClearCartAsync(string sessionId)
     {
-        var cart = await _unitOfWork.Carts.Query()
+        var cart = await _db.Carts
             .Include(c => c.Items)
             .FirstOrDefaultAsync(c => c.SessionId == sessionId);
 
         if (cart != null)
         {
-            _unitOfWork.CartItems.RemoveRange(cart.Items);
-            var groups = await _unitOfWork.CartGroups.Query().Where(group => group.CartId == cart.Id).ToListAsync();
-            _unitOfWork.CartGroups.RemoveRange(groups);
-            await _unitOfWork.SaveChangesAsync();
+            _db.CartItems.RemoveRange(cart.Items);
+            var groups = await _db.CartGroups.Where(group => group.CartId == cart.Id).ToListAsync();
+            _db.CartGroups.RemoveRange(groups);
+            await _db.SaveChangesAsync();
         }
     }
 
     public async Task<decimal> GetCartCountAsync(string sessionId)
     {
-        var cart = await _unitOfWork.Carts.Query()
+        var cart = await _db.Carts
             .FirstOrDefaultAsync(c => c.SessionId == sessionId);
 
         if (cart == null) return 0;
 
-        return await _unitOfWork.CartItems.Query()
+        return await _db.CartItems
             .Where(ci => ci.CartId == cart.Id)
             .SumAsync(ci => ci.Quantity);
     }
@@ -602,7 +587,7 @@ public class CartService : ICartService
             cart.CouponCode     = result.CouponCode;
             cart.CouponDiscount = result.DiscountAmount;
             cart.UpdatedAt      = DateTime.UtcNow;
-            await _unitOfWork.SaveChangesAsync();
+            await _db.SaveChangesAsync();
         }
 
         return result;
@@ -610,7 +595,7 @@ public class CartService : ICartService
 
     public async Task RemoveCouponAsync(string sessionId)
     {
-        var cart = await _unitOfWork.Carts.Query()
+        var cart = await _db.Carts
             .FirstOrDefaultAsync(c => c.SessionId == sessionId);
 
         if (cart != null)
@@ -618,7 +603,7 @@ public class CartService : ICartService
             cart.CouponCode     = null;
             cart.CouponDiscount = 0;
             cart.UpdatedAt      = DateTime.UtcNow;
-            await _unitOfWork.SaveChangesAsync();
+            await _db.SaveChangesAsync();
         }
     }
 
@@ -633,7 +618,8 @@ public class CartService : ICartService
 
         foreach (var item in items.Where(item => item.CartGroupId == null))
         {
-            if (!quotes.TryGetValue(new PriceTargetKey(item.ProductId, item.ProductVariantId), out var quote))
+            if (!quotes.TryGetValue(new PriceTargetKey(item.ProductId, item.ProductVariantId), out var quote) ||
+                !VndPriceRules.IsValidPrice(quote.EffectivePrice))
                 continue;
             if (item.Price != quote.EffectivePrice || item.ComboDiscount != 0)
             {
@@ -715,14 +701,27 @@ public class CartService : ICartService
 
     private async Task<CartEntity> GetOrCreateCartAsync(string sessionId)
     {
-        var cart = await _unitOfWork.Carts.Query()
+        var cart = await _db.Carts
             .FirstOrDefaultAsync(c => c.SessionId == sessionId);
 
         if (cart == null)
         {
             cart = new CartEntity { SessionId = sessionId };
-            await _unitOfWork.Carts.AddAsync(cart);
-            await _unitOfWork.SaveChangesAsync();
+            await _db.Carts.AddAsync(cart);
+            try
+            {
+                await _db.SaveChangesAsync();
+            }
+            catch (DbUpdateException)
+            {
+                _db.Carts.Remove(cart);
+                var existing = await _db.Carts
+                    .FirstOrDefaultAsync(c => c.SessionId == sessionId);
+                if (existing == null)
+                    throw;
+
+                cart = existing;
+            }
         }
 
         return cart;

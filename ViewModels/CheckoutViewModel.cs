@@ -74,6 +74,10 @@ public class CheckoutViewModel
     public CartViewModel Cart { get; set; } = new();
     public string PricingToken { get; set; } = string.Empty;
 
+    [Required(ErrorMessage = "Phiên thanh toán không hợp lệ. Vui lòng tải lại trang.")]
+    [StringLength(64)]
+    public string CheckoutRequestId { get; set; } = string.Empty;
+
     public string ComposedFullAddress =>
         $"{StreetAddress}, {CommuneName}, {ProvinceName}";
 }

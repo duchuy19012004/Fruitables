@@ -1,22 +1,22 @@
+using Fruitables.Data;
 using Microsoft.EntityFrameworkCore;
 using Fruitables.Models;
-using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Communications;
 
 namespace Fruitables.Services.Reviews;
 
 public class TestimonialService : ITestimonialService
 {
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly ApplicationDbContext _db;
 
-    public TestimonialService(IUnitOfWork unitOfWork)
+    public TestimonialService(ApplicationDbContext db)
     {
-        _unitOfWork = unitOfWork;
+        _db = db;
     }
 
     public async Task<List<Testimonial>> GetActiveTestimonialsAsync()
     {
-        return await _unitOfWork.Testimonials.Query()
+        return await _db.Testimonials
             .Where(t => t.IsActive)
             .OrderByDescending(t => t.CreatedAt)
             .ToListAsync();
@@ -24,14 +24,14 @@ public class TestimonialService : ITestimonialService
 
     public async Task<Testimonial> AddTestimonialAsync(Testimonial testimonial)
     {
-        await _unitOfWork.Testimonials.AddAsync(testimonial);
-        await _unitOfWork.SaveChangesAsync();
+        await _db.Testimonials.AddAsync(testimonial);
+        await _db.SaveChangesAsync();
         return testimonial;
     }
 
     public async Task<List<Testimonial>> GetAllAsync()
     {
-        return await _unitOfWork.Testimonials.Query()
+        return await _db.Testimonials
             .OrderByDescending(t => t.CreatedAt)
             .ToListAsync();
     }
@@ -39,7 +39,7 @@ public class TestimonialService : ITestimonialService
     // Tạo đề xuất testimonial từ review tích cực (IsActive=false, chờ admin duyệt).
     public async Task<Testimonial?> SuggestFromReviewAsync(int reviewId)
     {
-        var review = await _unitOfWork.Reviews.Query()
+        var review = await _db.Reviews
             .Include(r => r.User)
             .FirstOrDefaultAsync(r => r.Id == reviewId && !r.IsDeleted && !r.IsHidden);
 
@@ -47,7 +47,7 @@ public class TestimonialService : ITestimonialService
         if (review is null || review.Rating < 4 || string.IsNullOrWhiteSpace(review.Comment))
             return null;
 
-        var sentiment = await _unitOfWork.ReviewSentiments.Query()
+        var sentiment = await _db.ReviewSentiments
             .FirstOrDefaultAsync(s => s.ReviewId == reviewId);
         if (sentiment is null
             || sentiment.Sentiment != SentimentLabel.Positive
@@ -67,29 +67,29 @@ public class TestimonialService : ITestimonialService
             CreatedAt = DateTime.UtcNow
         };
 
-        await _unitOfWork.Testimonials.AddAsync(testimonial);
-        await _unitOfWork.SaveChangesAsync();
+        await _db.Testimonials.AddAsync(testimonial);
+        await _db.SaveChangesAsync();
         return testimonial;
     }
 
     public async Task<bool> SetActiveAsync(int id, bool active)
     {
-        var testimonial = await _unitOfWork.Testimonials.GetByIdAsync(id);
+        var testimonial = await _db.Testimonials.FindAsync(id);
         if (testimonial is null) return false;
 
         testimonial.IsActive = active;
-        _unitOfWork.Testimonials.Update(testimonial);
-        await _unitOfWork.SaveChangesAsync();
+        _db.Testimonials.Update(testimonial);
+        await _db.SaveChangesAsync();
         return true;
     }
 
     public async Task<bool> DeleteAsync(int id)
     {
-        var testimonial = await _unitOfWork.Testimonials.GetByIdAsync(id);
+        var testimonial = await _db.Testimonials.FindAsync(id);
         if (testimonial is null) return false;
 
-        _unitOfWork.Testimonials.Remove(testimonial);
-        await _unitOfWork.SaveChangesAsync();
+        _db.Testimonials.Remove(testimonial);
+        await _db.SaveChangesAsync();
         return true;
     }
 }

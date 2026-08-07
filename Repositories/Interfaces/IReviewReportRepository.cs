@@ -6,7 +6,7 @@ namespace Fruitables.Repositories.Interfaces;
 /// <summary>
 /// Repository interface cho ReviewReport entity
 /// </summary>
-public interface IReviewReportRepository : IRepository<ReviewReport>
+public interface IReviewReportRepository
 {
     /// <summary>
     /// Lấy reports của review

@@ -67,7 +67,7 @@
                         <div class="col-md-6 mb-3">
                             <label for="request_Price" class="form-label">Giá gốc <span class="text-danger">*</span></label>
                             <div class="input-group">
-                                <input type="number" id="request_Price" value="@Model.Product.Price" step="0.01" class="form-control" placeholder="0" readonly />
+                                <input type="number" id="request_Price" value="@Model.Product.Price" min="1" max="99999999" step="1" class="form-control" placeholder="0" readonly />
                                 <span class="input-group-text">đ</span>
                             </div>
                             <small class="text-muted d-flex align-items-center mt-1">
@@ -346,7 +346,7 @@
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Giá <span class="text-danger">*</span></label>
-                    <input type="number" id="variantPrice" class="form-control" placeholder="0" step="0.01" />
+                    <input type="number" id="variantPrice" class="form-control" placeholder="0" min="1" max="99999999" step="1" />
                     <small class="text-muted d-flex align-items-center mt-1">
                         <i class="fas fa-eye me-1"></i>
                         <span id="variantPricePreview">0 VND</span>

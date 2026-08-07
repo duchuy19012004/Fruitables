@@ -48,7 +48,7 @@ public class ComboServiceTests
     public async Task CreateAsync_rejects_combo_with_fewer_than_two_items()
     {
         await using var context = new ApplicationDbContext(CreateOptions());
-        var service = new ComboService(new UnitOfWork(context), CreatePricing().Object);
+        var service = new ComboService(context, CreatePricing().Object);
 
         var result = await service.CreateAsync(new ComboFormViewModel
         {
@@ -65,7 +65,7 @@ public class ComboServiceTests
     public async Task CreateAsync_rejects_duplicate_product_variant_lines()
     {
         await using var context = new ApplicationDbContext(CreateOptions());
-        var service = new ComboService(new UnitOfWork(context), CreatePricing().Object);
+        var service = new ComboService(context, CreatePricing().Object);
 
         var result = await service.CreateAsync(new ComboFormViewModel
         {
@@ -100,7 +100,7 @@ public class ComboServiceTests
         });
         context.Products.AddRange(apple, orange);
         await context.SaveChangesAsync();
-        var service = new ComboService(new UnitOfWork(context), CreatePricing().Object);
+        var service = new ComboService(context, CreatePricing().Object);
 
         var result = await service.CreateAsync(new ComboFormViewModel
         {
@@ -123,7 +123,7 @@ public class ComboServiceTests
         await using var context = new ApplicationDbContext(CreateOptions());
         context.Products.AddRange(Product(1, "Táo", 10), Product(2, "Cam", 0));
         await context.SaveChangesAsync();
-        var service = new ComboService(new UnitOfWork(context), CreatePricing().Object);
+        var service = new ComboService(context, CreatePricing().Object);
 
         var result = await service.CreateAsync(new ComboFormViewModel
         {
@@ -147,7 +147,7 @@ public class ComboServiceTests
         await using var context = new ApplicationDbContext(CreateOptions());
         context.Products.AddRange(Product(1, "Táo"), Product(2, "Cam"));
         await context.SaveChangesAsync();
-        var service = new ComboService(new UnitOfWork(context), CreatePricing().Object);
+        var service = new ComboService(context, CreatePricing().Object);
 
         var result = await service.CreateAsync(new ComboFormViewModel
         {
@@ -184,7 +184,7 @@ public class ComboServiceTests
             ]
         });
         await context.SaveChangesAsync();
-        var service = new ComboService(new UnitOfWork(context), CreatePricing().Object);
+        var service = new ComboService(context, CreatePricing().Object);
 
         var result = await service.UpdateAsync(10, new ComboFormViewModel
         {
@@ -240,7 +240,7 @@ public class ComboServiceTests
             });
         await context.SaveChangesAsync();
         var pricing = CreatePricing();
-        var service = new ComboService(new UnitOfWork(context), pricing.Object);
+        var service = new ComboService(context, pricing.Object);
 
         var cards = await service.GetActiveComboCardsAsync();
 
@@ -287,7 +287,7 @@ public class CartComboAtomicityTests
         context.Products.AddRange(Product(1, 10), Product(2, 0));
         await context.SaveChangesAsync();
         var service = new CartService(
-            new UnitOfWork(context),
+            context,
             Mock.Of<ICouponService>(),
             CreatePricing().Object);
 
@@ -309,7 +309,7 @@ public class CartComboAtomicityTests
         context.Products.AddRange(Product(1, 10), Product(2, 10));
         await context.SaveChangesAsync();
         var service = new CartService(
-            new UnitOfWork(context),
+            context,
             Mock.Of<ICouponService>(),
             CreatePricing().Object);
 

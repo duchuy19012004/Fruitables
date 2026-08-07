@@ -1,6 +1,6 @@
+using Fruitables.Data;
 using Microsoft.EntityFrameworkCore;
 using Fruitables.Models;
-using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 
@@ -8,11 +8,11 @@ namespace Fruitables.Services.Analytics.Dashboard;
 
 public class DashboardService : IDashboardService
 {
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly ApplicationDbContext _db;
 
-    public DashboardService(IUnitOfWork unitOfWork)
+    public DashboardService(ApplicationDbContext db)
     {
-        _unitOfWork = unitOfWork;
+        _db = db;
     }
 
     public async Task<DashboardViewModel> GetDashboardDataAsync(
@@ -45,8 +45,8 @@ public class DashboardService : IDashboardService
             var since = DateTime.UtcNow.AddDays(-7);
 
             var rows = await (
-                from r in _unitOfWork.Reviews.Query()
-                join s in _unitOfWork.ReviewSentiments.Query() on r.Id equals s.ReviewId
+                from r in _db.Reviews
+                join s in _db.ReviewSentiments on r.Id equals s.ReviewId
                 where !r.IsDeleted && r.CreatedAt >= since
                 select new { s.Sentiment, s.NeedsManualReview, s.AlertStatus }).ToListAsync();
 
@@ -65,7 +65,7 @@ public class DashboardService : IDashboardService
             if (data.Total7d == 0)
             {
                 // Chưa có review nào phân tích — đếm số review 7 ngày chưa phân tích để gợi ý chạy backfill
-                data.Total7d = await _unitOfWork.Reviews.Query().CountAsync(r => !r.IsDeleted && r.CreatedAt >= since);
+                data.Total7d = await _db.Reviews.CountAsync(r => !r.IsDeleted && r.CreatedAt >= since);
             }
 
             return data;
@@ -79,7 +79,7 @@ public class DashboardService : IDashboardService
 
     public async Task<List<RecentOrderItem>> GetRecentOrdersAsync(int count = 5)
     {
-        var orders = await _unitOfWork.Orders.Query()
+        var orders = await _db.Orders
             .Include(o => o.User)
             .OrderByDescending(o => o.CreatedAt)
             .Take(count)
@@ -124,7 +124,7 @@ public class DashboardService : IDashboardService
         var firstDayOfMonth = new DateTime(today.Year, today.Month, 1, 0, 0, 0, DateTimeKind.Utc);
         var firstDayOfLastMonth = firstDayOfMonth.AddMonths(-1);
 
-        var query = _unitOfWork.Orders.Query()
+        var query = _db.Orders
             .Where(o => o.PaymentStatus == PaymentStatus.Paid);
 
         // Project counts and sums in a single query
@@ -168,7 +168,7 @@ public class DashboardService : IDashboardService
         var today = DateTime.UtcNow.Date;
         var tomorrow = today.AddDays(1);
 
-        var query = _unitOfWork.Orders.Query();
+        var query = _db.Orders;
 
         var stats = await query
             .GroupBy(o => 1)
@@ -199,7 +199,7 @@ public class DashboardService : IDashboardService
         // Xử lý threshold âm
         var threshold = Math.Max(0, lowStockThreshold);
 
-        var query = _unitOfWork.Products.Query();
+        var query = _db.Products;
 
         var stats = await query
             .GroupBy(p => 1)
@@ -241,7 +241,7 @@ public class DashboardService : IDashboardService
                 break;
         }
 
-        var query = _unitOfWork.Orders.Query()
+        var query = _db.Orders
             .AsNoTracking()
             .Where(o => o.PaymentStatus == PaymentStatus.Paid && o.CreatedAt >= minDate);
 

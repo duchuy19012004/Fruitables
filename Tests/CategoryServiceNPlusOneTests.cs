@@ -25,7 +25,7 @@ public class CategoryServiceNPlusOneTests
         interceptor.Register("ProductVariants");
 
         using var context = new ApplicationDbContext(options);
-        var service = new CategoryService(new UnitOfWork(context));
+        var service = new CategoryService(context);
 
         var result = await service.DeleteCategoryAsync(categoryId);
 

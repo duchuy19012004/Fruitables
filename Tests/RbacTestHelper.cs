@@ -23,7 +23,7 @@ public static class RbacTestHelper
     {
         cache ??= new MemoryCache(new MemoryCacheOptions());
         return new RbacService(
-            new UnitOfWork(context),
+            context,
             cache,
             NullLogger<RbacService>.Instance);
     }

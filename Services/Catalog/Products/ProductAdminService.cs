@@ -1,6 +1,6 @@
+using Fruitables.Data;
 using System.Text.RegularExpressions;
 using Fruitables.Models;
-using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 using Microsoft.AspNetCore.Http;
@@ -8,25 +8,26 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Fruitables.Services.Chat.Knowledge;
 using Fruitables.Services.Orders;
+using Fruitables.Services.Pricing.ProductPricing;
 
 namespace Fruitables.Services.Catalog.Products;
 
 public class ProductAdminService : IProductAdminService
 {
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly ApplicationDbContext _db;
     private readonly IImageUploadService _imageUploadService;
     private readonly IIndexingService _indexing;
     private readonly ILogger<ProductAdminService> _logger;
     private readonly IRealtimeNotifier? _notifier;
 
     public ProductAdminService(
-        IUnitOfWork unitOfWork,
+        ApplicationDbContext db,
         IImageUploadService imageUploadService,
         IIndexingService indexing,
         ILogger<ProductAdminService> logger,
         IRealtimeNotifier? notifier = null)
     {
-        _unitOfWork = unitOfWork;
+        _db = db;
         _imageUploadService = imageUploadService;
         _indexing = indexing;
         _logger = logger;
@@ -82,7 +83,7 @@ public class ProductAdminService : IProductAdminService
 
     public async Task<ProductListResult> GetProductsAsync(ProductListRequest request)
     {
-        var query = _unitOfWork.Products.Query();
+        IQueryable<Product> query = _db.Products;
 
         // Filter by deleted status
         if (!request.IncludeDeleted)
@@ -139,7 +140,7 @@ public class ProductAdminService : IProductAdminService
 
     public async Task<Product?> GetProductByIdAsync(int id)
     {
-        var product = await _unitOfWork.Products.Query()
+        var product = await _db.Products
             .Include(p => p.Category)
             .Include(p => p.Images)
             .Include(p => p.Tags)
@@ -155,8 +156,8 @@ public class ProductAdminService : IProductAdminService
         if (string.IsNullOrWhiteSpace(request.Name))
             return ProductResult.Fail(ProductErrorType.ValidationError, "Tên sản phẩm không được để trống");
 
-        if (request.Price <= 0)
-            return ProductResult.Fail(ProductErrorType.ValidationError, "Giá phải lớn hơn 0");
+        if (!VndPriceRules.IsValidPrice(request.Price))
+            return ProductResult.Fail(ProductErrorType.ValidationError, "Giá phải là số nguyên dương theo đơn vị VNĐ và không vượt quá 99.999.999đ");
         if (!IsValidStock(request.Unit, request.StockQuantity) ||
             !QuantityRules.IsValid(request.Unit, request.MinOrderQuantity, MinimumStep(request.Unit)))
             return ProductResult.Fail(ProductErrorType.ValidationError, "Số lượng sản phẩm không hợp lệ");
@@ -167,13 +168,13 @@ public class ProductAdminService : IProductAdminService
             : request.Slug;
 
         // Check duplicate slug
-        var existingProducts = await _unitOfWork.Products
-            .FindAsync(p => p.Slug == slug);
+        var existingProducts = await _db.Products
+            .Where(p => p.Slug == slug).ToListAsync();
         if (existingProducts.Any())
             return ProductResult.Fail(ProductErrorType.DuplicateSlug, $"Slug '{slug}' đã tồn tại");
 
         // Check category exists
-        var category = await _unitOfWork.Categories.GetByIdAsync(request.CategoryId);
+        var category = await _db.Categories.FindAsync(request.CategoryId);
         if (category == null)
             return ProductResult.Fail(ProductErrorType.InvalidCategory, $"Danh mục với ID {request.CategoryId} không tồn tại");
 
@@ -198,8 +199,8 @@ public class ProductAdminService : IProductAdminService
             IsDeleted = false
         };
 
-        await _unitOfWork.Products.AddAsync(product);
-        await _unitOfWork.SaveChangesAsync();
+        await _db.Products.AddAsync(product);
+        await _db.SaveChangesAsync();
 
         await TryIndexProductAsync(product.Id);
 
@@ -208,8 +209,8 @@ public class ProductAdminService : IProductAdminService
 
     public async Task<ProductResult> UpdateProductAsync(UpdateProductRequest request)
     {
-        var products = await _unitOfWork.Products
-            .FindAsync(p => p.Id == request.Id);
+        var products = await _db.Products
+            .Where(p => p.Id == request.Id).ToListAsync();
         var product = products.FirstOrDefault();
 
         if (product == null)
@@ -229,13 +230,13 @@ public class ProductAdminService : IProductAdminService
             : request.Slug;
 
         // Check duplicate slug (excluding current product)
-        var existingProducts = await _unitOfWork.Products
-            .FindAsync(p => p.Slug == slug && p.Id != request.Id);
+        var existingProducts = await _db.Products
+            .Where(p => p.Slug == slug && p.Id != request.Id).ToListAsync();
         if (existingProducts.Any())
             return ProductResult.Fail(ProductErrorType.DuplicateSlug, $"Slug '{slug}' đã tồn tại");
 
         // Check category exists
-        var category = await _unitOfWork.Categories.GetByIdAsync(request.CategoryId);
+        var category = await _db.Categories.FindAsync(request.CategoryId);
         if (category == null)
             return ProductResult.Fail(ProductErrorType.InvalidCategory, $"Danh mục với ID {request.CategoryId} không tồn tại");
 
@@ -255,11 +256,11 @@ public class ProductAdminService : IProductAdminService
         product.IsActive = request.IsActive;
         product.UpdatedAt = DateTime.UtcNow;
 
-        await _unitOfWork.SaveChangesAsync();
+        await _db.SaveChangesAsync();
 
         await TryIndexProductAsync(product.Id);
         if (_notifier != null && oldStock != product.StockQuantity &&
-            !await _unitOfWork.ProductVariants.AnyAsync(variant => variant.ProductId == product.Id && variant.IsActive))
+            !await _db.ProductVariants.AnyAsync(variant => variant.ProductId == product.Id && variant.IsActive))
             await _notifier.NotifyStockChangedAsync(product.Id, product.StockQuantity);
 
         return ProductResult.Ok(product);
@@ -267,8 +268,8 @@ public class ProductAdminService : IProductAdminService
 
     public async Task<ProductResult> SoftDeleteProductAsync(int id)
     {
-        var products = await _unitOfWork.Products
-            .FindAsync(p => p.Id == id);
+        var products = await _db.Products
+            .Where(p => p.Id == id).ToListAsync();
         var product = products.FirstOrDefault();
 
         if (product == null)
@@ -278,7 +279,7 @@ public class ProductAdminService : IProductAdminService
         product.DeletedAt = DateTime.UtcNow;
         product.UpdatedAt = DateTime.UtcNow;
 
-        await _unitOfWork.SaveChangesAsync();
+        await _db.SaveChangesAsync();
 
         await TryIndexProductAsync(product.Id);
 
@@ -287,8 +288,8 @@ public class ProductAdminService : IProductAdminService
 
     public async Task<ProductResult> RestoreProductAsync(int id)
     {
-        var products = await _unitOfWork.Products
-            .FindAsync(p => p.Id == id);
+        var products = await _db.Products
+            .Where(p => p.Id == id).ToListAsync();
         var product = products.FirstOrDefault();
 
         if (product == null)
@@ -298,7 +299,7 @@ public class ProductAdminService : IProductAdminService
         product.DeletedAt = null;
         product.UpdatedAt = DateTime.UtcNow;
 
-        await _unitOfWork.SaveChangesAsync();
+        await _db.SaveChangesAsync();
 
         await TryIndexProductAsync(product.Id);
 
@@ -307,15 +308,15 @@ public class ProductAdminService : IProductAdminService
 
     public async Task<ProductResult> HardDeleteProductAsync(int id)
     {
-        var products = await _unitOfWork.Products
-            .FindAsync(p => p.Id == id);
+        var products = await _db.Products
+            .Where(p => p.Id == id).ToListAsync();
         var product = products.FirstOrDefault();
 
         if (product == null)
             return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy sản phẩm với ID {id}");
 
         // Check if product is in any orders
-        var hasOrderItems = await _unitOfWork.OrderItems
+        var hasOrderItems = await _db.OrderItems
             .AnyAsync(oi => oi.ProductId == id);
         
         if (hasOrderItems)
@@ -323,35 +324,35 @@ public class ProductAdminService : IProductAdminService
             return ProductResult.Fail(ProductErrorType.HasOrders, 
                 "Không thể xóa vĩnh viễn sản phẩm đã có trong đơn hàng. Hãy sử dụng chức năng xóa mềm.");
         }
-        if (await _unitOfWork.PriceSchedules.AnyAsync(schedule => schedule.ProductId == id))
+        if (await _db.PriceSchedules.AnyAsync(schedule => schedule.ProductId == id))
             return ProductResult.Fail(ProductErrorType.ValidationError,
                 "Không thể xóa vĩnh viễn sản phẩm đã có lịch sử giá. Hãy sử dụng chức năng xóa mềm.");
-        if (await _unitOfWork.CartItems.AnyAsync(item => item.ProductId == id))
+        if (await _db.CartItems.AnyAsync(item => item.ProductId == id))
             return ProductResult.Fail(ProductErrorType.ValidationError,
                 "Không thể xóa vĩnh viễn sản phẩm đang nằm trong giỏ hàng. Hãy sử dụng chức năng xóa mềm.");
 
         // Delete related data
-        var images = await _unitOfWork.ProductImages
-            .FindAsync(pi => pi.ProductId == id);
+        var images = await _db.ProductImages
+            .Where(pi => pi.ProductId == id).ToListAsync();
         var imageUrls = images.Select(image => image.ImageUrl).ToList();
         foreach (var image in images)
         {
-            _unitOfWork.ProductImages.Remove(image);
+            _db.ProductImages.Remove(image);
         }
 
         // Clear tags (many-to-many relationship)
         product.Tags.Clear();
 
-        var variants = await _unitOfWork.ProductVariants
-            .FindAsync(pv => pv.ProductId == id);
+        var variants = await _db.ProductVariants
+            .Where(pv => pv.ProductId == id).ToListAsync();
         foreach (var variant in variants)
         {
-            _unitOfWork.ProductVariants.Remove(variant);
+            _db.ProductVariants.Remove(variant);
         }
 
         var productId = product.Id;
-        _unitOfWork.Products.Remove(product);
-        await _unitOfWork.SaveChangesAsync();
+        _db.Products.Remove(product);
+        await _db.SaveChangesAsync();
 
         foreach (var imageUrl in imageUrls)
         {
@@ -378,8 +379,8 @@ public class ProductAdminService : IProductAdminService
     public async Task<ProductResult> AddImagesAsync(int productId, List<IFormFile> files)
     {
         // Check product exists
-        var products = await _unitOfWork.Products
-            .FindAsync(p => p.Id == productId);
+        var products = await _db.Products
+            .Where(p => p.Id == productId).ToListAsync();
         var product = products.FirstOrDefault();
 
         if (product == null)
@@ -399,8 +400,8 @@ public class ProductAdminService : IProductAdminService
         }
 
         // Get current max sort order
-        var existingImages = await _unitOfWork.ProductImages
-            .FindAsync(pi => pi.ProductId == productId);
+        var existingImages = await _db.ProductImages
+            .Where(pi => pi.ProductId == productId).ToListAsync();
         var maxSortOrder = existingImages.Any() ? existingImages.Max(i => i.SortOrder) : -1;
 
         var uploadedUrls = new List<string>();
@@ -419,10 +420,10 @@ public class ProductAdminService : IProductAdminService
                     SortOrder = ++maxSortOrder
                 };
 
-                await _unitOfWork.ProductImages.AddAsync(productImage);
+                await _db.ProductImages.AddAsync(productImage);
             }
 
-            await _unitOfWork.SaveChangesAsync();
+            await _db.SaveChangesAsync();
         }
         catch (Exception exception)
         {
@@ -448,16 +449,16 @@ public class ProductAdminService : IProductAdminService
     public async Task<ProductResult> SetPrimaryImageAsync(int productId, int imageId)
     {
         // Check product exists
-        var products = await _unitOfWork.Products
-            .FindAsync(p => p.Id == productId);
+        var products = await _db.Products
+            .Where(p => p.Id == productId).ToListAsync();
         var product = products.FirstOrDefault();
 
         if (product == null)
             return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy sản phẩm với ID {productId}");
 
         // Get all images for this product
-        var images = await _unitOfWork.ProductImages
-            .FindAsync(pi => pi.ProductId == productId);
+        var images = await _db.ProductImages
+            .Where(pi => pi.ProductId == productId).ToListAsync();
 
         // Check if target image exists
         var targetImage = images.FirstOrDefault(i => i.Id == imageId);
@@ -473,7 +474,7 @@ public class ProductAdminService : IProductAdminService
         // Set target image as primary
         targetImage.IsPrimary = true;
 
-        await _unitOfWork.SaveChangesAsync();
+        await _db.SaveChangesAsync();
 
         return ProductResult.Ok(product);
     }
@@ -481,35 +482,35 @@ public class ProductAdminService : IProductAdminService
     public async Task<ProductResult> DeleteImageAsync(int productId, int imageId)
     {
         // Check product exists
-        var products = await _unitOfWork.Products
-            .FindAsync(p => p.Id == productId);
+        var products = await _db.Products
+            .Where(p => p.Id == productId).ToListAsync();
         var product = products.FirstOrDefault();
 
         if (product == null)
             return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy sản phẩm với ID {productId}");
 
         // Get image
-        var images = await _unitOfWork.ProductImages
-            .FindAsync(pi => pi.Id == imageId && pi.ProductId == productId);
+        var images = await _db.ProductImages
+            .Where(pi => pi.Id == imageId && pi.ProductId == productId).ToListAsync();
         var image = images.FirstOrDefault();
 
         if (image == null)
             return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy ảnh với ID {imageId}");
 
         var wasPrimary = image.IsPrimary;
-        _unitOfWork.ProductImages.Remove(image);
+        _db.ProductImages.Remove(image);
 
         if (wasPrimary)
         {
-            var replacement = (await _unitOfWork.ProductImages
-                    .FindAsync(pi => pi.ProductId == productId && pi.Id != imageId))
+            var replacement = (await _db.ProductImages
+                    .Where(pi => pi.ProductId == productId && pi.Id != imageId).ToListAsync())
                 .OrderBy(pi => pi.SortOrder)
                 .FirstOrDefault();
             if (replacement != null)
                 replacement.IsPrimary = true;
         }
 
-        await _unitOfWork.SaveChangesAsync();
+        await _db.SaveChangesAsync();
         try
         {
             await _imageUploadService.DeleteImageAsync(image.ImageUrl);
@@ -525,16 +526,16 @@ public class ProductAdminService : IProductAdminService
     public async Task<ProductResult> ReorderImagesAsync(int productId, List<int> imageIds)
     {
         // Check product exists
-        var products = await _unitOfWork.Products
-            .FindAsync(p => p.Id == productId);
+        var products = await _db.Products
+            .Where(p => p.Id == productId).ToListAsync();
         var product = products.FirstOrDefault();
 
         if (product == null)
             return ProductResult.Fail(ProductErrorType.NotFound, $"Không tìm thấy sản phẩm với ID {productId}");
 
         // Get all images for this product
-        var images = await _unitOfWork.ProductImages
-            .FindAsync(pi => pi.ProductId == productId);
+        var images = await _db.ProductImages
+            .Where(pi => pi.ProductId == productId).ToListAsync();
 
         // Update sort order based on new order
         for (int i = 0; i < imageIds.Count; i++)
@@ -546,7 +547,7 @@ public class ProductAdminService : IProductAdminService
             }
         }
 
-        await _unitOfWork.SaveChangesAsync();
+        await _db.SaveChangesAsync();
 
         return ProductResult.Ok(product);
     }
@@ -557,7 +558,7 @@ public class ProductAdminService : IProductAdminService
 
     public async Task<ProductResult> UpdateTagsAsync(int productId, List<string> tagNames)
     {
-        var product = await _unitOfWork.Products.Query()
+        var product = await _db.Products
             .Include(p => p.Tags)
             .FirstOrDefaultAsync(p => p.Id == productId);
 
@@ -579,7 +580,7 @@ public class ProductAdminService : IProductAdminService
 
         // Query all existing tags at once
         var lowercaseTagNames = tagNames.Select(t => t.ToLowerInvariant()).ToList();
-        var existingTags = await _unitOfWork.ProductTags.Query()
+        var existingTags = await _db.ProductTags
             .Where(t => lowercaseTagNames.Contains(t.Name.ToLower()))
             .ToListAsync();
 
@@ -599,7 +600,7 @@ public class ProductAdminService : IProductAdminService
                     Name = tagName,
                     Slug = GenerateSlug(tagName)
                 };
-                await _unitOfWork.ProductTags.AddAsync(tag);
+                await _db.ProductTags.AddAsync(tag);
                 existingTagsDict[key] = tag;
             }
 
@@ -607,7 +608,7 @@ public class ProductAdminService : IProductAdminService
             product.Tags.Add(tag);
         }
 
-        await _unitOfWork.SaveChangesAsync();
+        await _db.SaveChangesAsync();
 
         return ProductResult.Ok(product);
     }
@@ -620,8 +621,8 @@ public class ProductAdminService : IProductAdminService
     {
         await using var transaction = await BeginVariantWriteAsync();
         // Check product exists
-        var products = await _unitOfWork.Products
-            .FindAsync(p => p.Id == request.ProductId);
+        var products = await _db.Products
+            .Where(p => p.Id == request.ProductId).ToListAsync();
         var product = products.FirstOrDefault();
 
         if (product == null)
@@ -631,15 +632,15 @@ public class ProductAdminService : IProductAdminService
             return ProductResult.Fail(ProductErrorType.ValidationError, "Hãy hủy các lịch giá cấp sản phẩm đang chạy hoặc sắp tới trước khi kích hoạt biến thể.");
 
         // Validation
-        if (request.Price <= 0)
-            return ProductResult.Fail(ProductErrorType.ValidationError, "Giá phải lớn hơn 0");
+        if (!VndPriceRules.IsValidPrice(request.Price))
+            return ProductResult.Fail(ProductErrorType.ValidationError, "Giá phải là số nguyên dương theo đơn vị VNĐ và không vượt quá 99.999.999đ");
 
         if (!IsValidStock(product.Unit, request.StockQuantity))
             return ProductResult.Fail(ProductErrorType.ValidationError, "Số lượng tồn kho không hợp lệ");
 
         // Check duplicate SKU
-        var existingVariants = await _unitOfWork.ProductVariants
-            .FindAsync(pv => pv.SKU == request.SKU);
+        var existingVariants = await _db.ProductVariants
+            .Where(pv => pv.SKU == request.SKU).ToListAsync();
         if (existingVariants.Any())
             return ProductResult.Fail(ProductErrorType.DuplicateSKU, $"SKU '{request.SKU}' đã tồn tại");
 
@@ -653,8 +654,8 @@ public class ProductAdminService : IProductAdminService
             IsActive = request.IsActive
         };
 
-        await _unitOfWork.ProductVariants.AddAsync(variant);
-        await _unitOfWork.SaveChangesAsync();
+        await _db.ProductVariants.AddAsync(variant);
+        await _db.SaveChangesAsync();
         if (transaction != null) await transaction.CommitAsync();
         if (_notifier != null && variant.IsActive)
         {
@@ -669,8 +670,8 @@ public class ProductAdminService : IProductAdminService
     public async Task<ProductResult> UpdateVariantAsync(int variantId, UpdateVariantRequest request)
     {
         await using var transaction = await BeginVariantWriteAsync();
-        var variants = await _unitOfWork.ProductVariants
-            .FindAsync(pv => pv.Id == variantId);
+        var variants = await _db.ProductVariants
+            .Where(pv => pv.Id == variantId).ToListAsync();
         var variant = variants.FirstOrDefault();
 
         if (variant == null)
@@ -680,13 +681,13 @@ public class ProductAdminService : IProductAdminService
             return ProductResult.Fail(ProductErrorType.ValidationError, "Hãy hủy các lịch giá cấp sản phẩm đang chạy hoặc sắp tới trước khi kích hoạt biến thể.");
 
         // Validation
-        var product = await _unitOfWork.Products.GetByIdAsync(variant.ProductId);
+        var product = await _db.Products.FindAsync(variant.ProductId);
         if (product == null || !IsValidStock(product.Unit, request.StockQuantity))
             return ProductResult.Fail(ProductErrorType.ValidationError, "Số lượng tồn kho không hợp lệ");
 
         // Check duplicate SKU (excluding current variant)
-        var existingVariants = await _unitOfWork.ProductVariants
-            .FindAsync(pv => pv.SKU == request.SKU && pv.Id != variantId);
+        var existingVariants = await _db.ProductVariants
+            .Where(pv => pv.SKU == request.SKU && pv.Id != variantId).ToListAsync();
         if (existingVariants.Any())
             return ProductResult.Fail(ProductErrorType.DuplicateSKU, $"SKU '{request.SKU}' đã tồn tại");
 
@@ -705,11 +706,11 @@ public class ProductAdminService : IProductAdminService
         variant.StockQuantity = request.StockQuantity;
         variant.IsActive = request.IsActive;
 
-        await _unitOfWork.SaveChangesAsync();
+        await _db.SaveChangesAsync();
 
         // Get product for result
-        var products = await _unitOfWork.Products
-            .FindAsync(p => p.Id == variant.ProductId);
+        var products = await _db.Products
+            .Where(p => p.Id == variant.ProductId).ToListAsync();
         var refreshedProduct = products.FirstOrDefault();
         if (transaction != null) await transaction.CommitAsync();
         if (_notifier != null && refreshedProduct != null && (oldStock != variant.StockQuantity || wasActive != variant.IsActive))
@@ -727,8 +728,8 @@ public class ProductAdminService : IProductAdminService
     public async Task<ProductResult> DeleteVariantAsync(int variantId)
     {
         await using var transaction = await BeginVariantWriteAsync();
-        var variants = await _unitOfWork.ProductVariants
-            .FindAsync(pv => pv.Id == variantId);
+        var variants = await _db.ProductVariants
+            .Where(pv => pv.Id == variantId).ToListAsync();
         var variant = variants.FirstOrDefault();
 
         if (variant == null)
@@ -744,13 +745,13 @@ public class ProductAdminService : IProductAdminService
         var productId = variant.ProductId;
         var wasActive = variant.IsActive;
 
-        if (await _unitOfWork.OrderItems.AnyAsync(i => i.ProductVariantId == variantId) ||
-            await _unitOfWork.PriceSchedules.AnyAsync(schedule => schedule.ProductVariantId == variantId) ||
-            await _unitOfWork.CartItems.AnyAsync(item => item.ProductVariantId == variantId))
+        if (await _db.OrderItems.AnyAsync(i => i.ProductVariantId == variantId) ||
+            await _db.PriceSchedules.AnyAsync(schedule => schedule.ProductVariantId == variantId) ||
+            await _db.CartItems.AnyAsync(item => item.ProductVariantId == variantId))
             variant.IsActive = false;
         else
-            _unitOfWork.ProductVariants.Remove(variant);
-        await _unitOfWork.SaveChangesAsync();
+            _db.ProductVariants.Remove(variant);
+        await _db.SaveChangesAsync();
         if (transaction != null) await transaction.CommitAsync();
         await TryIndexProductAsync(productId);
         if (_notifier != null && wasActive)
@@ -760,8 +761,8 @@ public class ProductAdminService : IProductAdminService
         }
 
         // Get product for result
-        var products = await _unitOfWork.Products
-            .FindAsync(p => p.Id == productId);
+        var products = await _db.Products
+            .Where(p => p.Id == productId).ToListAsync();
         var product = products.FirstOrDefault();
 
         return product != null 
@@ -780,7 +781,7 @@ public class ProductAdminService : IProductAdminService
     private Task<bool> CanEnableVariantAsync(int productId)
     {
         var now = DateTimeOffset.UtcNow;
-        return _unitOfWork.PriceSchedules.Query().AllAsync(s =>
+        return _db.PriceSchedules.AllAsync(s =>
             s.ProductId != productId || s.ProductVariantId != null || s.IsCancelled ||
             (s.EndsAt.HasValue && s.EndsAt <= now));
     }
@@ -790,13 +791,13 @@ public class ProductAdminService : IProductAdminService
         if (!variant.IsActive)
             return null;
 
-        var activeVariantCount = await _unitOfWork.ProductVariants.Query()
+        var activeVariantCount = await _db.ProductVariants
             .CountAsync(item => item.ProductId == variant.ProductId && item.IsActive);
         if (activeVariantCount != 1)
             return null;
 
         var now = DateTimeOffset.UtcNow;
-        var hasActiveOrUpcomingVariantSchedule = await _unitOfWork.PriceSchedules.Query()
+        var hasActiveOrUpcomingVariantSchedule = await _db.PriceSchedules
             .AnyAsync(schedule =>
                 schedule.ProductId == variant.ProductId &&
                 schedule.ProductVariantId != null &&
@@ -806,7 +807,7 @@ public class ProductAdminService : IProductAdminService
         if (hasActiveOrUpcomingVariantSchedule)
             return "Hãy hủy hoặc kết thúc các lịch giá biến thể đang chạy hoặc sắp tới trước khi tắt biến thể cuối cùng.";
 
-        var product = await _unitOfWork.Products.GetByIdAsync(variant.ProductId);
+        var product = await _db.Products.FindAsync(variant.ProductId);
         if (product == null)
             return "Không tìm thấy sản phẩm chứa biến thể.";
 
@@ -819,9 +820,9 @@ public class ProductAdminService : IProductAdminService
 
     private async Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction?> BeginVariantWriteAsync()
     {
-        if ((_unitOfWork.DatabaseProviderName ?? string.Empty).Contains("InMemory", StringComparison.OrdinalIgnoreCase))
+        if ((_db.Database.ProviderName ?? string.Empty).Contains("InMemory", StringComparison.OrdinalIgnoreCase))
             return null;
-        return await _unitOfWork.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+        return await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
     }
 
     public async Task<Dictionary<int, ProductSentimentSummary>> GetSentimentSummariesAsync(IReadOnlyList<int> productIds)
@@ -830,8 +831,8 @@ public class ProductAdminService : IProductAdminService
         if (ids.Length == 0) return new Dictionary<int, ProductSentimentSummary>();
 
         var rows = await (
-            from r in _unitOfWork.Reviews.Query()
-            join s in _unitOfWork.ReviewSentiments.Query() on r.Id equals s.ReviewId
+            from r in _db.Reviews
+            join s in _db.ReviewSentiments on r.Id equals s.ReviewId
             where ids.Contains(r.ProductId) && !r.IsDeleted && !s.NeedsManualReview
             group s by r.ProductId into g
             select new

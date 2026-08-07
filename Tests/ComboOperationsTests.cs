@@ -83,8 +83,8 @@ public class ComboOperationsTests
         });
         await context.SaveChangesAsync();
 
-        var before = new ComboService(new UnitOfWork(context), Pricing().Object, new FixedTimeProvider(Now.AddSeconds(-1)));
-        var atStart = new ComboService(new UnitOfWork(context), Pricing().Object, new FixedTimeProvider(Now));
+        var before = new ComboService(context, Pricing().Object, new FixedTimeProvider(Now.AddSeconds(-1)));
+        var atStart = new ComboService(context, Pricing().Object, new FixedTimeProvider(Now));
 
         Assert.Empty(await before.GetActiveComboCardsAsync());
         Assert.Single(await atStart.GetActiveComboCardsAsync());
@@ -110,7 +110,7 @@ public class ComboOperationsTests
             ]
         });
         await context.SaveChangesAsync();
-        var service = new ComboService(new UnitOfWork(context), Pricing().Object, new FixedTimeProvider(Now));
+        var service = new ComboService(context, Pricing().Object, new FixedTimeProvider(Now));
         var model = new ComboFormViewModel
         {
             Revision = 2,
@@ -200,7 +200,7 @@ public class ComboOperationsTests
             }
         });
         await context.SaveChangesAsync();
-        var service = new ComboService(new UnitOfWork(context), Pricing().Object);
+        var service = new ComboService(context, Pricing().Object);
 
         var report = await service.GetReportAsync(new DateTime(2026, 7, 1), new DateTime(2026, 7, 31));
 

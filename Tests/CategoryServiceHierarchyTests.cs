@@ -18,7 +18,7 @@ public class CategoryServiceHierarchyTests
         await using var context = CreateContext();
         context.Categories.Add(Category(1, "Deleted", "deleted", isDeleted: true));
         await context.SaveChangesAsync();
-        var service = new CategoryService(new UnitOfWork(context));
+        var service = new CategoryService(context);
 
         var result = await service.CreateCategoryAsync(new CreateCategoryRequest
         {
@@ -40,7 +40,7 @@ public class CategoryServiceHierarchyTests
             Category(3, "Existing child", "existing-child", parentId: 2, sortOrder: 4),
             Category(4, "Moving child", "moving-child", parentId: 1, sortOrder: 1));
         await context.SaveChangesAsync();
-        var service = new CategoryService(new UnitOfWork(context));
+        var service = new CategoryService(context);
 
         var result = await service.UpdateCategoryAsync(4, new UpdateCategoryRequest
         {
@@ -63,7 +63,7 @@ public class CategoryServiceHierarchyTests
             Category(1, "Parent", "parent"),
             Category(2, "Child", "child", parentId: 1));
         await context.SaveChangesAsync();
-        var service = new CategoryService(new UnitOfWork(context));
+        var service = new CategoryService(context);
 
         var result = await service.SoftDeleteCategoryAsync(1);
 
@@ -80,7 +80,7 @@ public class CategoryServiceHierarchyTests
             Category(1, "Parent", "parent", isDeleted: true),
             Category(2, "Child", "child", parentId: 1, isDeleted: true));
         await context.SaveChangesAsync();
-        var service = new CategoryService(new UnitOfWork(context));
+        var service = new CategoryService(context);
 
         var result = await service.RestoreCategoryAsync(2);
 
@@ -97,7 +97,7 @@ public class CategoryServiceHierarchyTests
             Category(1, "Parent", "parent"),
             Category(2, "Child", "child", parentId: 1));
         await context.SaveChangesAsync();
-        var service = new CategoryService(new UnitOfWork(context));
+        var service = new CategoryService(context);
 
         var result = await service.MoveCategoryAsync(1, 2);
 
@@ -114,7 +114,7 @@ public class CategoryServiceHierarchyTests
             Category(1, "First", "first", sortOrder: 1),
             Category(2, "Second", "second", sortOrder: 2));
         await context.SaveChangesAsync();
-        var service = new CategoryService(new UnitOfWork(context));
+        var service = new CategoryService(context);
 
         var result = await service.ReorderCategoriesAsync(null, new List<int> { 2, 1 });
 

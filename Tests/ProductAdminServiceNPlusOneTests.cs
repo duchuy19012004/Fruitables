@@ -30,10 +30,9 @@ public class ProductAdminServiceNPlusOneTests
         var allTagNames = existingNames.Concat(newNames).ToList();
 
         using var context = new ApplicationDbContext(options);
-        var unitOfWork = new UnitOfWork(context);
         var imageMock = new Mock<IImageUploadService>();
         var service = new ProductAdminService(
-            unitOfWork,
+            context,
             imageMock.Object,
             Mock.Of<IIndexingService>(),
             Microsoft.Extensions.Logging.Abstractions.NullLogger<ProductAdminService>.Instance);

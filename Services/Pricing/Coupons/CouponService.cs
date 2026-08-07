@@ -1,6 +1,6 @@
+using Fruitables.Data;
 using Microsoft.EntityFrameworkCore;
 using Fruitables.Models;
-using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 
@@ -8,29 +8,29 @@ namespace Fruitables.Services.Pricing.Coupons;
 
 public class CouponService : ICouponService
 {
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly ApplicationDbContext _db;
 
-    public CouponService(IUnitOfWork unitOfWork)
+    public CouponService(ApplicationDbContext db)
     {
-        _unitOfWork = unitOfWork;
+        _db = db;
     }
 
     public async Task<List<Coupon>> GetAllAsync()
     {
-        return await _unitOfWork.Coupons.Query()
+        return await _db.Coupons
             .OrderByDescending(c => c.Id)
             .ToListAsync();
     }
 
     public async Task<Coupon?> GetByIdAsync(int id)
     {
-        return await _unitOfWork.Coupons.GetByIdAsync(id);
+        return await _db.Coupons.FindAsync(id);
     }
 
     public async Task<(bool Success, string? Error)> CreateAsync(CreateCouponRequest request)
     {
         var codeUpper = request.Code.ToUpper();
-        var exists = await _unitOfWork.Coupons.Query()
+        var exists = await _db.Coupons
             .AnyAsync(c => c.Code == codeUpper);
         if (exists)
             return (false, $"Mã giảm giá '{codeUpper}' đã tồn tại");
@@ -53,19 +53,19 @@ public class CouponService : ICouponService
             IsActive       = request.IsActive
         };
 
-        await _unitOfWork.Coupons.AddAsync(coupon);
-        await _unitOfWork.SaveChangesAsync();
+        await _db.Coupons.AddAsync(coupon);
+        await _db.SaveChangesAsync();
         return (true, null);
     }
 
     public async Task<(bool Success, string? Error)> UpdateAsync(int id, UpdateCouponRequest request)
     {
-        var coupon = await _unitOfWork.Coupons.GetByIdAsync(id);
+        var coupon = await _db.Coupons.FindAsync(id);
         if (coupon == null)
             return (false, "Không tìm thấy mã giảm giá");
 
         var codeUpper = request.Code.ToUpper();
-        var exists = await _unitOfWork.Coupons.Query()
+        var exists = await _db.Coupons
             .AnyAsync(c => c.Code == codeUpper && c.Id != id);
         if (exists)
             return (false, $"Mã giảm giá '{codeUpper}' đã tồn tại");
@@ -85,18 +85,18 @@ public class CouponService : ICouponService
         coupon.EndDate        = request.EndDate;
         coupon.IsActive       = request.IsActive;
 
-        await _unitOfWork.SaveChangesAsync();
+        await _db.SaveChangesAsync();
         return (true, null);
     }
 
     public async Task<(bool Success, string? Error)> DeleteAsync(int id)
     {
-        var coupon = await _unitOfWork.Coupons.GetByIdAsync(id);
+        var coupon = await _db.Coupons.FindAsync(id);
         if (coupon == null)
             return (false, "Không tìm thấy mã giảm giá");
 
-        _unitOfWork.Coupons.Remove(coupon);
-        await _unitOfWork.SaveChangesAsync();
+        _db.Coupons.Remove(coupon);
+        await _db.SaveChangesAsync();
         return (true, null);
     }
 
@@ -104,7 +104,7 @@ public class CouponService : ICouponService
     {
         var codeUpper = code.Trim().ToUpper();
 
-        var coupon = await _unitOfWork.Coupons.Query()
+        var coupon = await _db.Coupons
             .FirstOrDefaultAsync(c => c.Code == codeUpper);
 
         if (coupon == null)
@@ -155,7 +155,7 @@ public class CouponService : ICouponService
     {
         var now = DateTime.UtcNow.AddHours(7);
 
-        var coupons = await _unitOfWork.Coupons.Query()
+        var coupons = await _db.Coupons
             .Where(c => c.IsActive
                 && (c.StartDate == null || c.StartDate <= now)
                 && (c.EndDate == null || c.EndDate >= now)

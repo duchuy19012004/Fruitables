@@ -396,19 +396,25 @@ public sealed class SentimentAnalysisService : ISentimentAnalysisService
         return chunks.Count;
     }
 
-    public async Task<SentimentDashboardData> GetDashboardAsync(CancellationToken ct = default)
+    public async Task<SentimentDashboardData> GetDashboardAsync(DateTime? from = null, DateTime? to = null, CancellationToken ct = default)
     {
-        var since = DateTime.UtcNow.Date.AddDays(-13);
+        var today = DateTime.UtcNow.Date;
+        var rangeTo = (to ?? today).Date;
+        var rangeFrom = (from ?? rangeTo.AddDays(-13)).Date;
+        rangeTo = rangeTo > today ? today : rangeTo;
+        if (rangeFrom > rangeTo) rangeFrom = rangeTo;
+        var rangeToExclusive = rangeTo.AddDays(1);
 
-        // Quy tắc eligibility nhất quán cho KPI vận hành: review không bị xóa, không bị ẩn,
-        // không chờ duyệt tay và không Failed.
+        // Quy tắc eligibility nhất quán cho KPI: review không bị xóa, không bị ẩn,
+        // không chờ duyệt tay và không Failed; các KPI/insight dùng khoảng đã chọn.
         var baseQuery =
             from r in _db.Reviews
             join s in _db.ReviewSentiments on r.Id equals s.ReviewId
             where !r.IsDeleted && !r.IsHidden
             select new { r, s };
 
-        var eligibleQuery = baseQuery.Where(x => !x.s.NeedsManualReview && x.s.Sentiment != SentimentLabel.Failed);
+        var scopedQuery = baseQuery.Where(x => x.r.CreatedAt >= rangeFrom && x.r.CreatedAt < rangeToExclusive);
+        var eligibleQuery = scopedQuery.Where(x => !x.s.NeedsManualReview && x.s.Sentiment != SentimentLabel.Failed);
 
         // Phân bố cảm xúc tính phía server (không tải toàn bộ lịch sử vào RAM rồi đếm).
         var distribution = await eligibleQuery
@@ -427,7 +433,8 @@ public sealed class SentimentAnalysisService : ISentimentAnalysisService
             PositiveCount = positiveCount,
             NeutralCount = neutralCount,
             NegativeCount = negativeCount,
-            FailedCount = await baseQuery.CountAsync(x => x.s.Sentiment == SentimentLabel.Failed, ct),
+            FailedCount = await scopedQuery.CountAsync(x => x.s.Sentiment == SentimentLabel.Failed, ct),
+            // Hàng đợi vận hành luôn hiển thị toàn bộ việc chưa xử lý, không bị ẩn bởi bộ lọc ngày.
             PendingAlertCount = await baseQuery.CountAsync(x => x.s.AlertStatus == SentimentAlertStatus.Pending, ct),
             PendingReviewCount = await baseQuery.CountAsync(x => x.s.NeedsManualReview, ct),
             ConflictCount = await baseQuery.CountAsync(x => x.s.HasRatingCommentConflict, ct),
@@ -436,26 +443,23 @@ public sealed class SentimentAnalysisService : ISentimentAnalysisService
         };
         data.NegativeRate = data.TotalAnalyzed == 0 ? 0 : (float)Math.Round(data.NegativeCount * 100f / data.TotalAnalyzed, 1);
 
-        // Xu hướng 14 ngày: lọc cửa sổ 14 ngày phía server rồi mới group trong memory,
-        // thay vì materialize toàn bộ lịch sử.
+        // Xu hướng dùng đúng khoảng ngày đã chọn; chỉ materialize dữ liệu trong cửa sổ này.
         var trendRows = await eligibleQuery
-            .Where(x => x.r.CreatedAt >= since)
             .Select(x => new { x.r.CreatedAt, x.s.Sentiment })
             .ToListAsync(ct);
 
         var days = new List<SentimentTrendPoint>();
-        for (var d = 0; d <= 13; d++)
+        for (var date = rangeFrom; date <= rangeTo; date = date.AddDays(1))
         {
-            var date = DateTime.UtcNow.Date.AddDays(-d);
+            var currentDate = date;
             days.Add(new SentimentTrendPoint
             {
-                Date = date.ToString("dd/MM"),
-                Positive = trendRows.Count(x => x.CreatedAt.Date == date && x.Sentiment == SentimentLabel.Positive),
-                Neutral = trendRows.Count(x => x.CreatedAt.Date == date && x.Sentiment == SentimentLabel.Neutral),
-                Negative = trendRows.Count(x => x.CreatedAt.Date == date && x.Sentiment == SentimentLabel.Negative)
+                Date = currentDate.ToString("dd/MM"),
+                Positive = trendRows.Count(x => x.CreatedAt.Date == currentDate && x.Sentiment == SentimentLabel.Positive),
+                Neutral = trendRows.Count(x => x.CreatedAt.Date == currentDate && x.Sentiment == SentimentLabel.Neutral),
+                Negative = trendRows.Count(x => x.CreatedAt.Date == currentDate && x.Sentiment == SentimentLabel.Negative)
             });
         }
-        days.Reverse();
         data.Trend = days;
 
         // Top khía cạnh bị chê (aspect negative) — join sang Review để loại review ẩn/xóa nhất quán.
@@ -463,7 +467,9 @@ public sealed class SentimentAnalysisService : ISentimentAnalysisService
             from a in _db.ReviewSentimentAspects
             join s in _db.ReviewSentiments on a.ReviewSentimentId equals s.Id
             join r in _db.Reviews on s.ReviewId equals r.Id
-            where !r.IsDeleted && !r.IsHidden && !s.NeedsManualReview && a.Sentiment == SentimentLabel.Negative
+            where !r.IsDeleted && !r.IsHidden
+                && r.CreatedAt >= rangeFrom && r.CreatedAt < rangeToExclusive
+                && !s.NeedsManualReview && a.Sentiment == SentimentLabel.Negative
             group a by a.Aspect into g
             select new AspectCount { Aspect = g.Key.ToString(), Count = g.Count() })
             .OrderByDescending(a => a.Count)
@@ -474,7 +480,9 @@ public sealed class SentimentAnalysisService : ISentimentAnalysisService
         data.TopNegativeProducts = await (
             from r in _db.Reviews
             join s in _db.ReviewSentiments on r.Id equals s.ReviewId
-            where !r.IsDeleted && !r.IsHidden && !s.NeedsManualReview
+            where !r.IsDeleted && !r.IsHidden
+                && r.CreatedAt >= rangeFrom && r.CreatedAt < rangeToExclusive
+                && !s.NeedsManualReview
             group new { r, s } by new { r.ProductId, r.Product.Name } into g
             select new ProductSentiment
             {

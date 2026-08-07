@@ -32,11 +32,19 @@ public class SentimentController : Controller
 
     // Dashboard phân tích cảm xúc
     [HttpGet]
-    public async Task<IActionResult> Index()
+    public async Task<IActionResult> Index(DateTime? from, DateTime? to)
     {
+        var today = DateTime.UtcNow.Date;
+        var rangeTo = (to ?? today).Date;
+        rangeTo = rangeTo > today ? today : rangeTo;
+        var rangeFrom = (from ?? rangeTo.AddDays(-13)).Date;
+        if (rangeFrom > rangeTo) rangeFrom = rangeTo;
+        ViewBag.DashboardFrom = rangeFrom;
+        ViewBag.DashboardTo = rangeTo;
+
         try
         {
-            var data = await _sentimentService.GetDashboardAsync();
+            var data = await _sentimentService.GetDashboardAsync(rangeFrom, rangeTo);
             var alerts = await _sentimentService.GetReviewsAsync(new SentimentReviewFilter { AlertOnly = true, PageSize = 20 });
             ViewBag.PendingAlerts = alerts.Items;
             return View(data);

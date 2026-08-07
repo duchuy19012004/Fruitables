@@ -1,6 +1,6 @@
+using Fruitables.Data;
 using Microsoft.EntityFrameworkCore;
 using Fruitables.Models;
-using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 using Fruitables.Services.Pricing.ProductPricing;
@@ -9,14 +9,14 @@ namespace Fruitables.Services.Catalog.Products;
 
 public class ProductService : IProductService
 {
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly ApplicationDbContext _db;
     private readonly TimeProvider _timeProvider;
     private readonly IProductPricingService _pricing;
 
-    public ProductService(IUnitOfWork unitOfWork, TimeProvider timeProvider,
+    public ProductService(ApplicationDbContext db, TimeProvider timeProvider,
         IProductPricingService pricing)
     {
-        _unitOfWork = unitOfWork;
+        _db = db;
         _timeProvider = timeProvider;
         _pricing = pricing;
     }
@@ -81,7 +81,7 @@ public class ProductService : IProductService
     {
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 60);
-        var catalogQuery = _unitOfWork.Products.Query().AsNoTracking().Where(p => p.IsActive && !p.IsDeleted);
+        var catalogQuery = _db.Products.AsNoTracking().Where(p => p.IsActive && !p.IsDeleted);
 
         // Filter by category
         if (categoryId.HasValue)
@@ -91,24 +91,49 @@ public class ProductService : IProductService
         if (!string.IsNullOrEmpty(search))
             catalogQuery = catalogQuery.Where(p => p.Name.Contains(search) || p.Description!.Contains(search));
 
-        var priced = _pricing.ProjectCatalogPrices(catalogQuery);
-        if (minPrice.HasValue) priced = priced.Where(p => p.MaxPrice >= minPrice.Value);
-        if (maxPrice.HasValue) priced = priced.Where(p => p.MinPrice <= maxPrice.Value);
-        priced = sortBy switch
+        var canPageBeforePricing = !minPrice.HasValue && !maxPrice.HasValue &&
+            sortBy is not "price_asc" and not "price_desc";
+        int totalItems;
+        int totalPages;
+        List<ProductPriceProjection> pagePrices;
+
+        if (canPageBeforePricing)
         {
-            "price_asc" => priced.OrderBy(p => p.MinPrice),
-            "price_desc" => priced.OrderByDescending(p => p.MaxPrice),
-            "name" => priced.OrderBy(p => p.Name),
-            "newest" => priced.OrderByDescending(p => p.CreatedAt),
-            _ => priced.OrderByDescending(p => p.IsFeatured).ThenByDescending(p => p.CreatedAt)
-        };
-        var totalItems = priced.Count();
-        var totalPages = (int)Math.Ceiling(totalItems / (double)pageSize);
-        if (totalPages > 0) page = Math.Min(page, totalPages);
-        var pagePrices = priced
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToList();
+            totalItems = await catalogQuery.CountAsync();
+            totalPages = (int)Math.Ceiling(totalItems / (double)pageSize);
+            if (totalPages > 0) page = Math.Min(page, totalPages);
+
+            var orderedCatalog = sortBy switch
+            {
+                "name" => catalogQuery.OrderBy(p => p.Name),
+                "newest" => catalogQuery.OrderByDescending(p => p.CreatedAt),
+                _ => catalogQuery.OrderByDescending(p => p.IsFeatured).ThenByDescending(p => p.CreatedAt)
+            };
+            pagePrices = _pricing.ProjectCatalogPrices(
+                    orderedCatalog.Skip((page - 1) * pageSize).Take(pageSize))
+                .ToList();
+        }
+        else
+        {
+            IEnumerable<ProductPriceProjection> priced = _pricing.ProjectCatalogPrices(catalogQuery).ToList();
+            if (minPrice.HasValue) priced = priced.Where(p => p.MaxPrice >= minPrice.Value);
+            if (maxPrice.HasValue) priced = priced.Where(p => p.MinPrice <= maxPrice.Value);
+            priced = sortBy switch
+            {
+                "price_asc" => priced.OrderBy(p => p.MinPrice),
+                "price_desc" => priced.OrderByDescending(p => p.MaxPrice),
+                "name" => priced.OrderBy(p => p.Name),
+                "newest" => priced.OrderByDescending(p => p.CreatedAt),
+                _ => priced.OrderByDescending(p => p.IsFeatured).ThenByDescending(p => p.CreatedAt)
+            };
+            totalItems = priced.Count();
+            totalPages = (int)Math.Ceiling(totalItems / (double)pageSize);
+            if (totalPages > 0) page = Math.Min(page, totalPages);
+            pagePrices = priced
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToList();
+        }
         var pageIds = pagePrices.Select(p => p.ProductId).ToList();
         var loaded = await PricedQuery().Where(p => pageIds.Contains(p.Id))
             .Include(p => p.Category).Include(p => p.Images).ToListAsync();
@@ -116,7 +141,7 @@ public class ProductService : IProductService
         var productsById = loaded.ToDictionary(p => p.Id);
         var products = pageIds.Where(productsById.ContainsKey).Select(id => productsById[id]).ToList();
 
-        var categories = await _unitOfWork.Categories.Query()
+        var categories = await _db.Categories
             .Include(c => c.Products.Where(p => p.IsActive))
             .ToListAsync();
 
@@ -138,7 +163,7 @@ public class ProductService : IProductService
 
     public async Task<List<Product>> GetRelatedProductsAsync(int productId, int count = 4)
     {
-        var product = await _unitOfWork.Products.GetByIdAsync(productId);
+        var product = await _db.Products.FindAsync(productId);
         if (product == null) return new List<Product>();
 
         var related = await PricedQuery()
@@ -150,7 +175,7 @@ public class ProductService : IProductService
         return related;
     }
 
-    private IQueryable<Product> PricedQuery() => _unitOfWork.Products.Query().AsNoTracking()
+    private IQueryable<Product> PricedQuery() => _db.Products.AsNoTracking()
         .Include(p => p.Variants.Where(v => v.IsActive)).ThenInclude(v => v.PriceSchedules)
         .Include(p => p.PriceSchedules);
 

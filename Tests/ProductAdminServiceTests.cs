@@ -52,10 +52,9 @@ namespace Fruitables.Tests
             context.Products.Add(product);
             await context.SaveChangesAsync();
 
-            var unitOfWork = new UnitOfWork(context);
-            var imageMock = new Mock<IImageUploadService>();
+                var imageMock = new Mock<IImageUploadService>();
             var service = new ProductAdminService(
-                unitOfWork,
+                context,
                 imageMock.Object,
                 Mock.Of<IIndexingService>(),
                 Microsoft.Extensions.Logging.Abstractions.NullLogger<ProductAdminService>.Instance);
@@ -93,8 +92,57 @@ namespace Fruitables.Tests
                 .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
 
         private static ProductAdminService CreateService(ApplicationDbContext context) =>
-            new(new UnitOfWork(context), Mock.Of<IImageUploadService>(), Mock.Of<IIndexingService>(),
+            new(context, Mock.Of<IImageUploadService>(), Mock.Of<IIndexingService>(),
                 Microsoft.Extensions.Logging.Abstractions.NullLogger<ProductAdminService>.Instance);
+
+        [Theory]
+        [InlineData(100_000.5)]
+        [InlineData(100_000_000)]
+        public async Task CreateProduct_rejects_non_integer_or_out_of_range_vnd_price(decimal price)
+        {
+            await using var context = new ApplicationDbContext(CreateNewContextOptions());
+            context.Categories.Add(new Category { Id = 1, Name = "Fruit", Slug = $"fruit-{price}" });
+            await context.SaveChangesAsync();
+
+            var result = await CreateService(context).CreateProductAsync(new CreateProductRequest
+            {
+                Name = "Táo kiểm tra",
+                Slug = $"tao-kiem-tra-{price}",
+                CategoryId = 1,
+                Price = price
+            });
+
+            Assert.False(result.Success);
+            Assert.Contains("giá", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Theory]
+        [InlineData(100_000.5)]
+        [InlineData(100_000_000)]
+        public async Task AddVariant_rejects_non_integer_or_out_of_range_vnd_price(decimal price)
+        {
+            await using var context = new ApplicationDbContext(CreateNewContextOptions());
+            context.Products.Add(new Product
+            {
+                Id = 1,
+                Name = "Táo kiểm tra",
+                Slug = $"tao-variant-{price}",
+                Price = 100_000,
+                CategoryId = 1
+            });
+            await context.SaveChangesAsync();
+
+            var result = await CreateService(context).AddVariantAsync(new CreateVariantRequest
+            {
+                ProductId = 1,
+                SKU = $"TAO-{price}",
+                Name = "Hộp kiểm tra",
+                Price = price
+            });
+
+            Assert.False(result.Success);
+            Assert.Contains("giá", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        }
 
         [Fact]
         public async Task UpdateVariant_last_active_variant_with_future_schedule_is_rejected()

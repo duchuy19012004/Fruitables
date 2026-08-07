@@ -34,4 +34,19 @@ public class PriceControllerTests
         Assert.IsType<UnauthorizedResult>(result);
         service.VerifyNoOtherCalls();
     }
+
+    [Fact]
+    public void Schedule_form_contains_antiforgery_token()
+    {
+        var root = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory, "..", "..", "..", ".."));
+        var source = File.ReadAllText(Path.Combine(
+            root, "Areas", "Admin", "Views", "Price", "_ScheduleModals.cshtml"));
+
+        var formStart = source.IndexOf("id=\"scheduleForm\"", StringComparison.Ordinal);
+        var formEnd = source.IndexOf("</form>", formStart, StringComparison.Ordinal);
+
+        Assert.True(formStart >= 0 && formEnd > formStart);
+        Assert.Contains("@Html.AntiForgeryToken()", source[formStart..formEnd]);
+    }
 }

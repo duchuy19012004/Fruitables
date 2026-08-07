@@ -181,7 +181,7 @@ public sealed class ProductImagePipelineTests : IDisposable
     private static ProductAdminService CreateProductAdminService(
         ApplicationDbContext context,
         IImageUploadService imageUploadService) => new(
-            new UnitOfWork(context),
+            context,
             imageUploadService,
             Mock.Of<IIndexingService>(),
             NullLogger<ProductAdminService>.Instance);

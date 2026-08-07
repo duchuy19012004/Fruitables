@@ -1,40 +1,40 @@
 using System.Text.RegularExpressions;
+using Fruitables.Data;
 using Microsoft.EntityFrameworkCore;
 using Fruitables.Models;
-using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Communications;
 
 namespace Fruitables.Services.Catalog.Categories;
 
 public class CategoryService : ICategoryService
 {
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly ApplicationDbContext _db;
 
-    public CategoryService(IUnitOfWork unitOfWork)
+    public CategoryService(ApplicationDbContext db)
     {
-        _unitOfWork = unitOfWork;
+        _db = db;
     }
 
     #region Existing Methods
 
     public async Task<List<Category>> GetAllCategoriesAsync()
     {
-        return await _unitOfWork.Categories.GetAllWithProductsAsync();
+        return await _db.Categories.Include(c => c.Products).ToListAsync();
     }
 
     public async Task<Category?> GetCategoryByIdAsync(int id)
     {
-        return await _unitOfWork.Categories.GetByIdWithAllAsync(id);
+        return await _db.Categories.Include(c => c.Children).Include(c => c.Products).FirstOrDefaultAsync(c => c.Id == id);
     }
 
     public async Task<Category?> GetCategoryBySlugAsync(string slug)
     {
-        return await _unitOfWork.Categories.GetBySlugAsync(slug);
+        return await _db.Categories.Include(c => c.Products).FirstOrDefaultAsync(c => c.Slug == slug);
     }
 
     public async Task<List<Category>> GetParentCategoriesAsync()
     {
-        return await _unitOfWork.Categories.GetRootCategoriesAsync();
+        return await _db.Categories.Where(c => c.ParentId == null && !c.IsDeleted).Include(c => c.Children).OrderBy(c => c.SortOrder).ToListAsync();
     }
 
     #endregion
@@ -69,7 +69,7 @@ public class CategoryService : ICategoryService
         if (categoryId == potentialAncestorId)
             return false;
 
-        var category = await _unitOfWork.Categories.GetByIdAsync(categoryId);
+        var category = await _db.Categories.FindAsync(categoryId);
         if (category == null)
             return false;
 
@@ -85,7 +85,7 @@ public class CategoryService : ICategoryService
                 break;
 
             visited.Add(currentParentId.Value);
-            var parent = await _unitOfWork.Categories.GetByIdAsync(currentParentId.Value);
+            var parent = await _db.Categories.FindAsync(currentParentId.Value);
             currentParentId = parent?.ParentId;
         }
 
@@ -105,17 +105,17 @@ public class CategoryService : ICategoryService
             ? GenerateSlug(request.Name) 
             : request.Slug;
 
-        if (await _unitOfWork.Categories.SlugExistsAsync(slug))
+        if (await _db.Categories.AnyAsync(c => c.Slug == slug))
             return CategoryResult.Fail(CategoryErrorType.DuplicateSlug, $"Slug '{slug}' đã tồn tại");
 
         if (request.ParentId.HasValue)
         {
-            var parent = await _unitOfWork.Categories.GetByIdAsync(request.ParentId.Value);
+            var parent = await _db.Categories.FindAsync(request.ParentId.Value);
             if (parent == null || parent.IsDeleted)
                 return CategoryResult.Fail(CategoryErrorType.InvalidParent, $"Danh mục cha với ID {request.ParentId} không tồn tại hoặc đã bị xóa");
         }
 
-        var sortOrder = await _unitOfWork.Categories.GetMaxSortOrderAsync(request.ParentId) + 1;
+        var sortOrder = (await _db.Categories.Where(c => c.ParentId == request.ParentId).MaxAsync(c => (int?)c.SortOrder) ?? 0) + 1;
 
         var category = new Category
         {
@@ -130,15 +130,15 @@ public class CategoryService : ICategoryService
             UpdatedAt = DateTime.UtcNow
         };
 
-        await _unitOfWork.Categories.AddAsync(category);
-        await _unitOfWork.SaveChangesAsync();
+        await _db.Categories.AddAsync(category);
+        await _db.SaveChangesAsync();
 
         return CategoryResult.Ok(category);
     }
 
     public async Task<CategoryResult> UpdateCategoryAsync(int id, UpdateCategoryRequest request)
     {
-        var category = await _unitOfWork.Categories.GetByIdWithChildrenAsync(id);
+        var category = await _db.Categories.Include(c => c.Children).FirstOrDefaultAsync(c => c.Id == id);
 
         if (category == null)
             return CategoryResult.Fail(CategoryErrorType.NotFound, $"Không tìm thấy danh mục với ID {id}");
@@ -150,7 +150,7 @@ public class CategoryService : ICategoryService
             ? GenerateSlug(request.Name) 
             : request.Slug;
 
-        if (await _unitOfWork.Categories.SlugExistsAsync(slug, id))
+        if (await _db.Categories.AnyAsync(c => c.Slug == slug && c.Id != id))
             return CategoryResult.Fail(CategoryErrorType.DuplicateSlug, $"Slug '{slug}' đã tồn tại");
 
         if (request.ParentId != category.ParentId && request.ParentId.HasValue)
@@ -161,13 +161,13 @@ public class CategoryService : ICategoryService
             if (await IsDescendantOfAsync(request.ParentId.Value, id))
                 return CategoryResult.Fail(CategoryErrorType.CircularReference, "Không thể di chuyển danh mục vào danh mục con của nó");
 
-            var newParent = await _unitOfWork.Categories.GetByIdAsync(request.ParentId.Value);
+            var newParent = await _db.Categories.FindAsync(request.ParentId.Value);
             if (newParent == null || newParent.IsDeleted)
                 return CategoryResult.Fail(CategoryErrorType.InvalidParent, $"Danh mục cha với ID {request.ParentId} không tồn tại hoặc đã bị xóa");
         }
 
         if (request.ParentId != category.ParentId)
-            category.SortOrder = await _unitOfWork.Categories.GetMaxSortOrderAsync(request.ParentId) + 1;
+            category.SortOrder = (await _db.Categories.Where(c => c.ParentId == request.ParentId).MaxAsync(c => (int?)c.SortOrder) ?? 0) + 1;
 
         category.Name = request.Name.Trim();
         category.Slug = slug;
@@ -177,14 +177,14 @@ public class CategoryService : ICategoryService
         category.IsActive = request.IsActive;
         category.UpdatedAt = DateTime.UtcNow;
 
-        await _unitOfWork.SaveChangesAsync();
+        await _db.SaveChangesAsync();
 
         return CategoryResult.Ok(category);
     }
 
     public async Task<CategoryResult> DeleteCategoryAsync(int id)
     {
-        var category = await _unitOfWork.Categories.GetByIdWithAllAsync(id);
+        var category = await _db.Categories.Include(c => c.Children).Include(c => c.Products).FirstOrDefaultAsync(c => c.Id == id);
 
         if (category == null)
             return CategoryResult.Fail(CategoryErrorType.NotFound, $"Không tìm thấy danh mục với ID {id}");
@@ -196,7 +196,7 @@ public class CategoryService : ICategoryService
         if (category.Products.Any())
         {
             var productIds = category.Products.Select(p => p.Id).ToList();
-            var hasOrderItems = await _unitOfWork.OrderItems
+            var hasOrderItems = await _db.OrderItems
                 .AnyAsync(oi => productIds.Contains(oi.ProductId));
             
             if (hasOrderItems)
@@ -207,16 +207,16 @@ public class CategoryService : ICategoryService
 
             // Delete all products in this category (they have no orders)
             // Delete product images
-            var images = await _unitOfWork.ProductImages.Query()
+            var images = await _db.ProductImages
                 .Where(pi => productIds.Contains(pi.ProductId))
                 .ToListAsync();
-            _unitOfWork.ProductImages.RemoveRange(images);
+            _db.ProductImages.RemoveRange(images);
 
             // Delete product variants
-            var variants = await _unitOfWork.ProductVariants.Query()
+            var variants = await _db.ProductVariants
                 .Where(pv => productIds.Contains(pv.ProductId))
                 .ToListAsync();
-            _unitOfWork.ProductVariants.RemoveRange(variants);
+            _db.ProductVariants.RemoveRange(variants);
 
             foreach (var product in category.Products.ToList())
             {
@@ -224,12 +224,12 @@ public class CategoryService : ICategoryService
                 product.Tags.Clear();
 
                 // Delete product
-                _unitOfWork.Products.Remove(product);
+                _db.Products.Remove(product);
             }
         }
 
-        _unitOfWork.Categories.Remove(category);
-        await _unitOfWork.SaveChangesAsync();
+        _db.Categories.Remove(category);
+        await _db.SaveChangesAsync();
 
         return CategoryResult.Ok(category);
     }
@@ -240,7 +240,7 @@ public class CategoryService : ICategoryService
 
     public async Task<List<CategoryTreeNode>> GetCategoryTreeAsync()
     {
-        var categories = await _unitOfWork.Categories.GetAllWithProductsAsync();
+        var categories = await _db.Categories.Include(c => c.Products).ToListAsync();
         return BuildTree(categories, null, 0);
     }
 
@@ -268,7 +268,7 @@ public class CategoryService : ICategoryService
 
     public async Task<CategoryResult> MoveCategoryAsync(int categoryId, int? newParentId)
     {
-        var category = await _unitOfWork.Categories.GetByIdAsync(categoryId);
+        var category = await _db.Categories.FindAsync(categoryId);
         if (category == null)
             return CategoryResult.Fail(CategoryErrorType.NotFound, $"Không tìm thấy danh mục với ID {categoryId}");
 
@@ -280,16 +280,16 @@ public class CategoryService : ICategoryService
 
         if (newParentId.HasValue)
         {
-            var newParent = await _unitOfWork.Categories.GetByIdAsync(newParentId.Value);
+            var newParent = await _db.Categories.FindAsync(newParentId.Value);
             if (newParent == null || newParent.IsDeleted)
                 return CategoryResult.Fail(CategoryErrorType.InvalidParent, $"Danh mục cha với ID {newParentId} không tồn tại hoặc đã bị xóa");
         }
 
         category.ParentId = newParentId;
-        category.SortOrder = await _unitOfWork.Categories.GetMaxSortOrderAsync(newParentId) + 1;
+        category.SortOrder = (await _db.Categories.Where(c => c.ParentId == newParentId).MaxAsync(c => (int?)c.SortOrder) ?? 0) + 1;
         category.UpdatedAt = DateTime.UtcNow;
 
-        await _unitOfWork.SaveChangesAsync();
+        await _db.SaveChangesAsync();
 
         return CategoryResult.Ok(category);
     }
@@ -300,23 +300,23 @@ public class CategoryService : ICategoryService
 
     public async Task<CategoryResult> UpdateSortOrderAsync(int categoryId, int newSortOrder)
     {
-        var category = await _unitOfWork.Categories.GetByIdAsync(categoryId);
+        var category = await _db.Categories.FindAsync(categoryId);
         if (category == null)
             return CategoryResult.Fail(CategoryErrorType.NotFound, $"Không tìm thấy danh mục với ID {categoryId}");
 
         category.SortOrder = newSortOrder;
         category.UpdatedAt = DateTime.UtcNow;
 
-        await _unitOfWork.SaveChangesAsync();
+        await _db.SaveChangesAsync();
 
         return CategoryResult.Ok(category);
     }
 
     public async Task<CategoryResult> ReorderCategoriesAsync(int? parentId, List<int> categoryIds)
     {
-        var categories = (await _unitOfWork.Categories
-            .FindAsync(c => c.ParentId == parentId && categoryIds.Contains(c.Id)))
-            .ToList();
+        var categories = await _db.Categories
+            .Where(c => c.ParentId == parentId && categoryIds.Contains(c.Id))
+            .ToListAsync();
 
         if (categories.Count != categoryIds.Count)
             return CategoryResult.Fail(CategoryErrorType.ValidationError, "Một số danh mục không tồn tại hoặc không cùng danh mục cha");
@@ -328,7 +328,7 @@ public class CategoryService : ICategoryService
             category.UpdatedAt = DateTime.UtcNow;
         }
 
-        await _unitOfWork.SaveChangesAsync();
+        await _db.SaveChangesAsync();
 
         return CategoryResult.Ok(null!);
     }
@@ -339,7 +339,7 @@ public class CategoryService : ICategoryService
 
     public async Task<CategoryResult> SoftDeleteCategoryAsync(int id)
     {
-        var category = await _unitOfWork.Categories.GetByIdWithChildrenAsync(id);
+        var category = await _db.Categories.Include(c => c.Children).FirstOrDefaultAsync(c => c.Id == id);
 
         if (category == null)
             return CategoryResult.Fail(CategoryErrorType.NotFound, $"Không tìm thấy danh mục với ID {id}");
@@ -352,14 +352,14 @@ public class CategoryService : ICategoryService
         category.DeletedAt = DateTime.UtcNow;
         category.UpdatedAt = DateTime.UtcNow;
 
-        await _unitOfWork.SaveChangesAsync();
+        await _db.SaveChangesAsync();
 
         return CategoryResult.Ok(category);
     }
 
     public async Task<CategoryResult> RestoreCategoryAsync(int id)
     {
-        var category = await _unitOfWork.Categories.GetByIdAsync(id);
+        var category = await _db.Categories.FindAsync(id);
 
         if (category == null)
             return CategoryResult.Fail(CategoryErrorType.NotFound, $"Không tìm thấy danh mục với ID {id}");
@@ -369,7 +369,7 @@ public class CategoryService : ICategoryService
 
         if (category.ParentId.HasValue)
         {
-            var parent = await _unitOfWork.Categories.GetByIdAsync(category.ParentId.Value);
+            var parent = await _db.Categories.FindAsync(category.ParentId.Value);
             if (parent == null || parent.IsDeleted)
                 return CategoryResult.Fail(CategoryErrorType.InvalidParent, "Hãy khôi phục danh mục cha trước khi khôi phục danh mục này");
         }
@@ -378,14 +378,14 @@ public class CategoryService : ICategoryService
         category.DeletedAt = null;
         category.UpdatedAt = DateTime.UtcNow;
 
-        await _unitOfWork.SaveChangesAsync();
+        await _db.SaveChangesAsync();
 
         return CategoryResult.Ok(category);
     }
 
     public async Task<List<Category>> GetDeletedCategoriesAsync()
     {
-        return await _unitOfWork.Categories.GetDeletedCategoriesAsync();
+        return await _db.Categories.Where(c => c.IsDeleted).OrderByDescending(c => c.DeletedAt).ToListAsync();
     }
 
     #endregion

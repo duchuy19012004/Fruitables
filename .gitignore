@@ -78,6 +78,7 @@ appsettings.Development.json
 appsettings.Production.json
 appsettings.*.json
 !appsettings.example.json
+!appsettings.Production.example.json
 
 # StyleCop
 StyleCopReport.xml
@@ -443,9 +444,8 @@ skills-lock.json
 repomix-output*
 pi-session-*.html
 
-# Temporary browser tests, screenshots, and presentation QA renders
-scratch/**/*.png
-scratch/chat-browser-test.mjs
-scratch/test-uploads/
+# Temporary browser tests, scratch data, and presentation QA renders
+scratch/
+
 outputs/
 wwwroot/uploads/combos/

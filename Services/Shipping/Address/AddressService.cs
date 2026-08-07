@@ -1,6 +1,6 @@
+using Fruitables.Data;
 using Microsoft.EntityFrameworkCore;
 using Fruitables.Models;
-using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Communications;
 using AddressEntity = Fruitables.Models.Address;
 
@@ -11,12 +11,12 @@ namespace Fruitables.Services.Shipping.Address;
 /// </summary>
 public class AddressService : IAddressService
 {
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly ApplicationDbContext _db;
     private readonly IVietnamAddressService _vietnamAddressService;
 
-    public AddressService(IUnitOfWork unitOfWork, IVietnamAddressService vietnamAddressService)
+    public AddressService(ApplicationDbContext db, IVietnamAddressService vietnamAddressService)
     {
-        _unitOfWork = unitOfWork;
+        _db = db;
         _vietnamAddressService = vietnamAddressService;
     }
 
@@ -25,7 +25,7 @@ public class AddressService : IAddressService
     /// </summary>
     public async Task<List<AddressEntity>> GetUserAddressesAsync(int userId)
     {
-        return await _unitOfWork.Addresses.Query()
+        return await _db.Addresses
             .Where(a => a.UserId == userId)
             .OrderByDescending(a => a.IsDefault)
             .ThenByDescending(a => a.CreatedAt)
@@ -37,7 +37,7 @@ public class AddressService : IAddressService
     /// </summary>
     public async Task<AddressEntity?> GetAddressByIdAsync(int id)
     {
-        return await _unitOfWork.Addresses.GetByIdAsync(id);
+        return await _db.Addresses.FindAsync(id);
     }
 
     /// <summary>
@@ -45,7 +45,7 @@ public class AddressService : IAddressService
     /// </summary>
     public async Task<AddressEntity?> GetDefaultAddressAsync(int userId)
     {
-        return await _unitOfWork.Addresses.Query()
+        return await _db.Addresses
             .FirstOrDefaultAsync(a => a.UserId == userId && a.IsDefault);
     }
 
@@ -98,8 +98,8 @@ public class AddressService : IAddressService
             }
         }
 
-        await _unitOfWork.Addresses.AddAsync(address);
-        await _unitOfWork.SaveChangesAsync();
+        await _db.Addresses.AddAsync(address);
+        await _db.SaveChangesAsync();
 
         return address;
     }
@@ -109,7 +109,7 @@ public class AddressService : IAddressService
     /// </summary>
     public async Task<AddressEntity> UpdateAddressAsync(AddressEntity address)
     {
-        var existing = await _unitOfWork.Addresses.GetByIdAsync(address.Id);
+        var existing = await _db.Addresses.FindAsync(address.Id);
         if (existing == null)
             throw new InvalidOperationException($"Address with ID {address.Id} not found");
 
@@ -124,7 +124,7 @@ public class AddressService : IAddressService
         existing.IsDefault = address.IsDefault;
         existing.UpdatedAt = DateTime.UtcNow;
 
-        await _unitOfWork.SaveChangesAsync();
+        await _db.SaveChangesAsync();
 
         return existing;
     }
@@ -134,14 +134,14 @@ public class AddressService : IAddressService
     /// </summary>
     public async Task<bool> DeleteAddressAsync(int id)
     {
-        var address = await _unitOfWork.Addresses.GetByIdAsync(id);
+        var address = await _db.Addresses.FindAsync(id);
         if (address == null)
             return false;
 
         // If this was the default address, set another one as default
         if (address.IsDefault && address.UserId.HasValue)
         {
-            var otherAddresses = await _unitOfWork.Addresses.Query()
+            var otherAddresses = await _db.Addresses
                 .Where(a => a.UserId == address.UserId && a.Id != id)
                 .OrderByDescending(a => a.CreatedAt)
                 .ToListAsync();
@@ -152,8 +152,8 @@ public class AddressService : IAddressService
             }
         }
 
-        _unitOfWork.Addresses.Remove(address);
-        await _unitOfWork.SaveChangesAsync();
+        _db.Addresses.Remove(address);
+        await _db.SaveChangesAsync();
 
         return true;
     }
@@ -165,12 +165,12 @@ public class AddressService : IAddressService
     public async Task<bool> SetDefaultAddressAsync(int userId, int addressId)
     {
         // Get the address to set as default
-        var targetAddress = await _unitOfWork.Addresses.GetByIdAsync(addressId);
+        var targetAddress = await _db.Addresses.FindAsync(addressId);
         if (targetAddress == null || targetAddress.UserId != userId)
             return false;
 
         // Clear default flag from all other addresses for this user
-        var userAddresses = await _unitOfWork.Addresses.Query()
+        var userAddresses = await _db.Addresses
             .Where(a => a.UserId == userId)
             .ToListAsync();
 
@@ -179,7 +179,7 @@ public class AddressService : IAddressService
             addr.IsDefault = (addr.Id == addressId);
         }
 
-        await _unitOfWork.SaveChangesAsync();
+        await _db.SaveChangesAsync();
 
         return true;
     }

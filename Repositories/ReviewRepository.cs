@@ -6,10 +6,13 @@ using Fruitables.ViewModels;
 
 namespace Fruitables.Repositories;
 
-public class ReviewRepository : Repository<Review>, IReviewRepository
+public class ReviewRepository : IReviewRepository
 {
-    public ReviewRepository(ApplicationDbContext context) : base(context)
+    private readonly DbSet<Review> _dbSet;
+
+    public ReviewRepository(ApplicationDbContext context)
     {
+        _dbSet = context.Reviews;
     }
 
     public async Task<PagedResult<Review>> GetProductReviewsAsync(ReviewFilterDto filter)

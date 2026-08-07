@@ -1,9 +1,9 @@
+using Fruitables.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
-using Fruitables.Repositories.Interfaces;
 using Fruitables.Models;
 using Fruitables.Services.Orders.Cart;
 using Fruitables.Services.Orders.OrderManagement;
@@ -20,7 +20,7 @@ public class CheckoutController : Controller
     private readonly ICartService _cartService;
     private readonly IOrderService _orderService;
     private readonly IAddressService _addressService;
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly ApplicationDbContext _db;
     private readonly IVietnamAddressService _vietnamAddressService;
     private readonly IShippingService _shippingService;
     private readonly ILogger<CheckoutController> _logger;
@@ -36,7 +36,7 @@ public class CheckoutController : Controller
         ICartService cartService, 
         IOrderService orderService, 
         IAddressService addressService,
-        IUnitOfWork unitOfWork,
+        ApplicationDbContext db,
         IVietnamAddressService vietnamAddressService,
         IShippingService shippingService,
         ILogger<CheckoutController> logger)
@@ -44,7 +44,7 @@ public class CheckoutController : Controller
         _cartService = cartService;
         _orderService = orderService;
         _addressService = addressService;
-        _unitOfWork = unitOfWork;
+        _db = db;
         _vietnamAddressService = vietnamAddressService;
         _shippingService = shippingService;
         _logger = logger;
@@ -129,7 +129,8 @@ public class CheckoutController : Controller
         var model = new CheckoutViewModel
         {
             SelectedAddressId = defaultAddressId,
-            PricingToken = cart.PricingToken
+            PricingToken = cart.PricingToken,
+            CheckoutRequestId = Guid.NewGuid().ToString("N")
         };
         
         return View(model);
@@ -157,6 +158,15 @@ public class CheckoutController : Controller
         
         var sessionId = GetSessionId();
         var userId = GetCurrentUserId();
+
+        var existingOrder = !string.IsNullOrWhiteSpace(model.CheckoutRequestId)
+            ? await _orderService.GetOrderByCheckoutRequestAsync(sessionId, model.CheckoutRequestId)
+            : null;
+        if (existingOrder != null)
+        {
+            ClearShippingSnapshot();
+            return RedirectToAction(nameof(Confirmation), new { orderNumber = existingOrder.OrderNumber });
+        }
         
         // Nếu chọn địa chỉ đã lưu → không validate các field address (lấy từ DB)
         if (model.SelectedAddressId.HasValue)
@@ -174,7 +184,7 @@ public class CheckoutController : Controller
         string? ghnWardCode = null;
         if (model.SelectedAddressId.HasValue && userId.HasValue)
         {
-            var selectedAddress = await _unitOfWork.Addresses.Query()
+            var selectedAddress = await _db.Addresses
                 .FirstOrDefaultAsync(a => a.Id == model.SelectedAddressId.Value && a.UserId == userId.Value);
             if (selectedAddress == null)
             {

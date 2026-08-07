@@ -2,8 +2,6 @@ using System.Security.Claims;
 using Fruitables.Controllers;
 using Fruitables.Data;
 using Fruitables.Models;
-using Fruitables.Repositories;
-using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 using Microsoft.Extensions.Logging;
@@ -35,7 +33,7 @@ public class CheckoutControllerTests
         var cartService = new Mock<ICartService>();
         var orderService = new Mock<IOrderService>();
         var addressService = new Mock<IAddressService>();
-        var unitOfWork = new Mock<IUnitOfWork>();
+        await using var db = new ApplicationDbContext(CreateInMemoryOptions());
         var vietnamAddressService = new Mock<IVietnamAddressService>();
         var shippingService = new Mock<IShippingService>();
         var logger = new Mock<ILogger<CheckoutController>>();
@@ -88,7 +86,7 @@ public class CheckoutControllerTests
             cartService.Object,
             orderService.Object,
             addressService.Object,
-            unitOfWork.Object,
+            db,
             vietnamAddressService.Object,
             shippingService.Object,
             logger.Object)
@@ -99,7 +97,11 @@ public class CheckoutControllerTests
 
         var result = await controller.Index();
 
-        Assert.IsType<ViewResult>(result);
+        var view = Assert.IsType<ViewResult>(result);
+        var model = Assert.IsType<CheckoutViewModel>(view.Model);
+        var requestProperty = typeof(CheckoutViewModel).GetProperty("CheckoutRequestId");
+        Assert.NotNull(requestProperty);
+        Assert.False(string.IsNullOrWhiteSpace(requestProperty!.GetValue(model) as string));
         shippingService.Verify(service => service.CalculateShippingAsync(
                 30000m,
                 "Phuong Ben Nghe",
@@ -135,7 +137,6 @@ public class CheckoutControllerTests
         var cartService = new Mock<ICartService>();
         var orderService = new Mock<IOrderService>();
         var addressService = new Mock<IAddressService>();
-        var unitOfWork = new UnitOfWork(context);
         var vietnamAddressService = new Mock<IVietnamAddressService>();
         var shippingService = new Mock<IShippingService>();
         var logger = new Mock<ILogger<CheckoutController>>();
@@ -175,7 +176,7 @@ public class CheckoutControllerTests
             cartService.Object,
             orderService.Object,
             addressService.Object,
-            unitOfWork,
+            context,
             vietnamAddressService.Object,
             shippingService.Object,
             logger.Object)
@@ -228,7 +229,6 @@ public class CheckoutControllerTests
         var cartService = new Mock<ICartService>();
         var orderService = new Mock<IOrderService>();
         var addressService = new Mock<IAddressService>();
-        var unitOfWork = new UnitOfWork(context);
         var vietnamAddressService = new Mock<IVietnamAddressService>();
         var shippingService = new Mock<IShippingService>();
         var logger = new Mock<ILogger<CheckoutController>>();
@@ -285,7 +285,7 @@ public class CheckoutControllerTests
             cartService.Object,
             orderService.Object,
             addressService.Object,
-            unitOfWork,
+            context,
             vietnamAddressService.Object,
             shippingService.Object,
             logger.Object)
@@ -309,6 +309,52 @@ public class CheckoutControllerTests
         Assert.Equal(1442, reloadedAddress.GhnDistrictId);
         Assert.Equal("20101", reloadedAddress.GhnWardCode);
         Assert.Equal("Phuong Ben Nghe", reloadedAddress.CommuneName);
+    }
+
+    [Fact]
+    public async Task PlaceOrder_reuses_existing_order_before_repricing_a_retried_checkout()
+    {
+        var cartService = new Mock<ICartService>();
+        var orderService = new Mock<IOrderService>();
+        var addressService = new Mock<IAddressService>();
+        await using var db = new ApplicationDbContext(CreateInMemoryOptions());
+        var vietnamAddressService = new Mock<IVietnamAddressService>();
+        var shippingService = new Mock<IShippingService>();
+        var logger = new Mock<ILogger<CheckoutController>>();
+
+        orderService.Setup(service => service.GetOrderByCheckoutRequestAsync("retry-session", "request-1"))
+            .ReturnsAsync(new Order { OrderNumber = "ORD-REPLAY" });
+
+        var httpContext = TestControllerContext.WithUserId(1).HttpContext;
+        httpContext.Session = new TestSession();
+        httpContext.Session.SetString("SessionId", "retry-session");
+
+        var controller = new CheckoutController(
+            cartService.Object,
+            orderService.Object,
+            addressService.Object,
+            db,
+            vietnamAddressService.Object,
+            shippingService.Object,
+            logger.Object)
+        {
+            ControllerContext = new ControllerContext { HttpContext = httpContext },
+            TempData = new TempDataDictionary(new DefaultHttpContext(), Mock.Of<ITempDataProvider>())
+        };
+
+        var result = await controller.PlaceOrder(new CheckoutViewModel
+        {
+            CheckoutRequestId = "request-1",
+            PricingToken = "stale-token",
+            PaymentMethod = PaymentMethod.COD
+        });
+
+        var redirect = Assert.IsType<RedirectToActionResult>(result);
+        Assert.Equal(nameof(CheckoutController.Confirmation), redirect.ActionName);
+        Assert.Equal("ORD-REPLAY", redirect.RouteValues!["orderNumber"]);
+        cartService.Verify(service => service.RepriceForCheckoutAsync(It.IsAny<string>()), Times.Never);
+        orderService.Verify(service => service.CreateOrderAsync(
+            It.IsAny<CheckoutViewModel>(), It.IsAny<string>(), It.IsAny<int?>()), Times.Never);
     }
 }
 

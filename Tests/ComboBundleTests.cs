@@ -101,7 +101,7 @@ public class ComboCartGroupTests
     {
         await using var context = new ApplicationDbContext(CreateOptions());
         await SeedComboAsync(context);
-        var service = new CartService(new UnitOfWork(context), Mock.Of<ICouponService>(), CreatePricing().Object);
+        var service = new CartService(context, Mock.Of<ICouponService>(), CreatePricing().Object);
 
         var result = await service.AddComboToCartAsync("bundle-cart", 10);
 
@@ -121,7 +121,7 @@ public class ComboCartGroupTests
     {
         await using var context = new ApplicationDbContext(CreateOptions());
         await SeedComboAsync(context);
-        var service = new CartService(new UnitOfWork(context), Mock.Of<ICouponService>(), CreatePricing().Object);
+        var service = new CartService(context, Mock.Of<ICouponService>(), CreatePricing().Object);
 
         Assert.True((await service.AddComboToCartAsync("bundle-merge", 10)).Success);
         Assert.True((await service.AddComboToCartAsync("bundle-merge", 10)).Success);
@@ -138,7 +138,7 @@ public class ComboCartGroupTests
     {
         await using var context = new ApplicationDbContext(CreateOptions());
         await SeedComboAsync(context);
-        var service = new CartService(new UnitOfWork(context), Mock.Of<ICouponService>(), CreatePricing().Object);
+        var service = new CartService(context, Mock.Of<ICouponService>(), CreatePricing().Object);
 
         Assert.True((await service.AddToCartAsync("bundle-separate", 1, 1)).Success);
         Assert.True((await service.AddComboToCartAsync("bundle-separate", 10)).Success);
@@ -158,7 +158,7 @@ public class ComboCartGroupTests
     {
         await using var context = new ApplicationDbContext(CreateOptions());
         await SeedComboAsync(context);
-        var service = new CartService(new UnitOfWork(context), Mock.Of<ICouponService>(), CreatePricing().Object);
+        var service = new CartService(context, Mock.Of<ICouponService>(), CreatePricing().Object);
         Assert.True((await service.AddComboToCartAsync("bundle-revision", 10)).Success);
 
         var combo = await context.Combos.FindAsync(10);
@@ -180,7 +180,7 @@ public class ComboCartGroupTests
         var coupon = new Mock<ICouponService>();
         coupon.Setup(service => service.ApplyCouponAsync("SAVE", 0m, 0))
             .ReturnsAsync(new CouponApplyResult { Success = false, ErrorMessage = "Không có sản phẩm hợp lệ" });
-        var service = new CartService(new UnitOfWork(context), coupon.Object, CreatePricing().Object);
+        var service = new CartService(context, coupon.Object, CreatePricing().Object);
         Assert.True((await service.AddComboToCartAsync("bundle-coupon", 10)).Success);
 
         var result = await service.ApplyCouponAsync("bundle-coupon", "SAVE");

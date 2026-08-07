@@ -3,7 +3,6 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Fruitables.Data;
 using Fruitables.Models;
-using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Communications;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -13,37 +12,23 @@ namespace Fruitables.Services.Infrastructure;
 
 public class MigrationService : IMigrationService
 {
-    private readonly IUnitOfWork _unitOfWork;
     private readonly IRbacService _rbacService;
     private readonly ILogger<MigrationService> _logger;
     private readonly ApplicationDbContext _context;
     private readonly IHttpClientFactory _httpClientFactory;
 
     public MigrationService(
-        IUnitOfWork unitOfWork,
         IRbacService rbacService,
         ILogger<MigrationService> logger,
         ApplicationDbContext context,
         IHttpClientFactory httpClientFactory)
     {
-        _unitOfWork = unitOfWork;
         _rbacService = rbacService;
         _logger = logger;
         _context = context;
         _httpClientFactory = httpClientFactory;
     }
 
-    private class OldAddressRow
-    {
-        public int Id { get; set; }
-        public int ProvinceCode { get; set; }
-        public string ProvinceName { get; set; } = string.Empty;
-        public int DistrictCode { get; set; }
-        public string DistrictName { get; set; } = string.Empty;
-        public int WardCode { get; set; }
-        public string WardName { get; set; } = string.Empty;
-    }
-    
     public async Task<MigrationResult> MigrateToRbacAsync()
     {
         var result = new MigrationResult
@@ -59,13 +44,13 @@ public class MigrationService : IMigrationService
             await SeedDefaultRolesAsync();
             await SeedDefaultPermissionsAsync();
             await SeedRolePermissionMappingsAsync();
-            
+
             // Step 2: Seed default test users
             await SeedDefaultUsersAsync();
 
             // Step 3: Migrate existing users
-            var users = await _unitOfWork.Users
-                .Query()
+            var users = await _context.Users
+
                 .Include(u => u.UserRoleMappings)
                 .ToListAsync();
 
@@ -87,11 +72,11 @@ public class MigrationService : IMigrationService
 
                     // Get the role based on legacy UserRole enum
                     var roleName = user.Role.ToString();
-                    var roles = await _unitOfWork.Roles
-                        .FindAsync(r => r.Name == roleName && r.IsActive);
-                    
+                    var roles = await _context.Roles
+                        .Where(r => r.Name == roleName && r.IsActive).ToListAsync();
+
                     var role = roles.FirstOrDefault();
-                    
+
                     if (role == null)
                     {
                         var error = $"Role '{roleName}' not found for user {user.Id}";
@@ -109,7 +94,7 @@ public class MigrationService : IMigrationService
                         AssignedByAdminId = null // System migration
                     };
 
-                    await _unitOfWork.UserRoleMappings.AddAsync(userRoleMapping);
+                    await _context.UserRoleMappings.AddAsync(userRoleMapping);
                     usersProcessed++;
 
                     _logger.LogDebug("Migrated user {UserId} to role {RoleName}", user.Id, roleName);
@@ -123,7 +108,7 @@ public class MigrationService : IMigrationService
             }
 
             // Save all changes
-            await _unitOfWork.SaveChangesAsync();
+            await _context.SaveChangesAsync();
 
             result.Success = errors.Count == 0;
             result.UsersProcessed = usersProcessed;
@@ -145,7 +130,7 @@ public class MigrationService : IMigrationService
             return result;
         }
     }
-    
+
     public async Task<MigrationResult> RollbackToLegacyAsync()
     {
         var result = new MigrationResult
@@ -158,17 +143,17 @@ public class MigrationService : IMigrationService
             _logger.LogInformation("Starting RBAC rollback...");
 
             // Get all UserRole mappings
-            var userRoleMappings = await _unitOfWork.UserRoleMappings
-                .Query()
+            var userRoleMappings = await _context.UserRoleMappings
+
                 .ToListAsync();
 
             _logger.LogInformation("Found {MappingCount} user role mappings to remove", userRoleMappings.Count);
 
             // Remove all UserRole mappings
-            _unitOfWork.UserRoleMappings.RemoveRange(userRoleMappings);
-            
+            _context.UserRoleMappings.RemoveRange(userRoleMappings);
+
             // Save changes
-            await _unitOfWork.SaveChangesAsync();
+            await _context.SaveChangesAsync();
 
             result.Success = true;
             result.UsersProcessed = userRoleMappings.Select(urm => urm.UserId).Distinct().Count();
@@ -189,28 +174,28 @@ public class MigrationService : IMigrationService
             return result;
         }
     }
-    
+
     public async Task<MigrationStatus> GetMigrationStatusAsync()
     {
         try
         {
             // Get total number of users
-            var totalUsers = await _unitOfWork.Users.CountAsync();
-            
+            var totalUsers = await _context.Users.CountAsync();
+
             // Get number of users with RBAC role mappings
-            var migratedUsers = await _unitOfWork.UserRoleMappings
-                .Query()
+            var migratedUsers = await _context.UserRoleMappings
+
                 .Select(urm => urm.UserId)
                 .Distinct()
                 .CountAsync();
-            
+
             // Get last migration date (most recent UserRoleMapping creation)
-            var lastMigrationDate = await _unitOfWork.UserRoleMappings
-                .Query()
+            var lastMigrationDate = await _context.UserRoleMappings
+
                 .OrderByDescending(urm => urm.AssignedAt)
                 .Select(urm => (DateTime?)urm.AssignedAt)
                 .FirstOrDefaultAsync();
-            
+
             return new MigrationStatus
             {
                 IsCompleted = totalUsers > 0 && migratedUsers == totalUsers,
@@ -231,7 +216,7 @@ public class MigrationService : IMigrationService
             };
         }
     }
-    
+
     public async Task<MigrationResult> MigrateAddressesToTwoLevelAsync()
     {
         var result = new MigrationResult { CompletedAt = DateTime.UtcNow };
@@ -332,7 +317,7 @@ public class MigrationService : IMigrationService
                     }
                 }
 
-                var address = await _unitOfWork.Addresses.GetByIdAsync(id);
+                var address = await _context.Addresses.FindAsync(id);
                 if (address == null)
                 {
                     errors.Add($"Address {id} not found in DB");
@@ -349,7 +334,7 @@ public class MigrationService : IMigrationService
 
                 if (batch.Count >= 100)
                 {
-                    await _unitOfWork.SaveChangesAsync();
+                    await _context.SaveChangesAsync();
                     _logger.LogInformation("Migrated {Count} addresses so far...", processed);
                     batch.Clear();
                 }
@@ -357,7 +342,7 @@ public class MigrationService : IMigrationService
 
             if (batch.Count > 0)
             {
-                await _unitOfWork.SaveChangesAsync();
+                await _context.SaveChangesAsync();
             }
 
             result.Success = errors.Count == 0;
@@ -394,12 +379,12 @@ public class MigrationService : IMigrationService
 
             foreach (var role in defaultRoles)
             {
-                var existingRole = await _unitOfWork.Roles
+                var existingRole = await _context.Roles
                     .FirstOrDefaultAsync(r => r.Name == role.Name);
-                
+
                 if (existingRole == null)
                 {
-                    await _unitOfWork.Roles.AddAsync(role);
+                    await _context.Roles.AddAsync(role);
                     _logger.LogInformation("Created role: {RoleName}", role.Name);
                 }
                 else
@@ -408,7 +393,7 @@ public class MigrationService : IMigrationService
                 }
             }
 
-            await _unitOfWork.SaveChangesAsync();
+            await _context.SaveChangesAsync();
             _logger.LogInformation("Default roles seeded successfully");
         }
         catch (Exception ex)
@@ -417,7 +402,7 @@ public class MigrationService : IMigrationService
             throw;
         }
     }
-    
+
     public async Task SeedDefaultPermissionsAsync()
     {
         try
@@ -432,7 +417,7 @@ public class MigrationService : IMigrationService
                 new Permission { Name = "products.update", Description = "Update products", Module = "products" },
                 new Permission { Name = "products.delete", Description = "Delete products", Module = "products" },
                 new Permission { Name = "products.manage_inventory", Description = "Manage product inventory", Module = "products" },
-                
+
                 // Orders module
                 new Permission { Name = "orders.view_all", Description = "View all orders", Module = "orders" },
                 new Permission { Name = "orders.view_own", Description = "View own orders", Module = "orders" },
@@ -440,7 +425,7 @@ public class MigrationService : IMigrationService
                 new Permission { Name = "orders.update_status", Description = "Update order status", Module = "orders" },
                 new Permission { Name = "orders.cancel", Description = "Cancel orders", Module = "orders" },
                 new Permission { Name = "orders.refund", Description = "Process refunds", Module = "orders" },
-                
+
                 // Users module
                 new Permission { Name = "users.view", Description = "View users", Module = "users" },
                 new Permission { Name = "users.create", Description = "Create users", Module = "users" },
@@ -448,7 +433,7 @@ public class MigrationService : IMigrationService
                 new Permission { Name = "users.lock", Description = "Lock user accounts", Module = "users" },
                 new Permission { Name = "users.unlock", Description = "Unlock user accounts", Module = "users" },
                 new Permission { Name = "users.delete", Description = "Delete users", Module = "users" },
-                
+
                 // Reviews module
                 new Permission { Name = "reviews.view", Description = "View reviews", Module = "reviews" },
                 new Permission { Name = "reviews.create", Description = "Create reviews", Module = "reviews" },
@@ -458,15 +443,15 @@ public class MigrationService : IMigrationService
                 new Permission { Name = "reviews.delete", Description = "Delete reviews", Module = "reviews" },
                 new Permission { Name = "reviews.view_reports", Description = "View review reports", Module = "reviews" },
                 new Permission { Name = "reviews.view_statistics", Description = "View review statistics", Module = "reviews" },
-                
+
                 // Settings module
                 new Permission { Name = "settings.view", Description = "View settings", Module = "settings" },
                 new Permission { Name = "settings.update", Description = "Update settings", Module = "settings" },
-                
+
                 // Dashboard module
                 new Permission { Name = "dashboard.view", Description = "View dashboard", Module = "dashboard" },
                 new Permission { Name = "dashboard.view_statistics", Description = "View detailed statistics", Module = "dashboard" },
-                
+
                 // System module
                 new Permission { Name = "system.manage", Description = "Manage entire system", Module = "system" },
                 new Permission { Name = "system.view_logs", Description = "View system logs", Module = "system" },
@@ -476,17 +461,17 @@ public class MigrationService : IMigrationService
 
             foreach (var permission in defaultPermissions)
             {
-                var existingPermission = await _unitOfWork.Permissions
+                var existingPermission = await _context.Permissions
                     .FirstOrDefaultAsync(p => p.Name == permission.Name);
-                
+
                 if (existingPermission == null)
                 {
-                    await _unitOfWork.Permissions.AddAsync(permission);
+                    await _context.Permissions.AddAsync(permission);
                     _logger.LogDebug("Created permission: {PermissionName}", permission.Name);
                 }
             }
 
-            await _unitOfWork.SaveChangesAsync();
+            await _context.SaveChangesAsync();
             _logger.LogInformation("Default permissions seeded successfully");
         }
         catch (Exception ex)
@@ -503,9 +488,9 @@ public class MigrationService : IMigrationService
             _logger.LogInformation("Seeding role-permission mappings...");
 
             // Get roles
-            var customerRole = await _unitOfWork.Roles.FirstOrDefaultAsync(r => r.Name == "Customer");
-            var adminRole = await _unitOfWork.Roles.FirstOrDefaultAsync(r => r.Name == "Admin");
-            var superAdminRole = await _unitOfWork.Roles.FirstOrDefaultAsync(r => r.Name == "SuperAdmin");
+            var customerRole = await _context.Roles.FirstOrDefaultAsync(r => r.Name == "Customer");
+            var adminRole = await _context.Roles.FirstOrDefaultAsync(r => r.Name == "Admin");
+            var superAdminRole = await _context.Roles.FirstOrDefaultAsync(r => r.Name == "SuperAdmin");
 
             if (customerRole == null || adminRole == null || superAdminRole == null)
             {
@@ -513,7 +498,7 @@ public class MigrationService : IMigrationService
             }
 
             // Get all permissions
-            var allPermissions = await _unitOfWork.Permissions.GetAllAsync();
+            var allPermissions = await _context.Permissions.ToListAsync();
             var permissionDict = allPermissions.ToDictionary(p => p.Name, p => p);
 
             // Customer permissions
@@ -542,7 +527,7 @@ public class MigrationService : IMigrationService
             var superAdminPermissions = allPermissions.Select(p => p.Name).ToArray();
             await AssignPermissionsToRole(superAdminRole.Id, superAdminPermissions, permissionDict);
 
-            await _unitOfWork.SaveChangesAsync();
+            await _context.SaveChangesAsync();
             _logger.LogInformation("Role-permission mappings seeded successfully");
         }
         catch (Exception ex)
@@ -562,12 +547,12 @@ public class MigrationService : IMigrationService
                 continue;
             }
 
-            var existingMapping = await _unitOfWork.RolePermissions
+            var existingMapping = await _context.RolePermissions
                 .FirstOrDefaultAsync(rp => rp.RoleId == roleId && rp.PermissionId == permission.Id);
 
             if (existingMapping == null)
             {
-                await _unitOfWork.RolePermissions.AddAsync(new RolePermission
+                await _context.RolePermissions.AddAsync(new RolePermission
                 {
                     RoleId = roleId,
                     PermissionId = permission.Id,
@@ -576,7 +561,7 @@ public class MigrationService : IMigrationService
             }
         }
     }
-    
+
     public async Task ResetToDefaultSeedDataAsync()
     {
         try
@@ -584,18 +569,18 @@ public class MigrationService : IMigrationService
             _logger.LogInformation("Resetting to default seed data...");
 
             // Remove all existing role-permission mappings
-            var existingMappings = await _unitOfWork.RolePermissions.GetAllAsync();
-            _unitOfWork.RolePermissions.RemoveRange(existingMappings);
+            var existingMappings = await _context.RolePermissions.ToListAsync();
+            _context.RolePermissions.RemoveRange(existingMappings);
 
             // Remove all existing permissions
-            var existingPermissions = await _unitOfWork.Permissions.GetAllAsync();
-            _unitOfWork.Permissions.RemoveRange(existingPermissions);
+            var existingPermissions = await _context.Permissions.ToListAsync();
+            _context.Permissions.RemoveRange(existingPermissions);
 
             // Remove all existing roles
-            var existingRoles = await _unitOfWork.Roles.GetAllAsync();
-            _unitOfWork.Roles.RemoveRange(existingRoles);
+            var existingRoles = await _context.Roles.ToListAsync();
+            _context.Roles.RemoveRange(existingRoles);
 
-            await _unitOfWork.SaveChangesAsync();
+            await _context.SaveChangesAsync();
 
             // Re-seed everything
             await SeedDefaultRolesAsync();
@@ -610,7 +595,7 @@ public class MigrationService : IMigrationService
             throw;
         }
     }
-    
+
     public async Task SeedDefaultUsersAsync()
     {
         try
@@ -619,8 +604,8 @@ public class MigrationService : IMigrationService
 
             // Check if test users already exist
             var testEmails = new[] { "customer@gmail.com", "admin@gmail.com", "superadmin@gmail.com" };
-            var existingUsers = await _unitOfWork.Users
-                .Query()
+            var existingUsers = await _context.Users
+
                 .Where(u => testEmails.Contains(u.Email))
                 .ToListAsync();
 
@@ -631,9 +616,9 @@ public class MigrationService : IMigrationService
             }
 
             // Get roles
-            var customerRole = await _unitOfWork.Roles.FirstOrDefaultAsync(r => r.Name == "Customer");
-            var adminRole = await _unitOfWork.Roles.FirstOrDefaultAsync(r => r.Name == "Admin");
-            var superAdminRole = await _unitOfWork.Roles.FirstOrDefaultAsync(r => r.Name == "SuperAdmin");
+            var customerRole = await _context.Roles.FirstOrDefaultAsync(r => r.Name == "Customer");
+            var adminRole = await _context.Roles.FirstOrDefaultAsync(r => r.Name == "Admin");
+            var superAdminRole = await _context.Roles.FirstOrDefaultAsync(r => r.Name == "SuperAdmin");
 
             if (customerRole == null || adminRole == null || superAdminRole == null)
             {
@@ -682,15 +667,15 @@ public class MigrationService : IMigrationService
             // Add users to database
             foreach (var user in testUsers)
             {
-                await _unitOfWork.Users.AddAsync(user);
+                await _context.Users.AddAsync(user);
             }
-            
-            await _unitOfWork.SaveChangesAsync();
+
+            await _context.SaveChangesAsync();
             _logger.LogInformation("Test users created successfully");
 
             // Now assign RBAC roles to the newly created users
-            var createdUsers = await _unitOfWork.Users
-                .Query()
+            var createdUsers = await _context.Users
+
                 .Where(u => testEmails.Contains(u.Email))
                 .ToListAsync();
 
@@ -712,10 +697,10 @@ public class MigrationService : IMigrationService
                     AssignedByAdminId = null // System seed
                 };
 
-                await _unitOfWork.UserRoleMappings.AddAsync(userRoleMapping);
+                await _context.UserRoleMappings.AddAsync(userRoleMapping);
             }
 
-            await _unitOfWork.SaveChangesAsync();
+            await _context.SaveChangesAsync();
             _logger.LogInformation("RBAC roles assigned to test users successfully");
         }
         catch (Exception ex)

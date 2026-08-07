@@ -1,7 +1,7 @@
+using Fruitables.Data;
 using ClosedXML.Excel;
 using Fruitables.Models;
 using Fruitables.Models.Returns;
-using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Analytics.Common;
 using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
@@ -13,15 +13,15 @@ public class SalesAnalyticsService : ISalesAnalyticsService
 {
     private const string UnknownCancelReason = "Không ghi rõ";
 
-    private readonly IUnitOfWork _uow;
+    private readonly ApplicationDbContext _db;
 
-    public SalesAnalyticsService(IUnitOfWork uow) => _uow = uow;
+    public SalesAnalyticsService(ApplicationDbContext db) => _db = db;
 
     public async Task<SalesHubVm> GetHubAsync(SalesAnalyticsFilterVm filter)
     {
         try
         {
-            var firstOrder = await _uow.Orders.Query().AsNoTracking()
+            var firstOrder = await _db.Orders.AsNoTracking()
                 .OrderBy(o => o.CreatedAt)
                 .Select(o => (DateTime?)o.CreatedAt)
                 .FirstOrDefaultAsync();
@@ -35,7 +35,7 @@ public class SalesAnalyticsService : ISalesAnalyticsService
 
             var min = pair.Previous.StartInclusive;
             var max = pair.Current.EndExclusive;
-            var rows = await _uow.Orders.Query().AsNoTracking()
+            var rows = await _db.Orders.AsNoTracking()
                 .Where(o => o.CreatedAt >= min && o.CreatedAt < max)
                 .Select(o => new OrderRow(
                     o.Id,
@@ -461,7 +461,7 @@ public class SalesAnalyticsService : ISalesAnalyticsService
 
     private async Task<List<LineItemRow>> LoadDeliveredLineItemsAsync(DateTime min, DateTime max)
     {
-        var rows = await _uow.OrderItems.Query().AsNoTracking()
+        var rows = await _db.OrderItems.AsNoTracking()
             .Where(i =>
                 i.Order.CreatedAt >= min &&
                 i.Order.CreatedAt < max &&
@@ -483,7 +483,7 @@ public class SalesAnalyticsService : ISalesAnalyticsService
             return rows;
 
         var orderItemIds = rows.Select(row => row.OrderItemId).ToArray();
-        var refundRows = await _uow.OrderItems.Query().AsNoTracking()
+        var refundRows = await _db.OrderItems.AsNoTracking()
             .Where(item => orderItemIds.Contains(item.Id))
             .SelectMany(item => item.ReturnRequestItems)
             .Where(item => item.ReturnRequest.Refund != null &&
@@ -502,7 +502,7 @@ public class SalesAnalyticsService : ISalesAnalyticsService
 
     private async Task<List<LineItemRow>> LoadCancelledLineItemsAsync(DateTime min, DateTime max)
     {
-        return await _uow.OrderItems.Query().AsNoTracking()
+        return await _db.OrderItems.AsNoTracking()
             .Where(i =>
                 i.Order.CreatedAt >= min &&
                 i.Order.CreatedAt < max &&

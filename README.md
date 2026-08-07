@@ -41,8 +41,8 @@ Fruitables là một hệ thống thương mại điện tử chuyên về bán 
 │          Service Layer                  │
 │    (Business Logic Services)            │
 ├─────────────────────────────────────────┤
-│        Repository Layer                 │
-│   (Data Access, Unit of Work)           │
+│      Custom Query Layer                 │
+│       (Data Access Queries)             │
 ├─────────────────────────────────────────┤
 │          Data Layer                     │
 │  (Entity Framework, SQL Server)         │
@@ -50,8 +50,8 @@ Fruitables là một hệ thống thương mại điện tử chuyên về bán 
 ```
 
 ### Design Patterns
-- **Repository Pattern**: Trừu tượng hóa data access
-- **Unit of Work Pattern**: Quản lý transactions
+- **Custom query repositories**: Tập trung các truy vấn đặc thù
+- **EF Core transactions**: Quản lý transactions
 - **Dependency Injection**: Loose coupling giữa các components
 - **Service Layer Pattern**: Tách biệt business logic
 - **ViewComponent Pattern**: Tái sử dụng UI components
@@ -112,7 +112,6 @@ Fruitables.Tests/                 # Test project
 - **Diagnostics tools** để troubleshoot permission issues
 
 **Services**:
-- `AuthenticationService`: Xác thực cơ bản
 - `GoogleAuthService`: Tích hợp Google OAuth
 - `UserAuthService`: Quản lý người dùng
 - `UserManagementService`: Quản lý tài khoản (khóa/mở)
@@ -156,7 +155,7 @@ Fruitables.Tests/                 # Test project
 - `ProductService`: Hiển thị sản phẩm cho khách hàng
 - `ProductAdminService`: Quản lý sản phẩm (CRUD)
 - `CategoryService`: Quản lý danh mục
-- `ProductLogService`: Ghi log thay đổi
+- `PriceManagementService`: Ghi log thay đổi giá
 - `ImageUploadService`: Upload và quản lý hình ảnh
 
 ### 3. Module Giỏ Hàng & Thanh Toán
@@ -215,13 +214,11 @@ Fruitables.Tests/                 # Test project
 - Thống kê đơn hàng bị hủy với lý do
 
 **Services**:
-- `RevenueStatisticsService`: Thống kê doanh thu
-- `CancelledOrdersStatisticsService`: Thống kê đơn hủy
+- `SalesAnalyticsService`: Thống kê doanh thu và đơn hủy
 - `DashboardService`: Tổng quan dashboard
 
 **ViewModels**:
-- `RevenueViewModel`: Dữ liệu doanh thu
-- `CancelledOrdersViewModel`: Dữ liệu đơn hủy
+- `SalesHubVm`: Dữ liệu thống kê và bộ lọc
 
 ### 6. Module Quản Lý Người Dùng
 **Trạng thái**: ✅ Hoàn thành

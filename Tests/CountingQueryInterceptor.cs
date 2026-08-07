@@ -14,11 +14,20 @@ public class CountingQueryInterceptor : DbCommandInterceptor
     private int _totalSelectCount;
     private readonly Dictionary<string, int> _tableCounts = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _countsLock = new();
+    private readonly List<string> _selectCommands = new();
 
     public int TotalSelectCount => _totalSelectCount;
 
     // Đếm SELECT trên bảng Products. Giữ lại cho test baseline của checkout.
     public int ProductSelectCount => GetCount("Products");
+    public IReadOnlyList<string> SelectCommands
+    {
+        get
+        {
+            lock (_countsLock)
+                return _selectCommands.ToList();
+        }
+    }
 
     public CountingQueryInterceptor()
     {
@@ -107,6 +116,7 @@ public class CountingQueryInterceptor : DbCommandInterceptor
 
         lock (_countsLock)
         {
+            _selectCommands.Add(text);
             foreach (var pattern in _tableCounts.Keys.ToList())
             {
                 if (text.Contains(pattern, System.StringComparison.OrdinalIgnoreCase))

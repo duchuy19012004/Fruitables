@@ -42,14 +42,69 @@ public class ProductServicePricingTests
         });
         await context.SaveChangesAsync();
 
-        var unitOfWork = new UnitOfWork(context);
-        var pricing = new ProductPricingService(unitOfWork, TimeProvider.System);
-        var service = new ProductService(unitOfWork, TimeProvider.System, pricing);
+        var pricing = new ProductPricingService(context, TimeProvider.System);
+        var service = new ProductService(context, TimeProvider.System, pricing);
 
         var products = await service.GetAllProductsAsync();
 
         var product = Assert.Single(products);
         Assert.Equal(80_000, product.DisplayMinPrice);
         Assert.Equal(80_000, product.SalePrice);
+    }
+
+    [Fact]
+    public async Task GetShopViewModel_materializes_catalog_pricing_once()
+    {
+        var interceptor = new CountingQueryInterceptor();
+        var options = TestDbContextFactory.CreateSqliteOptions(interceptor);
+        await using var context = new ApplicationDbContext(options);
+        context.Categories.Add(new Category { Id = 1, Name = "Fruit", Slug = "fruit-once" });
+        context.Products.Add(new Product
+        {
+            Id = 1,
+            CategoryId = 1,
+            Name = "Táo once",
+            Slug = "tao-once",
+            Price = 100_000,
+            IsActive = true
+        });
+        await context.SaveChangesAsync();
+
+        var pricing = new ProductPricingService(context, TimeProvider.System);
+        var service = new ProductService(context, TimeProvider.System, pricing);
+
+        await service.GetShopViewModelAsync(null, null, null, null, null, 1, 9);
+
+        Assert.True(interceptor.ProductSelectCount < 5);
+    }
+
+    [Fact]
+    public async Task GetShopViewModel_pages_common_catalog_sort_before_loading_price_graph()
+    {
+        var interceptor = new CountingQueryInterceptor();
+        var options = TestDbContextFactory.CreateSqliteOptions(interceptor);
+        await using var context = new ApplicationDbContext(options);
+        context.Categories.Add(new Category { Id = 1, Name = "Fruit", Slug = "fruit-page" });
+        context.Products.AddRange(Enumerable.Range(1, 12).Select(id => new Product
+        {
+            Id = id,
+            CategoryId = 1,
+            Name = $"Fruit {id}",
+            Slug = $"fruit-page-{id}",
+            Price = 100_000 + id,
+            IsActive = true
+        }));
+        await context.SaveChangesAsync();
+
+        var service = new ProductService(
+            context,
+            TimeProvider.System,
+            new ProductPricingService(context, TimeProvider.System));
+
+        var result = await service.GetShopViewModelAsync(null, null, null, null, null, 1, 1);
+
+        Assert.Single(result.Products);
+        Assert.Contains(interceptor.SelectCommands, command =>
+            command.Contains("LIMIT", StringComparison.OrdinalIgnoreCase));
     }
 }

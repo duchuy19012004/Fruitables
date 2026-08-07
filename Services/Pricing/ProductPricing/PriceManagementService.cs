@@ -1,5 +1,5 @@
+using Fruitables.Data;
 using Fruitables.Models;
-using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Communications;
 using Fruitables.ViewModels;
 using Microsoft.EntityFrameworkCore;
@@ -9,17 +9,18 @@ namespace Fruitables.Services.Pricing.ProductPricing;
 
 public sealed class PriceManagementService : IPriceManagementService
 {
-    private readonly IUnitOfWork _unitOfWork;
+    private const int MaxBulkTargets = 500;
+    private readonly ApplicationDbContext _db;
     private readonly TimeProvider _timeProvider;
     private readonly IRealtimeNotifier? _notifier;
     private readonly IIndexingService? _indexing;
     private readonly ILogger<PriceManagementService>? _logger;
 
-    public PriceManagementService(IUnitOfWork unitOfWork, TimeProvider timeProvider,
+    public PriceManagementService(ApplicationDbContext db, TimeProvider timeProvider,
         IRealtimeNotifier? notifier = null, IIndexingService? indexing = null,
         ILogger<PriceManagementService>? logger = null)
     {
-        _unitOfWork = unitOfWork;
+        _db = db;
         _timeProvider = timeProvider;
         _notifier = notifier;
         _indexing = indexing;
@@ -29,7 +30,7 @@ public sealed class PriceManagementService : IPriceManagementService
     public async Task<PriceManagementViewModel> GetDashboardAsync(PriceDashboardQuery q)
     {
         var now = _timeProvider.GetUtcNow();
-        IQueryable<Product> query = _unitOfWork.Products.Query()
+        IQueryable<Product> query = _db.Products
             .Where(p => !p.IsDeleted)
             .Include(p => p.Variants).ThenInclude(v => v.PriceSchedules)
             .Include(p => p.PriceSchedules);
@@ -89,11 +90,13 @@ public sealed class PriceManagementService : IPriceManagementService
             .ToList();
 
         // Combobox đối tượng lịch: mọi sản phẩm/biến thể (không phụ thuộc trang/lọc hiện tại)
-        var targetProducts = await _unitOfWork.Products.Query()
-            .Where(p => !p.IsDeleted)
-            .Include(p => p.Variants)
-            .OrderBy(p => p.Name)
-            .ToListAsync();
+        var targetProducts = string.IsNullOrWhiteSpace(q.Search)
+            ? products
+            : await _db.Products
+                .Where(p => !p.IsDeleted)
+                .Include(p => p.Variants)
+                .OrderBy(p => p.Name)
+                .ToListAsync();
         var targets = new List<ScheduleTargetItem>();
         foreach (var p in targetProducts)
         {
@@ -112,7 +115,7 @@ public sealed class PriceManagementService : IPriceManagementService
         }
 
         // Tab Lịch giảm giá: lọc trạng thái + tìm kiếm + phân trang ở SQL.
-        IQueryable<PriceSchedule> schQuery = _unitOfWork.PriceSchedules.Query()
+        IQueryable<PriceSchedule> schQuery = _db.PriceSchedules
             .Include(s => s.Product).Include(s => s.ProductVariant);
         if (!string.IsNullOrWhiteSpace(q.ScheduleSearch))
             schQuery = schQuery.Where(s => s.Product.Name.Contains(q.ScheduleSearch) ||
@@ -136,7 +139,7 @@ public sealed class PriceManagementService : IPriceManagementService
         foreach (var s in statusFacts)
         {
             var key = s.IsCancelled
-                ? s.CancelledAt.HasValue && s.CancelledAt.Value > s.StartsAt ? "stopped" : "cancelled"
+                ? s.CancelledAt.HasValue && s.CancelledAt.Value >= s.StartsAt ? "stopped" : "cancelled"
                 : s.StartsAt > now ? "scheduled"
                 : s.EndsAt.HasValue && s.EndsAt.Value <= now ? "ended"
                 : "active";
@@ -152,7 +155,7 @@ public sealed class PriceManagementService : IPriceManagementService
             "stopped" => schQuery.Where(s =>
                 s.IsCancelled &&
                 s.CancelledAt.HasValue &&
-                s.CancelledAt.Value > s.StartsAt),
+                s.CancelledAt.Value >= s.StartsAt),
             "cancelled" => schQuery.Where(s =>
                 s.IsCancelled &&
                 (!s.CancelledAt.HasValue || s.CancelledAt.Value <= s.StartsAt)),
@@ -214,9 +217,9 @@ public sealed class PriceManagementService : IPriceManagementService
                 CreatedAt = _timeProvider.GetUtcNow(),
                 UpdatedAt = _timeProvider.GetUtcNow()
             };
-            await _unitOfWork.PriceSchedules.AddAsync(schedule);
+            await _db.PriceSchedules.AddAsync(schedule);
             await AddLogAsync(request.ProductId, adminId, "PriceScheduleCreate", $"Tạo lịch giảm giá từ {schedule.StartsAt:O}");
-            await _unitOfWork.SaveChangesAsync();
+            await _db.SaveChangesAsync();
             return PriceManagementResult.Ok();
         });
         if (result.Success) await PublishPriceChangeAsync(request.ProductId, request.ProductVariantId);
@@ -227,7 +230,7 @@ public sealed class PriceManagementService : IPriceManagementService
     {
         var result = await RunSerializedWriteAsync(async () =>
         {
-            var schedule = await _unitOfWork.PriceSchedules.GetByIdAsync(id);
+            var schedule = await _db.PriceSchedules.FindAsync(id);
             if (schedule == null) return PriceManagementResult.Fail("Không tìm thấy lịch giá.");
             if (request.ExpectedRevision <= 0 || schedule.Revision != request.ExpectedRevision)
                 return PriceManagementResult.Fail("Lịch giá đã thay đổi bởi người khác. Vui lòng tải lại trang.");
@@ -245,7 +248,7 @@ public sealed class PriceManagementService : IPriceManagementService
             schedule.UpdatedAt = _timeProvider.GetUtcNow();
             schedule.Revision++;
             await AddLogAsync(request.ProductId, adminId, "PriceScheduleUpdate", $"Cập nhật lịch giá #{id}");
-            await _unitOfWork.SaveChangesAsync();
+            await _db.SaveChangesAsync();
             return PriceManagementResult.Ok(schedule.Revision);
         });
         if (result.Success) await PublishPriceChangeAsync(request.ProductId, request.ProductVariantId);
@@ -262,7 +265,7 @@ public sealed class PriceManagementService : IPriceManagementService
 
         var result = await RunSerializedWriteAsync(async () =>
         {
-            var schedule = await _unitOfWork.PriceSchedules.GetByIdAsync(id);
+            var schedule = await _db.PriceSchedules.FindAsync(id);
             if (schedule == null)
                 return PriceManagementResult.Fail("Không tìm thấy lịch giá.");
 
@@ -293,7 +296,7 @@ public sealed class PriceManagementService : IPriceManagementService
                 : "PriceScheduleCancel";
             var detail = $"{action} #{id}; reason={schedule.CancellationReason ?? "không có"}; cancelledAt={now:O}";
             await AddLogAsync(schedule.ProductId, adminId, action, detail);
-            await _unitOfWork.SaveChangesAsync();
+            await _db.SaveChangesAsync();
 
             return PriceManagementResult.Ok(schedule.Revision);
         });
@@ -310,13 +313,13 @@ public sealed class PriceManagementService : IPriceManagementService
     {
         if (target.ProductVariantId.HasValue)
         {
-            return await _unitOfWork.ProductVariants.Query()
+            return await _db.ProductVariants
                 .Where(variant => variant.Id == target.ProductVariantId.Value && variant.ProductId == target.ProductId)
                 .Select(variant => new BasePriceSnapshot(variant.Price, variant.PriceRevision))
                 .FirstOrDefaultAsync();
         }
 
-        return await _unitOfWork.Products.Query()
+        return await _db.Products
             .Where(product => product.Id == target.ProductId)
             .Select(product => new BasePriceSnapshot(product.Price, product.PriceRevision))
             .FirstOrDefaultAsync();
@@ -343,7 +346,7 @@ public sealed class PriceManagementService : IPriceManagementService
             int newRevision;
             if (target.ProductVariantId.HasValue)
             {
-                var variant = await _unitOfWork.ProductVariants.GetByIdAsync(target.ProductVariantId.Value);
+                var variant = await _db.ProductVariants.FindAsync(target.ProductVariantId.Value);
                 if (variant == null || variant.ProductId != target.ProductId)
                     return PriceManagementResult.Fail("Không tìm thấy sản phẩm hoặc biến thể.");
 
@@ -353,7 +356,7 @@ public sealed class PriceManagementService : IPriceManagementService
             }
             else
             {
-                var product = await _unitOfWork.Products.GetByIdAsync(target.ProductId);
+                var product = await _db.Products.FindAsync(target.ProductId);
                 if (product == null)
                     return PriceManagementResult.Fail("Không tìm thấy sản phẩm hoặc biến thể.");
 
@@ -367,7 +370,7 @@ public sealed class PriceManagementService : IPriceManagementService
                 adminId,
                 "BasePriceUpdate",
                 $"Giá gốc {snapshot.Price:N0}đ -> {request.NewPrice:N0}đ; revision={snapshot.Revision}->{newRevision}");
-            await _unitOfWork.SaveChangesAsync();
+            await _db.SaveChangesAsync();
             return PriceManagementResult.Ok(newRevision);
         });
 
@@ -379,11 +382,14 @@ public sealed class PriceManagementService : IPriceManagementService
 
     public async Task<PriceManagementResult> BulkUpdateBasePricesAsync(BulkPriceUpdateRequest request, int adminId)
     {
-        if (request.Targets.Count == 0 || request.Value <= 0)
+        if (request.Targets is null || request.Targets.Count == 0 || request.Value <= 0)
         {
             return PriceManagementResult.Fail(
                 "Vui lòng chọn đối tượng và nhập mức điều chỉnh lớn hơn 0.");
         }
+
+        if (request.Targets.Count > MaxBulkTargets)
+            return PriceManagementResult.Fail($"Chỉ được cập nhật tối đa {MaxBulkTargets} đối tượng mỗi lần.");
 
         if (request.AdjustmentType == PriceAdjustmentType.Amount &&
             !VndPriceRules.IsValidFixedAdjustment(request.Value))
@@ -409,10 +415,41 @@ public sealed class PriceManagementService : IPriceManagementService
 
         var result = await RunSerializedWriteAsync(async () =>
         {
+            var productIds = request.Targets.Select(item => item.Target.ProductId).Distinct().ToList();
+            var variantIds = request.Targets
+                .Where(item => item.Target.ProductVariantId.HasValue)
+                .Select(item => item.Target.ProductVariantId!.Value)
+                .Distinct()
+                .ToList();
+            var products = await _db.Products
+                .Where(product => productIds.Contains(product.Id))
+                .ToDictionaryAsync(product => product.Id);
+            var variants = await _db.ProductVariants
+                .Where(variant => variantIds.Contains(variant.Id))
+                .ToDictionaryAsync(variant => variant.Id);
+            var now = _timeProvider.GetUtcNow();
+            var candidateSchedules = await _db.PriceSchedules
+                .Where(schedule => productIds.Contains(schedule.ProductId) && !schedule.IsCancelled)
+                .ToListAsync();
+            var snapshots = new Dictionary<PriceTargetKey, BasePriceSnapshot>();
             foreach (var item in request.Targets)
             {
-                var snapshot = await GetBasePriceSnapshotAsync(item.Target);
-                if (snapshot == null)
+                var target = item.Target;
+                if (target.ProductVariantId.HasValue &&
+                    variants.TryGetValue(target.ProductVariantId.Value, out var variant) &&
+                    variant.ProductId == target.ProductId)
+                {
+                    snapshots[target] = new BasePriceSnapshot(variant.Price, variant.PriceRevision);
+                }
+                else if (!target.ProductVariantId.HasValue && products.TryGetValue(target.ProductId, out var product))
+                {
+                    snapshots[target] = new BasePriceSnapshot(product.Price, product.PriceRevision);
+                }
+            }
+
+            foreach (var item in request.Targets)
+            {
+                if (!snapshots.TryGetValue(item.Target, out var snapshot))
                     return PriceManagementResult.Fail("Có sản phẩm hoặc biến thể không tồn tại.");
 
                 if (snapshot.Price != item.ExpectedBasePrice || snapshot.Revision != item.ExpectedRevision)
@@ -425,7 +462,11 @@ public sealed class PriceManagementService : IPriceManagementService
                     ? snapshot.Price + delta
                     : snapshot.Price - delta;
 
-                var validation = await ValidateNewBasePriceAsync(item.Target, next);
+                var validation = ValidateNewBasePrice(
+                    item.Target,
+                    next,
+                    candidateSchedules,
+                    now);
                 if (validation != null)
                     return PriceManagementResult.Fail(validation);
 
@@ -439,8 +480,8 @@ public sealed class PriceManagementService : IPriceManagementService
 
                 if (target.ProductVariantId.HasValue)
                 {
-                    var variant = await _unitOfWork.ProductVariants.GetByIdAsync(target.ProductVariantId.Value);
-                    if (variant == null || variant.ProductId != target.ProductId)
+                    if (!variants.TryGetValue(target.ProductVariantId.Value, out var variant) ||
+                        variant.ProductId != target.ProductId)
                         return PriceManagementResult.Fail("Có sản phẩm hoặc biến thể không tồn tại.");
 
                     variant.Price = change.NewPrice;
@@ -449,8 +490,7 @@ public sealed class PriceManagementService : IPriceManagementService
                 }
                 else
                 {
-                    var product = await _unitOfWork.Products.GetByIdAsync(target.ProductId);
-                    if (product == null)
+                    if (!products.TryGetValue(target.ProductId, out var product))
                         return PriceManagementResult.Fail("Có sản phẩm hoặc biến thể không tồn tại.");
 
                     product.Price = change.NewPrice;
@@ -465,7 +505,7 @@ public sealed class PriceManagementService : IPriceManagementService
                     $"Giá gốc {change.CurrentPrice:N0}đ -> {change.NewPrice:N0}đ; revision={change.Request.ExpectedRevision}->{newRevision}");
             }
 
-            await _unitOfWork.SaveChangesAsync();
+            await _db.SaveChangesAsync();
             return PriceManagementResult.Ok();
         });
 
@@ -477,10 +517,10 @@ public sealed class PriceManagementService : IPriceManagementService
 
     private async Task<PriceManagementResult> RunSerializedWriteAsync(Func<Task<PriceManagementResult>> action)
     {
-        if ((_unitOfWork.DatabaseProviderName ?? string.Empty).Contains("InMemory", StringComparison.OrdinalIgnoreCase))
+        if ((_db.Database.ProviderName ?? string.Empty).Contains("InMemory", StringComparison.OrdinalIgnoreCase))
             return await action();
 
-        await using var transaction = await _unitOfWork.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+        await using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
         try
         {
             var result = await action();
@@ -502,7 +542,7 @@ public sealed class PriceManagementService : IPriceManagementService
 
     private async Task<string?> ValidateScheduleAsync(SavePriceScheduleRequest request, int? excludingId)
     {
-        var product = await _unitOfWork.Products.Query().Include(p => p.Variants).FirstOrDefaultAsync(p => p.Id == request.ProductId);
+        var product = await _db.Products.Include(p => p.Variants).FirstOrDefaultAsync(p => p.Id == request.ProductId);
         if (product == null) return "Không tìm thấy sản phẩm.";
         decimal basePrice;
         if (request.ProductVariantId.HasValue)
@@ -539,14 +579,20 @@ public sealed class PriceManagementService : IPriceManagementService
             }
         }
         if (request.DiscountType == DiscountType.Percentage &&
-            (request.Value < 1 || request.Value > 99))
+            !VndPriceRules.IsValidPercentage(request.Value))
         {
             return "Phần trăm giảm phải từ 1 đến 99.";
         }
 
+        if (request.DiscountType == DiscountType.Percentage &&
+            !VndPriceRules.IsValidPrice(VndPriceRules.CalculatePercentagePrice(basePrice, request.Value)))
+        {
+            return "Giá sau khi giảm phải lớn hơn 0đ.";
+        }
+
         var start = request.StartsAt.ToUniversalTime();
         var end = request.EndsAt?.ToUniversalTime();
-        var overlaps = await _unitOfWork.PriceSchedules.Query().AnyAsync(s =>
+        var overlaps = await _db.PriceSchedules.AnyAsync(s =>
             s.Id != excludingId && !s.IsCancelled && s.ProductId == request.ProductId &&
             s.ProductVariantId == request.ProductVariantId &&
             (!s.EndsAt.HasValue || start < s.EndsAt.Value) && (!end.HasValue || s.StartsAt < end.Value));
@@ -555,30 +601,54 @@ public sealed class PriceManagementService : IPriceManagementService
 
     private async Task<string?> ValidateNewBasePriceAsync(PriceTargetKey target, decimal newPrice)
     {
+        if (!(await GetBasePriceAsync(target)).HasValue) return "Không tìm thấy sản phẩm hoặc biến thể.";
+        var now = _timeProvider.GetUtcNow();
+        var candidateSchedules = await _db.PriceSchedules
+            .Where(s => s.ProductId == target.ProductId &&
+                s.ProductVariantId == target.ProductVariantId &&
+                !s.IsCancelled)
+            .ToListAsync();
+        return ValidateNewBasePrice(target, newPrice, candidateSchedules, now);
+    }
+
+    private static string? ValidateNewBasePrice(
+        PriceTargetKey target,
+        decimal newPrice,
+        IEnumerable<PriceSchedule> candidateSchedules,
+        DateTimeOffset now)
+    {
         if (!VndPriceRules.IsValidPrice(newPrice))
         {
             return "Giá gốc phải là số nguyên dương theo đơn vị VNĐ và không vượt quá 99.999.999đ.";
         }
-        if (!(await GetBasePriceAsync(target)).HasValue) return "Không tìm thấy sản phẩm hoặc biến thể.";
-        var now = _timeProvider.GetUtcNow();
-        var invalidFixed = await _unitOfWork.PriceSchedules.Query().AnyAsync(s =>
-            s.ProductId == target.ProductId && s.ProductVariantId == target.ProductVariantId && !s.IsCancelled &&
-            (!s.EndsAt.HasValue || s.EndsAt > now) && s.DiscountType == DiscountType.FixedPrice && s.Value >= newPrice);
-        return invalidFixed ? "Giá mới làm lịch giảm giá cố định đang chạy hoặc sắp tới không còn hợp lệ." : null;
+
+        var schedules = candidateSchedules.Where(s =>
+            s.ProductId == target.ProductId &&
+            s.ProductVariantId == target.ProductVariantId &&
+            (!s.EndsAt.HasValue || s.EndsAt.Value > now));
+        if (schedules.Any(s =>
+            s.DiscountType == DiscountType.FixedPrice && s.Value >= newPrice))
+            return "Giá mới làm lịch giảm giá cố định đang chạy hoặc sắp tới không còn hợp lệ.";
+
+        var invalidPercentage = schedules.Any(s =>
+            s.DiscountType == DiscountType.Percentage &&
+            (!VndPriceRules.IsValidPercentage(s.Value) ||
+             !VndPriceRules.IsValidPrice(VndPriceRules.CalculatePercentagePrice(newPrice, s.Value))));
+        return invalidPercentage ? "Giá mới làm lịch giảm giá phần trăm đang chạy hoặc sắp tới không còn hợp lệ." : null;
     }
 
     private async Task<decimal?> GetBasePriceAsync(PriceTargetKey target)
     {
         if (target.ProductVariantId.HasValue)
-            return await _unitOfWork.ProductVariants.Query()
+            return await _db.ProductVariants
                 .Where(v => v.Id == target.ProductVariantId && v.ProductId == target.ProductId)
                 .Select(v => (decimal?)v.Price).FirstOrDefaultAsync();
-        return await _unitOfWork.Products.Query().Where(p => p.Id == target.ProductId)
+        return await _db.Products.Where(p => p.Id == target.ProductId)
             .Select(p => (decimal?)p.Price).FirstOrDefaultAsync();
     }
 
     private async Task AddLogAsync(int productId, int adminId, string action, string details) =>
-        await _unitOfWork.ProductLogs.AddAsync(new ProductLog
+        await _db.ProductLogs.AddAsync(new ProductLog
         {
             ProductId = productId, AdminId = adminId, Action = action, Details = details,
             CreatedAt = _timeProvider.GetUtcNow().UtcDateTime

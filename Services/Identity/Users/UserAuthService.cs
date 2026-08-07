@@ -1,5 +1,5 @@
+using Fruitables.Data;
 using Fruitables.Models;
-using Fruitables.Repositories.Interfaces;
 using Fruitables.ViewModels;
 using Microsoft.EntityFrameworkCore;
 using Fruitables.Services.Communications;
@@ -11,12 +11,12 @@ namespace Fruitables.Services.Identity.Users;
 /// </summary>
 public class UserAuthService : IUserAuthService
 {
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly ApplicationDbContext _db;
     private readonly IEmailService _emailService;
 
-    public UserAuthService(IUnitOfWork unitOfWork, IEmailService emailService)
+    public UserAuthService(ApplicationDbContext db, IEmailService emailService)
     {
-        _unitOfWork = unitOfWork;
+        _db = db;
         _emailService = emailService;
     }
 
@@ -77,8 +77,8 @@ public class UserAuthService : IUserAuthService
             UpdatedAt = DateTime.UtcNow
         };
 
-        await _unitOfWork.Users.AddAsync(user);
-        await _unitOfWork.SaveChangesAsync();
+        await _db.Users.AddAsync(user);
+        await _db.SaveChangesAsync();
 
         return RegistrationResult.Succeeded(user);
     }
@@ -128,7 +128,7 @@ public class UserAuthService : IUserAuthService
             user.LockedAt = null;
             user.LockExpiresAt = null;
             user.LockedByAdminId = null;
-            await _unitOfWork.SaveChangesAsync();
+            await _db.SaveChangesAsync();
         }
 
         // Check if account is active
@@ -148,7 +148,7 @@ public class UserAuthService : IUserAuthService
 
         // Update last login time
         user.LastLoginAt = DateTime.UtcNow;
-        await _unitOfWork.SaveChangesAsync();
+        await _db.SaveChangesAsync();
 
         return AuthResult.Succeeded(user);
     }
@@ -161,7 +161,7 @@ public class UserAuthService : IUserAuthService
 
     public async Task<User?> GetUserByEmailAsync(string email)
     {
-        return await _unitOfWork.Users.Query().FirstOrDefaultAsync(u => u.Email == email);
+        return await _db.Users.FirstOrDefaultAsync(u => u.Email == email);
     }
 
     public string GetRedirectUrlByRole(UserRole role)
@@ -207,7 +207,7 @@ public class UserAuthService : IUserAuthService
         user.ResetPasswordToken = token;
         user.ResetPasswordTokenExpiresAt = DateTime.UtcNow.AddMinutes(15);
         user.UpdatedAt = DateTime.UtcNow;
-        await _unitOfWork.SaveChangesAsync();
+        await _db.SaveChangesAsync();
 
         // Build reset link and send email
         var resetLink = $"{resetCallbackUrl}?email={Uri.EscapeDataString(user.Email)}&token={Uri.EscapeDataString(token)}";
@@ -239,7 +239,7 @@ public class UserAuthService : IUserAuthService
         user.ResetPasswordToken = null;
         user.ResetPasswordTokenExpiresAt = null;
         user.UpdatedAt = DateTime.UtcNow;
-        await _unitOfWork.SaveChangesAsync();
+        await _db.SaveChangesAsync();
 
         return true;
     }

@@ -21,6 +21,9 @@ public static class PriceCalculator
         IEnumerable<PriceSchedule> schedules,
         DateTimeOffset instant)
     {
+        if (!VndPriceRules.IsValidPrice(basePrice))
+            return new PriceQuote(0, null, basePrice, 0, null);
+
         var active = SelectApplicableSchedule(schedules, instant);
         if (active == null)
             return new PriceQuote(0, null, basePrice, basePrice, null);
@@ -28,12 +31,12 @@ public static class PriceCalculator
         var effectivePrice = active.DiscountType switch
         {
             DiscountType.FixedPrice => active.Value,
-            DiscountType.Percentage => Math.Round(
-                basePrice * (100m - active.Value) / 100m,
-                0,
-                MidpointRounding.AwayFromZero),
+            DiscountType.Percentage => VndPriceRules.CalculatePercentagePrice(basePrice, active.Value),
             _ => basePrice
         };
+
+        if (!VndPriceRules.IsValidPrice(effectivePrice))
+            return new PriceQuote(0, null, basePrice, basePrice, null);
 
         return new PriceQuote(0, null, basePrice, effectivePrice, active.Id);
     }

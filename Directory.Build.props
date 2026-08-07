@@ -1,5 +1,0 @@
-<Project>
-  <PropertyGroup>
-    <DefaultItemExcludes>$(DefaultItemExcludes);Data\skills\**</DefaultItemExcludes>
-  </PropertyGroup>
-</Project>

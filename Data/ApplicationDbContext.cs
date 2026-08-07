@@ -113,6 +113,9 @@ public class ApplicationDbContext : DbContext
         // Cart - User (One-to-One)
         modelBuilder.Entity<Cart>(entity =>
         {
+            entity.HasIndex(c => c.SessionId)
+                  .IsUnique()
+                  .HasFilter("[SessionId] IS NOT NULL");
             entity.HasOne(c => c.User)
                   .WithOne(u => u.Cart)
                   .HasForeignKey<Cart>(c => c.UserId)
@@ -129,6 +132,9 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(e => e.PaymentCode)
                   .IsUnique()
                   .HasFilter("[PaymentCode] IS NOT NULL");
+            entity.HasIndex(e => new { e.CheckoutSessionId, e.CheckoutRequestId })
+                  .IsUnique()
+                  .HasFilter("[CheckoutSessionId] IS NOT NULL AND [CheckoutRequestId] IS NOT NULL");
             entity.HasOne(o => o.Address)
                   .WithMany(a => a.Orders)
                   .HasForeignKey(o => o.AddressId)

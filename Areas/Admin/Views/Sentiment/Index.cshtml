@@ -7,13 +7,24 @@
     Layout = "~/Areas/Admin/Views/Shared/_AdminDashboardLayout.cshtml";
 
     var alerts = (ViewBag.PendingAlerts as List<SentimentReviewRow>) ?? new List<SentimentReviewRow>();
+    var dashboardFrom = ViewBag.DashboardFrom is DateTime fromDate ? fromDate : DateTime.UtcNow.Date.AddDays(-13);
+    var dashboardTo = ViewBag.DashboardTo is DateTime toDate ? toDate : DateTime.UtcNow.Date;
+    var dashboardRangeLabel = $"{dashboardFrom:dd/MM/yyyy} – {dashboardTo:dd/MM/yyyy}";
+    var dashboardFromValue = dashboardFrom.ToString("yyyy-MM-dd");
+    var dashboardToValue = dashboardTo.ToString("yyyy-MM-dd");
+    var todayValue = DateTime.UtcNow.ToString("yyyy-MM-dd");
+    var actionCount = Model.PendingAlertCount + Model.PendingReviewCount;
+    var total = Math.Max(1, Model.TotalAnalyzed);
+    var positivePct = Model.PositiveCount * 100.0 / total;
+    var neutralPct = Model.NeutralCount * 100.0 / total;
+    var negativePct = Model.NegativeCount * 100.0 / total;
 
-    string SentimentBadge(SentimentLabel label, int? severity) => label switch
+    string SentimentBadge(SentimentLabel label) => label switch
     {
-        SentimentLabel.Positive => "bg-success",
-        SentimentLabel.Neutral => "bg-secondary",
-        SentimentLabel.Negative => "bg-danger",
-        _ => "bg-dark"
+        SentimentLabel.Positive => "bg-success text-white",
+        SentimentLabel.Neutral => "bg-secondary text-white",
+        SentimentLabel.Negative => "bg-danger text-white",
+        _ => "bg-dark text-white"
     };
 
     string SentimentText(SentimentLabel label) => label switch
@@ -24,409 +35,369 @@
         _ => "Lỗi"
     };
 
-    var chartsJson = JsonSerializer.Serialize(new
+    var chartsJson = JsonSerializer.Serialize(new { trend = Model.Trend }, new JsonSerializerOptions
     {
-        distribution = new[] { Model.PositiveCount, Model.NeutralCount, Model.NegativeCount },
-        trend = Model.Trend
-    }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    });
 }
 
 @section Styles {
     <style>
-        .sent-kpi { border-radius: 1rem; }
-        .sent-table { font-size: .875rem; }
+        .sent-page { max-width: 1600px; }
+        .sent-kpi { border: 1px solid #e8edf2; border-radius: .85rem; box-shadow: 0 2px 8px rgba(15, 23, 42, .04); }
+        .sent-kpi-action { background: #fffaf0; border-color: #f6d58a; }
+        .sent-kpi .sent-kpi-icon { font-size: 1.4rem; opacity: .55; }
+        .sent-card { border: 1px solid #e8edf2; border-radius: .85rem; box-shadow: 0 2px 8px rgba(15, 23, 42, .04); }
+        .sent-card .card-header { border-bottom: 1px solid #edf1f5; }
+        .sent-table { font-size: .82rem; }
         .sent-table td { vertical-align: middle; }
-        .sent-reason { max-width: 260px; }
+        .sent-reason { max-width: 290px; }
+        .sent-action-row td { padding-top: .8rem; padding-bottom: .8rem; }
+        .sent-action-row:hover { background: #fffdf6; }
+        .sent-chart-wrap { height: 260px; position: relative; }
+        .sent-progress { height: 9px; border-radius: 999px; background: #edf1f5; }
+        .sent-progress-bar { height: 100%; border-radius: inherit; }
+        .sent-empty { padding: 2rem 1rem; color: #718096; text-align: center; }
+        .sent-btn { border-width: 1px; font-weight: 600; }
+        .sent-btn-primary { background: #81c408; border-color: #81c408; color: #fff; }
+        .sent-btn-primary:hover, .sent-btn-primary:focus { background: #5a8a06; border-color: #5a8a06; color: #fff; }
+        .sent-btn-neutral { background: #fff; border-color: #cbd5e1; color: #526173; }
+        .sent-btn-neutral:hover, .sent-btn-neutral:focus { background: #f8fafc; border-color: #94a3b8; color: #263548; }
+        .sent-btn-info { background: #edf4ff; border-color: #a9c7f3; color: #2f5f9f; }
+        .sent-btn-info:hover, .sent-btn-info:focus { background: #dceaff; border-color: #7fa9e5; color: #244e84; }
+        .sent-btn-warning { background: #fff7df; border-color: #edc76b; color: #8a5a00; }
+        .sent-btn-warning:hover, .sent-btn-warning:focus { background: #ffefbd; border-color: #d9aa39; color: #6d4700; }
+        .sent-btn-danger { background: #fff0f0; border-color: #efb5b5; color: #b63131; }
+        .sent-btn-danger:hover, .sent-btn-danger:focus { background: #fde1e1; border-color: #dc8585; color: #8f2424; }
+        .sent-btn-ai { background: #f5efff; border-color: #c9b4ef; color: #6b3fa0; }
+        .sent-btn-ai:hover, .sent-btn-ai:focus { background: #eadfff; border-color: #aa8bdc; color: #512d80; }
+        .sent-tone-primary { color: #5a8a06 !important; }
+        .sent-tone-warning { color: #b47a08 !important; }
+        .sent-tone-info { color: #3e72bd !important; }
+        .sent-tone-danger { color: #c0392b !important; }
+        .sent-tone-ai { color: #6b3fa0 !important; }
+        .sent-date-filter { display: flex; flex-wrap: wrap; align-items: end; gap: .45rem; padding: .35rem; border: 1px solid #d7e0e8; border-radius: .55rem; background: #fff; }
+        .sent-date-field label { display: block; margin: 0 0 .15rem .1rem; color: #718096; font-size: .65rem; font-weight: 700; text-transform: uppercase; }
+        .sent-date-field input { width: 125px; padding: .4rem .5rem; border: 1px solid #d7e0e8; border-radius: .35rem; color: #364152; font-size: .75rem; }
+        .sent-date-field input:focus { border-color: #81c408; box-shadow: 0 0 0 3px #81c40822; outline: 0; }
+        .sent-date-hint { color: #718096; font-size: .7rem; white-space: nowrap; }
+        .sent-toast-stack { position: fixed; right: 1.25rem; bottom: 1.25rem; z-index: 1200; display: grid; gap: .5rem; }
+        .sent-toast { min-width: 260px; max-width: 360px; padding: .75rem 1rem; border-radius: .65rem; color: #fff; box-shadow: 0 8px 24px rgba(15, 23, 42, .18); animation: sent-toast-in .18s ease-out; }
+        .sent-toast-success { background: #4f8c08; }
+        .sent-toast-error { background: #c0392b; }
+        .sent-toast-info { background: #2563a8; }
+        @@keyframes sent-toast-in { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @@media (max-width: 767.98px) {
+            .sent-page { padding-left: .75rem !important; padding-right: .75rem !important; }
+            .sent-action-row .btn-group { display: flex; flex-wrap: wrap; gap: .25rem; }
+            .sent-action-row .btn-group .btn { border-radius: .25rem !important; }
+        }
     </style>
 }
 
-<div class="container-fluid px-4 py-4">
-    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
+<div class="container-fluid px-4 py-4 sent-page">
+    <div class="d-flex flex-wrap justify-content-between align-items-start mb-4 gap-3">
         <div>
-            <h1 class="h3 mb-1 fw-bold">Phân tích cảm xúc đánh giá</h1>
-            <p class="text-muted mb-0 small">Nhãn tích cực / trung tính / tiêu cực do AI phân tích từ bình luận sản phẩm</p>
+            <div class="text-muted small mb-1"><i class="fas fa-chart-line me-1"></i>Phân tích vận hành</div>
+            <h1 class="h3 mb-1 fw-bold">Phân tích cảm xúc</h1>
+            <p class="text-muted mb-0 small">Theo dõi xu hướng và xử lý các review cần admin kiểm tra.</p>
         </div>
-        <div class="d-flex gap-2">
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+            <form method="get" action="@Url.Action("Index", "Sentiment", new { area = "Admin" })" class="sent-date-filter" id="sentDateFilter">
+                <div class="sent-date-field"><label for="sentFrom">Từ ngày</label><input id="sentFrom" type="date" name="from" value="@dashboardFromValue" max="@todayValue" /></div>
+                <div class="sent-date-field"><label for="sentTo">Đến ngày</label><input id="sentTo" type="date" name="to" value="@dashboardToValue" max="@todayValue" /></div>
+                <button type="submit" class="btn sent-btn sent-btn-primary btn-sm"><i class="fas fa-filter me-1"></i>Xem</button>
+                <a href="@Url.Action("Index", "Sentiment", new { area = "Admin" })" class="sent-date-hint text-decoration-none" title="Trở về 14 ngày gần nhất">14 ngày mặc định</a>
+            </form>
             <form method="post" asp-action="Backfill" asp-controller="Sentiment" asp-area="Admin" id="backfillForm">
                 @Html.AntiForgeryToken()
-                <button type="submit" class="btn btn-outline-primary btn-sm" id="backfillBtn" @(Model.UnanalyzedCount == 0 ? "disabled" : "")>
-                    <i class="fas fa-sync me-1"></i>Phân tích lại (@Model.UnanalyzedCount chưa xử lý)
+                <button type="submit" class="btn sent-btn sent-btn-info btn-sm" id="backfillBtn" @(Model.UnanalyzedCount == 0 ? "disabled" : "")>
+                    <i class="fas fa-sync me-1"></i>Phân tích lại <span class="text-muted">(@Model.UnanalyzedCount)</span>
                 </button>
             </form>
-            <a asp-action="ExportCsv" asp-controller="Sentiment" asp-area="Admin" class="btn btn-outline-secondary btn-sm">
+            <a asp-action="ExportCsv" asp-controller="Sentiment" asp-area="Admin" class="btn sent-btn sent-btn-neutral btn-sm">
                 <i class="fas fa-file-csv me-1"></i>Export CSV
             </a>
-            <a asp-action="Reviews" asp-controller="Sentiment" asp-area="Admin" class="btn btn-admin-primary btn-sm">
-                <i class="fas fa-list me-1"></i>Danh sách đánh giá
+            <a asp-action="Reviews" asp-controller="Sentiment" asp-area="Admin" class="btn sent-btn sent-btn-primary btn-sm">
+                <i class="fas fa-list me-1"></i>Danh sách review
             </a>
         </div>
     </div>
 
-    <!-- KPI -->
-    <div class="row g-3 mb-4">
-        <div class="col-md-3">
-            <div class="card sent-kpi border-success border-2">
+    <div class="row row-cols-1 row-cols-sm-2 row-cols-xl-4 g-3 mb-4">
+        <div class="col">
+            <div class="card sent-kpi h-100">
                 <div class="card-body d-flex justify-content-between align-items-center">
-                    <div>
-                        <div class="text-muted small text-uppercase fw-bold">Tích cực</div>
-                        <div class="fs-3 fw-bold text-success">@Model.PositiveCount</div>
-                        <div class="small text-muted">@(Model.TotalAnalyzed == 0 ? "0" : (Model.PositiveCount * 100.0 / Model.TotalAnalyzed).ToString("0.0"))%</div>
-                    </div>
-                    <i class="fas fa-smile-beam fa-2x text-success opacity-50"></i>
+                    <div><div class="text-muted small text-uppercase fw-bold">Tổng đã phân tích</div><div class="fs-3 fw-bold">@Model.TotalAnalyzed</div><div class="small text-muted">Trung tính: @Model.NeutralCount</div></div>
+                    <i class="fas fa-layer-group sent-kpi-icon text-secondary"></i>
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="card sent-kpi border-secondary border-2">
+        <div class="col">
+            <div class="card sent-kpi h-100">
                 <div class="card-body d-flex justify-content-between align-items-center">
-                    <div>
-                        <div class="text-muted small text-uppercase fw-bold">Trung tính</div>
-                        <div class="fs-3 fw-bold text-secondary">@Model.NeutralCount</div>
-                        <div class="small text-muted">@(Model.TotalAnalyzed == 0 ? "0" : (Model.NeutralCount * 100.0 / Model.TotalAnalyzed).ToString("0.0"))%</div>
-                    </div>
-                    <i class="fas fa-meh fa-2x text-secondary opacity-50"></i>
+                    <div><div class="text-muted small text-uppercase fw-bold">Tích cực</div><div class="fs-3 fw-bold text-success">@Model.PositiveCount</div><div class="small text-muted">@positivePct.ToString("0.0")% tổng review</div></div>
+                    <i class="fas fa-smile-beam sent-kpi-icon text-success"></i>
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="card sent-kpi border-danger border-2">
+        <div class="col">
+            <div class="card sent-kpi h-100">
                 <div class="card-body d-flex justify-content-between align-items-center">
-                    <div>
-                        <div class="text-muted small text-uppercase fw-bold">Tiêu cực</div>
-                        <div class="fs-3 fw-bold text-danger">@Model.NegativeCount</div>
-                        <div class="small text-danger fw-bold">@(Model.NegativeRate.ToString("0.0"))%</div>
-                    </div>
-                    <i class="fas fa-frown fa-2x text-danger opacity-50"></i>
+                    <div><div class="text-muted small text-uppercase fw-bold">Tiêu cực</div><div class="fs-3 fw-bold text-danger">@Model.NegativeCount</div><div class="small text-danger fw-bold">@Model.NegativeRate.ToString("0.0")% tổng review</div></div>
+                    <i class="fas fa-frown sent-kpi-icon text-danger"></i>
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="card sent-kpi border-warning border-2">
+        <div class="col">
+            <div class="card sent-kpi sent-kpi-action h-100">
                 <div class="card-body d-flex justify-content-between align-items-center">
-                    <div>
-                        <div class="text-muted small text-uppercase fw-bold">Cảnh báo chưa xử lý</div>
-                        <div class="fs-3 fw-bold @(Model.PendingAlertCount > 0 ? "text-warning" : "text-muted")">@Model.PendingAlertCount</div>
-                        <div class="small text-muted">@Model.TotalAnalyzed đã phân tích</div>
-                    </div>
-                    <i class="fas fa-exclamation-triangle fa-2x @(Model.PendingAlertCount > 0 ? "text-warning" : "text-muted") opacity-50"></i>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card sent-kpi border-primary border-2">
-                <div class="card-body d-flex justify-content-between align-items-center">
-                    <div>
-                        <div class="text-muted small text-uppercase fw-bold">Chờ admin duyệt</div>
-                        <div class="fs-3 fw-bold @(Model.PendingReviewCount > 0 ? "text-primary" : "text-muted")">@Model.PendingReviewCount</div>
-                        <div class="small text-muted">@Model.ConflictCount conflict · @Model.SafetyRiskCount rủi ro an toàn</div>
-                        @if (Model.PendingReviewCount > 0)
-                        {
-                            <a asp-action="Reviews" asp-controller="Sentiment" asp-area="Admin" asp-route-needsManualReviewOnly="true" class="small">Xem danh sách</a>
-                        }
-                    </div>
-                    <i class="fas fa-user-check fa-2x @(Model.PendingReviewCount > 0 ? "text-primary" : "text-muted") opacity-50"></i>
+                    <div><div class="text-muted small text-uppercase fw-bold">Lượt cần xử lý</div><div class="fs-3 fw-bold text-warning" id="pendingWorkCount">@actionCount</div><div class="small text-muted"><span id="pendingAlertCount">@Model.PendingAlertCount</span> cảnh báo · @Model.PendingReviewCount chờ duyệt</div></div>
+                    <i class="fas fa-exclamation-triangle sent-kpi-icon text-warning"></i>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Charts -->
-    <div class="row g-3 mb-4">
-        <div class="col-lg-4">
-            <div class="card h-100">
-                <div class="card-header bg-white fw-bold">Phân bố cảm xúc</div>
-                <div class="card-body">
-                    <canvas id="distributionChart" height="220"></canvas>
-                </div>
+    <section class="card sent-card sent-action-queue mb-4">
+        <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2 py-3">
+            <div><h2 class="h6 fw-bold mb-1"><i class="fas fa-inbox text-warning me-2"></i>Việc cần xử lý</h2><span class="small text-muted">Ưu tiên các review có rủi ro hoặc cần admin kiểm tra</span></div>
+            <a asp-action="Reviews" asp-controller="Sentiment" asp-area="Admin" asp-route-needsManualReviewOnly="true" class="btn sent-btn sent-btn-info btn-sm">Xem hàng đợi duyệt <i class="fas fa-arrow-right ms-1"></i></a>
+        </div>
+        <div class="card-body border-bottom py-3">
+            <div class="row g-2">
+                <div class="col-sm-4"><a class="d-flex justify-content-between align-items-center text-decoration-none border rounded p-2 h-100" asp-action="Reviews" asp-controller="Sentiment" asp-area="Admin" asp-route-alertOnly="true"><span><i class="fas fa-bell sent-tone-warning me-2"></i><span class="small fw-bold">Cảnh báo nghiêm trọng</span></span><span class="badge bg-warning text-dark rounded-pill">@Model.PendingAlertCount</span></a></div>
+                <div class="col-sm-4"><a class="d-flex justify-content-between align-items-center text-decoration-none border rounded p-2 h-100" asp-action="Reviews" asp-controller="Sentiment" asp-area="Admin" asp-route-needsManualReviewOnly="true"><span><i class="fas fa-user-check text-primary me-2"></i><span class="small fw-bold">Chờ admin duyệt</span></span><span class="badge bg-primary rounded-pill">@Model.PendingReviewCount</span></a></div>
+                <div class="col-sm-4"><a class="d-flex justify-content-between align-items-center text-decoration-none sent-btn sent-btn-danger rounded p-2 h-100" asp-action="Reviews" asp-controller="Sentiment" asp-area="Admin" asp-route-safetyOnly="true"><span><i class="fas fa-shield-alt me-2"></i><span class="small fw-bold">Rủi ro an toàn</span></span><span class="badge bg-danger rounded-pill">@Model.SafetyRiskCount</span></a></div>
             </div>
         </div>
-        <div class="col-lg-8">
-            <div class="card h-100">
-                <div class="card-header bg-white fw-bold">Xu hướng 14 ngày gần nhất</div>
-                <div class="card-body">
-                    <canvas id="trendChart" height="220"></canvas>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="row g-3 mb-4">
-        <!-- Top sản phẩm bị chê -->
-        <div class="col-lg-7">
-            <div class="card h-100">
-                <div class="card-header bg-white fw-bold">Top sản phẩm bị chê nhiều nhất</div>
-                <div class="card-body p-0">
-                    <table class="table table-hover mb-0 sent-table">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Sản phẩm</th>
-                                <th class="text-center">Review tiêu cực</th>
-                                <th class="text-center">Tổng review</th>
-                                <th class="text-center">% tiêu cực</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @if (Model.TopNegativeProducts.Count == 0)
-                            {
-                                <tr><td colspan="4" class="text-center text-muted py-4">Chưa có dữ liệu</td></tr>
-                            }
-                            @foreach (var p in Model.TopNegativeProducts)
-                            {
-                                <tr>
-                                    <td>
-                                        <a asp-area="Admin" asp-controller="Sentiment" asp-action="Reviews"
-                                           asp-route-productId="@p.ProductId" class="text-decoration-none">@p.ProductName</a>
-                                    </td>
-                                    <td class="text-center"><span class="badge bg-danger">@p.NegativeCount</span></td>
-                                    <td class="text-center">@p.TotalCount</td>
-                                    <td class="text-center">@p.NegativeRate.ToString("0.0")%</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- Top khía cạnh bị chê -->
-        <div class="col-lg-5">
-            <div class="card h-100">
-                <div class="card-header bg-white fw-bold">Khía cạnh bị khách chê</div>
-                <div class="card-body">
-                    @if (Model.TopNegativeAspects.Count == 0)
-                    {
-                        <p class="text-muted text-center py-4 mb-0">Chưa có dữ liệu</p>
-                    }
-                    @foreach (var a in Model.TopNegativeAspects)
-                    {
-                        var max = Model.TopNegativeAspects.Max(x => x.Count);
-                        var pct = max == 0 ? 0 : a.Count * 100 / max;
-                        <div class="mb-3">
-                            <div class="d-flex justify-content-between small fw-bold mb-1">
-                                <span>@a.Aspect</span><span class="text-danger">@a.Count</span>
-                            </div>
-                            <div class="progress" style="height: 8px;">
-                                <div class="progress-bar bg-danger" style="width: @pct%"></div>
-                            </div>
-                        </div>
-                    }
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Cảnh báo -->
-    <div class="card mb-4">
-        <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center">
-            <span><i class="fas fa-exclamation-triangle text-warning me-2"></i>Cảnh báo tiêu cực nghiêm trọng (chưa xử lý)</span>
-            <a asp-action="Reviews" asp-controller="Sentiment" asp-area="Admin" asp-route-alertOnly="true" class="small text-decoration-none">Xem tất cả</a>
-        </div>
-        <div class="card-body p-0">
+        <div class="table-responsive">
             <table class="table table-hover mb-0 sent-table">
-                <thead class="table-light">
-                    <tr>
-                        <th>Sản phẩm</th>
-                        <th>Khách hàng</th>
-                        <th>Nội dung</th>
-                        <th class="text-center">Mức độ</th>
-                        <th class="text-center">Thao tác</th>
-                    </tr>
-                </thead>
-                <tbody>
+                <thead class="table-light"><tr><th>Review</th><th>Nội dung</th><th class="text-center">Phân tích</th><th class="text-center">Thao tác</th></tr></thead>
+                <tbody id="sentAlertRows">
                     @if (alerts.Count == 0)
                     {
-                        <tr><td colspan="5" class="text-center text-muted py-4">Không có cảnh báo nào đang chờ xử lý</td></tr>
+                        <tr id="sentAlertEmpty"><td colspan="4" class="sent-empty"><i class="fas fa-check-circle text-success fa-2x mb-2 d-block"></i>Không có cảnh báo nào đang chờ xử lý</td></tr>
                     }
                     @foreach (var r in alerts)
                     {
-                        <tr>
-                            <td>@r.ProductName</td>
-                            <td>@r.UserName</td>
-                            <td class="sent-reason">
-                                <div class="text-truncate" title="@r.Comment">@(r.Comment.Length > 100 ? r.Comment[..100] + "..." : r.Comment)</div>
-                                <div class="small text-muted">@r.Reason</div>
-                            </td>
-                            <td class="text-center">
-                                <span class="badge bg-danger">Mức @r.Severity</span>
-                                <span class="badge @SentimentBadge(r.Label, r.Severity)">@SentimentText(r.Label)</span>
-                            </td>
-                            <td class="text-center">
-                                <div class="btn-group btn-group-sm">
-                                    <a asp-area="Admin" asp-controller="Sentiment" asp-action="Reviews" asp-route-productId="@r.ProductId" class="btn btn-outline-secondary">Xem</a>
-                                    <button type="button" class="btn btn-outline-info" title="Xem đơn hàng của khách" onclick="viewOrder(@r.ReviewId)">
-                                        <i class="fas fa-box me-1"></i>Đơn
-                                    </button>
-                                    <button type="button" class="btn btn-outline-primary" title="Gửi email hỏi thăm khách" onclick="openFollowUp(@r.ReviewId, '@r.UserName', '@r.ProductName')">
-                                        <i class="fas fa-envelope me-1"></i>Email
-                                    </button>
-                                    <button type="button" class="btn btn-success" onclick="ackAlert(@r.ReviewId, this)">
-                                        <i class="fas fa-check me-1"></i>Xác nhận
-                                    </button>
-                                </div>
-                            </td>
+                        <tr class="sent-action-row" data-review-id="@r.ReviewId">
+                            <td><div class="fw-bold">@r.ProductName</div><div class="small text-muted">@r.UserName · #@r.ReviewId</div></td>
+                            <td class="sent-reason"><div class="text-truncate" title="@r.Comment">@(r.Comment.Length > 120 ? r.Comment[..120] + "..." : r.Comment)</div><div class="small text-muted mt-1">@r.Reason</div></td>
+                            <td class="text-center"><span class="badge bg-danger">Mức @r.Severity</span><span class="badge @SentimentBadge(r.Label) ms-1">@SentimentText(r.Label)</span></td>
+                            <td class="text-center"><div class="btn-group btn-group-sm" role="group">
+                                <a asp-area="Admin" asp-controller="Sentiment" asp-action="Reviews" asp-route-productId="@r.ProductId" class="btn sent-btn sent-btn-neutral">Xem</a>
+                                <button type="button" class="btn sent-btn sent-btn-info js-view-order" data-review-id="@r.ReviewId" title="Xem đơn hàng"><i class="fas fa-box"></i><span class="visually-hidden">Xem đơn hàng</span></button>
+                                <button type="button" class="btn sent-btn sent-btn-ai js-follow-up" data-review-id="@r.ReviewId" data-customer="@r.UserName" data-product="@r.ProductName" title="Gửi email"><i class="fas fa-envelope"></i><span class="visually-hidden">Gửi email</span></button>
+                                <button type="button" class="btn sent-btn sent-btn-primary js-ack-alert" data-review-id="@r.ReviewId" title="Xác nhận cảnh báo"><i class="fas fa-check"></i><span class="visually-hidden">Xác nhận cảnh báo</span></button>
+                            </div></td>
                         </tr>
                     }
                 </tbody>
             </table>
         </div>
+    </section>
+
+    <div class="row g-3 mb-4">
+        <div class="col-lg-8">
+            <div class="card sent-card h-100">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center py-3"><span class="fw-bold">Xu hướng tiêu cực</span><span class="small text-muted">@dashboardRangeLabel</span></div>
+                <div class="card-body"><div class="sent-chart-wrap"><canvas id="trendChart" aria-label="Xu hướng cảm xúc trong 14 ngày gần nhất"></canvas></div></div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card sent-card h-100">
+                <div class="card-header bg-white fw-bold py-3">Phân bố hiện tại</div>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between small mb-1"><span><i class="fas fa-circle text-success me-1"></i>Tích cực</span><strong>@Model.PositiveCount</strong></div>
+                    <div class="sent-progress mb-3"><div class="sent-progress-bar bg-success" style="width: @positivePct.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)%"></div></div>
+                    <div class="d-flex justify-content-between small mb-1"><span><i class="fas fa-circle text-secondary me-1"></i>Trung tính</span><strong>@Model.NeutralCount</strong></div>
+                    <div class="sent-progress mb-3"><div class="sent-progress-bar bg-secondary" style="width: @neutralPct.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)%"></div></div>
+                    <div class="d-flex justify-content-between small mb-1"><span><i class="fas fa-circle text-danger me-1"></i>Tiêu cực</span><strong>@Model.NegativeCount</strong></div>
+                    <div class="sent-progress"><div class="sent-progress-bar bg-danger" style="width: @negativePct.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)%"></div></div>
+                    <div class="small text-muted border-top mt-4 pt-3">Biểu đồ donut được thay bằng thanh tỷ lệ để so sánh nhanh hơn.</div>
+                </div>
+            </div>
+        </div>
     </div>
+
+    <div class="row g-3">
+        <div class="col-lg-7">
+            <div class="card sent-card h-100"><div class="card-header bg-white fw-bold py-3">Top sản phẩm bị chê nhiều nhất</div><div class="card-body p-0"><div class="table-responsive"><table class="table table-hover mb-0 sent-table"><thead class="table-light"><tr><th>Sản phẩm</th><th class="text-center">Tiêu cực</th><th class="text-center">Tổng review</th><th class="text-center">Tỷ lệ</th></tr></thead><tbody>
+                @if (Model.TopNegativeProducts.Count == 0) { <tr><td colspan="4" class="sent-empty">Chưa có dữ liệu</td></tr> }
+                @foreach (var p in Model.TopNegativeProducts) { <tr><td><a asp-area="Admin" asp-controller="Sentiment" asp-action="Reviews" asp-route-productId="@p.ProductId" class="text-decoration-none fw-semibold">@p.ProductName</a></td><td class="text-center"><span class="badge bg-danger">@p.NegativeCount</span></td><td class="text-center">@p.TotalCount</td><td class="text-center">@p.NegativeRate.ToString("0.0")%</td></tr> }
+            </tbody></table></div></div></div>
+        </div>
+        <div class="col-lg-5">
+            <div class="card sent-card h-100"><div class="card-header bg-white fw-bold py-3">Khía cạnh bị khách chê</div><div class="card-body">
+                @if (Model.TopNegativeAspects.Count == 0) { <p class="sent-empty mb-0">Chưa có dữ liệu</p> }
+                @foreach (var a in Model.TopNegativeAspects) { var max = Model.TopNegativeAspects.Max(x => x.Count); var pct = max == 0 ? 0 : a.Count * 100 / max; <div class="mb-3"><div class="d-flex justify-content-between small fw-bold mb-1"><span>@a.Aspect</span><span class="text-danger">@a.Count</span></div><div class="progress" style="height: 8px;"><div class="progress-bar bg-danger" style="width: @pct%"></div></div></div> }
+            </div></div>
+        </div>
+    </div>
+</div>
+
+<div class="sent-toast-stack" id="sentToastStack" aria-live="polite" aria-atomic="true"></div>
+
+<!-- Follow-up email modal -->
+<div class="modal fade" id="followUpModal" tabindex="-1" aria-labelledby="followUpTitle" aria-hidden="true">
+    <div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="followUpTitle">Email hỏi thăm khách hàng</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button></div><div class="modal-body">
+        <p class="small text-muted">Gửi tới: <strong id="fuCustomer"></strong></p>
+        <div class="mb-3"><label class="form-label fw-bold" for="fuSubject">Tiêu đề</label><input id="fuSubject" class="form-control" maxlength="120" /></div>
+        <div class="mb-2"><label class="form-label fw-bold" for="fuMessage">Nội dung</label><textarea id="fuMessage" class="form-control" rows="5" maxlength="2000"></textarea></div>
+    </div><div class="modal-footer"><button type="button" class="btn sent-btn sent-btn-neutral" data-bs-dismiss="modal">Hủy</button><button type="button" class="btn sent-btn sent-btn-ai" id="fuAiBtn"><i class="fas fa-magic me-1"></i>Gợi ý bằng AI</button><button type="button" class="btn sent-btn sent-btn-primary" id="fuSendBtn">Gửi email</button></div></div></div>
 </div>
 
 @section Scripts {
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script>
         const sentCharts = @Html.Raw(chartsJson);
+        let followUpReviewId = 0;
 
         function antiforgeryHeaders() {
-            return {
-                'RequestVerificationToken': document.querySelector('input[name="__RequestVerificationToken"]')?.value || ''
-            };
+            return { 'RequestVerificationToken': document.querySelector('input[name="__RequestVerificationToken"]')?.value || '' };
+        }
+
+        function showSentToast(message, type = 'success') {
+            const stack = document.getElementById('sentToastStack');
+            const toast = document.createElement('div');
+            toast.className = `sent-toast sent-toast-${type}`;
+            toast.textContent = message;
+            stack.appendChild(toast);
+            setTimeout(() => toast.remove(), 3500);
+        }
+
+        function setButtonBusy(button, busy, busyText, idleHtml) {
+            button.disabled = busy;
+            if (busy) button.innerHTML = `<i class="fas fa-spinner fa-spin me-1"></i>${busyText}`;
+            else button.innerHTML = idleHtml;
         }
 
         document.addEventListener('DOMContentLoaded', function () {
-            new Chart(document.getElementById('distributionChart'), {
-                type: 'doughnut',
-                data: {
-                    labels: ['Tích cực', 'Trung tính', 'Tiêu cực'],
-                    datasets: [{
-                        data: sentCharts.distribution,
-                        backgroundColor: ['#10b981', '#94a3b8', '#ef4444']
-                    }]
-                },
-                options: { plugins: { legend: { position: 'bottom' } } }
+            document.getElementById('sentDateFilter')?.addEventListener('submit', function (event) {
+                const from = document.getElementById('sentFrom').value;
+                const to = document.getElementById('sentTo').value;
+                if (from && to && from > to) {
+                    event.preventDefault();
+                    showSentToast('Ngày bắt đầu phải trước hoặc bằng ngày kết thúc', 'error');
+                }
             });
 
-            new Chart(document.getElementById('trendChart'), {
-                type: 'line',
-                data: {
-                    labels: sentCharts.trend.map(t => t.date),
-                    datasets: [
-                        { label: 'Tích cực', data: sentCharts.trend.map(t => t.positive), borderColor: '#10b981', backgroundColor: '#10b98122', fill: true, tension: .3 },
-                        { label: 'Trung tính', data: sentCharts.trend.map(t => t.neutral), borderColor: '#94a3b8', backgroundColor: '#94a3b822', fill: true, tension: .3 },
-                        { label: 'Tiêu cực', data: sentCharts.trend.map(t => t.negative), borderColor: '#ef4444', backgroundColor: '#ef444422', fill: true, tension: .3 }
-                    ]
-                },
-                options: { plugins: { legend: { position: 'bottom' } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+            const canvas = document.getElementById('trendChart');
+            if (canvas && sentCharts.trend?.length && window.Chart) {
+                new Chart(canvas, {
+                    type: 'line',
+                    data: {
+                        labels: sentCharts.trend.map(t => t.date),
+                        datasets: [{
+                            label: 'Tiêu cực',
+                            data: sentCharts.trend.map(t => t.negative),
+                            borderColor: '#dc3545',
+                            backgroundColor: '#dc354522',
+                            fill: true,
+                            tension: .3,
+                            pointRadius: 3,
+                            pointHoverRadius: 5
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { intersect: false, mode: 'index' },
+                        plugins: { legend: { display: false }, tooltip: { callbacks: { label: context => ` ${context.parsed.y} review tiêu cực` } } },
+                        scales: { y: { beginAtZero: true, ticks: { precision: 0 } }, x: { grid: { display: false } } }
+                    }
+                });
+            }
+
+            document.getElementById('backfillForm')?.addEventListener('submit', function (event) {
+                event.preventDefault();
+                const form = this;
+                const button = document.getElementById('backfillBtn');
+                const idleHtml = button.innerHTML;
+                setButtonBusy(button, true, 'Đang xếp hàng...', idleHtml);
+                fetch(form.action, { method: 'POST', body: new FormData(form) })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) { showSentToast(data.message); setTimeout(() => location.reload(), 900); }
+                        else { showSentToast(data.message || 'Không thể xếp hàng phân tích', 'error'); setButtonBusy(button, false, '', idleHtml); }
+                    })
+                    .catch(() => { showSentToast('Lỗi kết nối', 'error'); setButtonBusy(button, false, '', idleHtml); });
             });
+
+            document.querySelectorAll('.js-ack-alert').forEach(button => button.addEventListener('click', () => ackAlert(button.dataset.reviewId, button)));
+            document.querySelectorAll('.js-view-order').forEach(button => button.addEventListener('click', () => viewOrder(button.dataset.reviewId)));
+            document.querySelectorAll('.js-follow-up').forEach(button => button.addEventListener('click', () => openFollowUp(button.dataset.reviewId, button.dataset.customer, button.dataset.product)));
+            document.getElementById('fuAiBtn')?.addEventListener('click', generateReplyDraft);
+            document.getElementById('fuSendBtn')?.addEventListener('click', sendFollowUp);
         });
 
-        // Backfill
-        document.getElementById('backfillForm').addEventListener('submit', function (e) {
-            e.preventDefault();
-            const btn = document.getElementById('backfillBtn');
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Đang xếp hàng...';
-            fetch(this.action, { method: 'POST', body: new FormData(this) })
-                .then(r => r.json())
-                .then(d => {
-                    if (d.success) {
-                        alert(d.message);
-                        location.reload();
-                    } else { alert(d.message || 'Lỗi'); btn.disabled = false; btn.innerHTML = 'Phân tích lại'; }
-                })
-                .catch(() => { alert('Lỗi kết nối'); btn.disabled = false; btn.innerHTML = 'Phân tích lại'; });
-        });
-
-        // Xác nhận cảnh báo
-        function ackAlert(reviewId, btn) {
+        function ackAlert(reviewId, button) {
             const formData = new FormData();
             formData.append('reviewId', reviewId);
+            button.disabled = true;
             fetch('@Url.Action("Acknowledge", "Sentiment", new { area = "Admin" })', { method: 'POST', headers: antiforgeryHeaders(), body: formData })
-                .then(r => r.json())
-                .then(d => { if (d.success) { btn.closest('tr').remove(); } else alert(d.message); })
-                .catch(() => alert('Lỗi kết nối'));
-        }
-
-        // Xem đơn hàng của khách
-        function viewOrder(reviewId) {
-            fetch('@Url.Action("OrderInfo", "Sentiment", new { area = "Admin" })?reviewId=' + reviewId)
-                .then(r => r.json())
-                .then(d => {
-                    if (d.success) { window.open('@Url.Action("Detail", "Order", new { area = "Admin" })/' + d.orderId, '_blank'); }
-                    else alert(d.message || 'Không tìm thấy đơn hàng');
+                .then(response => response.json())
+                .then(data => {
+                    if (!data.success) { button.disabled = false; showSentToast(data.message || 'Không thể xác nhận cảnh báo', 'error'); return; }
+                    button.closest('tr')?.remove();
+                    const count = document.getElementById('pendingAlertCount');
+                    if (count) count.textContent = Math.max(0, Number(count.textContent) - 1);
+                    const empty = document.getElementById('sentAlertEmpty');
+                    if (!document.querySelector('#sentAlertRows .sent-action-row') && !empty) document.getElementById('sentAlertRows').innerHTML = '<tr id="sentAlertEmpty"><td colspan="4" class="sent-empty"><i class="fas fa-check-circle text-success fa-2x mb-2 d-block"></i>Không có cảnh báo nào đang chờ xử lý</td></tr>';
+                    showSentToast(data.message || 'Đã xác nhận cảnh báo');
                 })
-                .catch(() => alert('Lỗi kết nối'));
+                .catch(() => { button.disabled = false; showSentToast('Lỗi kết nối', 'error'); });
         }
 
-        // Modal gửi email hỏi thăm khách
-        let followUpReviewId = 0;
+        function viewOrder(reviewId) {
+            fetch('@Url.Action("OrderInfo", "Sentiment", new { area = "Admin" })?reviewId=' + encodeURIComponent(reviewId))
+                .then(response => response.json())
+                .then(data => data.success ? window.open('@Url.Action("Detail", "Order", new { area = "Admin" })/' + data.orderId, '_blank') : showSentToast(data.message || 'Không tìm thấy đơn hàng', 'info'))
+                .catch(() => showSentToast('Lỗi kết nối', 'error'));
+        }
+
         function openFollowUp(reviewId, customerName, productName) {
             followUpReviewId = reviewId;
             document.getElementById('fuCustomer').textContent = customerName;
             document.getElementById('fuSubject').value = '[' + productName + '] Cảm ơn phản hồi của bạn';
             document.getElementById('fuMessage').value = 'Xin chào, chúng tôi rất tiếc về trải nghiệm của bạn với sản phẩm ' + productName + '. Chúng tôi muốn tìm hiểu thêm và hỗ trợ bạn tốt nhất có thể.';
             document.getElementById('fuAiBtn').disabled = false;
+            document.getElementById('fuAiBtn').innerHTML = '<i class="fas fa-magic me-1"></i>Gợi ý bằng AI';
             new bootstrap.Modal(document.getElementById('followUpModal')).show();
         }
+
         function generateReplyDraft() {
-            const btn = document.getElementById('fuAiBtn');
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Đang viết...';
-            fetch('@Url.Action("GenerateReply", "Sentiment", new { area = "Admin" })?reviewId=' + followUpReviewId)
-                .then(r => r.json())
-                .then(d => {
-                    if (d.success) { document.getElementById('fuMessage').value = d.draft; }
-                    else alert(d.message || 'Lỗi');
-                    btn.disabled = false;
-                    btn.innerHTML = '<i class="fas fa-magic me-1"></i>Gợi ý bằng AI';
-                })
-                .catch(() => { alert('Lỗi kết nối'); btn.disabled = false; btn.innerHTML = '<i class="fas fa-magic me-1"></i>Gợi ý bằng AI'; });
+            const button = document.getElementById('fuAiBtn');
+            setButtonBusy(button, true, 'Đang viết...', '');
+            fetch('@Url.Action("GenerateReply", "Sentiment", new { area = "Admin" })?reviewId=' + encodeURIComponent(followUpReviewId))
+                .then(response => response.json())
+                .then(data => { if (data.success) document.getElementById('fuMessage').value = data.draft; else showSentToast(data.message || 'Không tạo được gợi ý', 'error'); })
+                .catch(() => showSentToast('Lỗi kết nối', 'error'))
+                .finally(() => setButtonBusy(button, false, '', '<i class="fas fa-magic me-1"></i>Gợi ý bằng AI'));
         }
+
         function sendFollowUp() {
+            const button = document.getElementById('fuSendBtn');
             const formData = new FormData();
             formData.append('reviewId', followUpReviewId);
             formData.append('subject', document.getElementById('fuSubject').value);
             formData.append('message', document.getElementById('fuMessage').value);
-            const btn = document.getElementById('fuSendBtn');
-            btn.disabled = true;
+            button.disabled = true;
             fetch('@Url.Action("SendFollowUp", "Sentiment", new { area = "Admin" })', { method: 'POST', headers: antiforgeryHeaders(), body: formData })
-                .then(r => r.json())
-                .then(d => {
-                    bootstrap.Modal.getInstance(document.getElementById('followUpModal')).hide();
-                    alert(d.message || (d.success ? 'Đã gửi' : 'Lỗi'));
-                    btn.disabled = false;
-                })
-                .catch(() => { alert('Lỗi kết nối'); btn.disabled = false; });
+                .then(response => response.json())
+                .then(data => { if (data.success) bootstrap.Modal.getInstance(document.getElementById('followUpModal')).hide(); showSentToast(data.message || (data.success ? 'Đã gửi email' : 'Không gửi được email'), data.success ? 'success' : 'error'); })
+                .catch(() => showSentToast('Lỗi kết nối', 'error'))
+                .finally(() => button.disabled = false);
         }
 
-        // Cảnh báo realtime mới từ SignalR
         if (window.ecommerceHub) {
             window.ecommerceHubReady && window.ecommerceHubReady.then(function () {
                 window.ecommerceHub.on('SevereReviewAlert', function (payload) {
-                    alert(`⚠️ Review tiêu cực nghiêm trọng: ${payload.productName} — "${payload.commentSnippet}"`);
-                    location.reload();
+                    showSentToast(`Review tiêu cực nghiêm trọng: ${payload.productName}`, 'error');
+                    setTimeout(() => location.reload(), 1200);
                 });
             });
         }
     </script>
 }
-
-<!-- Follow-up email modal -->
-<div class="modal fade" id="followUpModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Email hỏi thăm khách hàng</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <p class="small text-muted">Gửi tới: <strong id="fuCustomer"></strong></p>
-                <div class="mb-3">
-                    <label class="form-label fw-bold">Tiêu đề</label>
-                    <input id="fuSubject" class="form-control" maxlength="120" />
-                </div>
-                <div class="mb-2">
-                    <label class="form-label fw-bold">Nội dung</label>
-                    <textarea id="fuMessage" class="form-control" rows="5" maxlength="2000"></textarea>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Hủy</button>
-                <button type="button" class="btn btn-outline-info" id="fuAiBtn" onclick="generateReplyDraft()">
-                    <i class="fas fa-magic me-1"></i>Gợi ý bằng AI
-                </button>
-                <button type="button" class="btn btn-admin-primary" id="fuSendBtn" onclick="sendFollowUp()">Gửi email</button>
-            </div>
-        </div>
-    </div>
-</div>

@@ -1,3 +1,4 @@
+using Fruitables.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Fruitables.Models;
@@ -12,7 +13,9 @@ namespace Fruitables.Services.Reviews;
 
 public class ReviewService : IReviewService
 {
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly ApplicationDbContext _db;
+    private readonly IReviewRepository _reviewRepository;
+    private readonly IReviewReportRepository _reviewReports;
     private readonly IWordMaskingService _wordMaskingService;
     private readonly IMemoryCache _cache;
     private readonly ILogger<ReviewService> _logger;
@@ -26,14 +29,18 @@ public class ReviewService : IReviewService
     private const int CACHE_DURATION_MINUTES = 10;
 
     public ReviewService(
-        IUnitOfWork unitOfWork,
+        ApplicationDbContext db,
+        IReviewRepository reviewRepository,
+        IReviewReportRepository reviewReports,
         IWordMaskingService wordMaskingService,
         IMemoryCache cache,
         ILogger<ReviewService> logger,
         IOutboxService? outbox = null,
         IOptions<SentimentOptions>? sentimentOptions = null)
     {
-        _unitOfWork = unitOfWork;
+        _db = db;
+        _reviewRepository = reviewRepository;
+        _reviewReports = reviewReports;
         _wordMaskingService = wordMaskingService;
         _cache = cache;
         _logger = logger;
@@ -48,7 +55,7 @@ public class ReviewService : IReviewService
         try
         {
             // 1. Validate user hasn't reviewed this product
-            if (await _unitOfWork.ReviewRepository.HasUserReviewedProductAsync(userId, dto.ProductId))
+            if (await _reviewRepository.HasUserReviewedProductAsync(userId, dto.ProductId))
             {
                 return new ReviewResult
                 {
@@ -60,7 +67,7 @@ public class ReviewService : IReviewService
 
             // 2. Check rate limit (max 5 reviews per day)
             var today = DateTime.UtcNow.Date;
-            var reviewCountToday = await _unitOfWork.ReviewRepository.CountUserReviewsInPeriodAsync(userId, today);
+            var reviewCountToday = await _reviewRepository.CountUserReviewsInPeriodAsync(userId, today);
             if (reviewCountToday >= MAX_REVIEWS_PER_DAY)
             {
                 return new ReviewResult
@@ -95,16 +102,16 @@ public class ReviewService : IReviewService
 
             // Review + outbox message phải atomic: enqueue thất bại → rollback, không để lại
             // review không bao giờ được phân tích tự động. (Dispose tự rollback nếu chưa commit.)
-            await using var transaction = await _unitOfWork.BeginTransactionAsync();
+            await using var transaction = await _db.Database.BeginTransactionAsync();
 
-            await _unitOfWork.ReviewRepository.AddAsync(review);
-            await _unitOfWork.SaveChangesAsync();
+            await _db.Reviews.AddAsync(review);
+            await _db.SaveChangesAsync();
 
             // 6. Recalculate product rating
             await RecalculateProductRatingAsync(dto.ProductId);
 
             // 7. Load user info for response
-            var user = await _unitOfWork.Users.GetByIdAsync(userId);
+            var user = await _db.Users.FindAsync(userId);
 
             // 8. Enqueue phân tích cảm xúc (realtime qua outbox; handler sẽ gọi LLM)
             await EnqueueSentimentAnalysisAsync(review.Id);
@@ -122,7 +129,7 @@ public class ReviewService : IReviewService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating review for user {UserId} and product {ProductId}", 
+            _logger.LogError(ex, "Error creating review for user {UserId} and product {ProductId}",
                 userId, dto.ProductId);
             throw;
         }
@@ -132,8 +139,8 @@ public class ReviewService : IReviewService
     {
         try
         {
-            var review = await _unitOfWork.ReviewRepository.GetReviewWithDetailsAsync(reviewId);
-            
+            var review = await _reviewRepository.GetReviewWithDetailsAsync(reviewId);
+
             if (review == null)
             {
                 return new ReviewResult
@@ -180,7 +187,7 @@ public class ReviewService : IReviewService
 
             // Update fields
             var hasChanges = false;
-            
+
             if (dto.Rating.HasValue && dto.Rating.Value != review.Rating)
             {
                 review.Rating = dto.Rating.Value;
@@ -200,8 +207,8 @@ public class ReviewService : IReviewService
             if (hasChanges)
             {
                 review.UpdatedAt = DateTime.UtcNow;
-                _unitOfWork.ReviewRepository.Update(review);
-                await _unitOfWork.SaveChangesAsync();
+                _db.Reviews.Update(review);
+                await _db.SaveChangesAsync();
 
                 // Recalculate if rating changed
                 if (dto.Rating.HasValue)
@@ -234,8 +241,8 @@ public class ReviewService : IReviewService
     {
         try
         {
-            var review = await _unitOfWork.Reviews.GetByIdAsync(reviewId);
-            
+            var review = await _db.Reviews.FindAsync(reviewId);
+
             if (review == null || review.IsDeleted)
                 return false;
 
@@ -246,15 +253,15 @@ public class ReviewService : IReviewService
             // Soft delete
             review.IsDeleted = true;
             review.DeletedAt = DateTime.UtcNow;
-            
-            _unitOfWork.ReviewRepository.Update(review);
-            await _unitOfWork.SaveChangesAsync();
+
+            _db.Reviews.Update(review);
+            await _db.SaveChangesAsync();
 
             // Recalculate product rating
             await RecalculateProductRatingAsync(review.ProductId);
 
             _logger.LogInformation("User {UserId} deleted review {ReviewId}", userId, reviewId);
-            
+
             return true;
         }
         catch (Exception ex)
@@ -268,8 +275,8 @@ public class ReviewService : IReviewService
     {
         try
         {
-            var result = await _unitOfWork.ReviewRepository.GetProductReviewsAsync(filter);
-            
+            var result = await _reviewRepository.GetProductReviewsAsync(filter);
+
             var viewModels = result.Items.Select(r => MapToViewModel(r, r.User, currentUserId)).ToList();
 
             return new PagedResult<ReviewViewModel>
@@ -299,7 +306,7 @@ public class ReviewService : IReviewService
             }
 
             // Get from database
-            var stats = await _unitOfWork.ReviewRepository.GetProductReviewStatisticsAsync(productId);
+            var stats = await _reviewRepository.GetProductReviewStatisticsAsync(productId);
 
             // Cache for 10 minutes
             _cache.Set(cacheKey, stats, TimeSpan.FromMinutes(CACHE_DURATION_MINUTES));
@@ -318,7 +325,7 @@ public class ReviewService : IReviewService
         try
         {
             // Check if already reviewed
-            var hasReviewed = await _unitOfWork.ReviewRepository.HasUserReviewedProductAsync(userId, productId);
+            var hasReviewed = await _reviewRepository.HasUserReviewedProductAsync(userId, productId);
             if (hasReviewed)
                 return false;
 
@@ -329,7 +336,7 @@ public class ReviewService : IReviewService
 
             // Check rate limit
             var today = DateTime.UtcNow.Date;
-            var reviewCountToday = await _unitOfWork.ReviewRepository.CountUserReviewsInPeriodAsync(userId, today);
+            var reviewCountToday = await _reviewRepository.CountUserReviewsInPeriodAsync(userId, today);
             if (reviewCountToday >= MAX_REVIEWS_PER_DAY)
                 return false;
 
@@ -347,12 +354,12 @@ public class ReviewService : IReviewService
         try
         {
             // Check if review exists
-            var review = await _unitOfWork.Reviews.GetByIdAsync(reviewId);
+            var review = await _db.Reviews.FindAsync(reviewId);
             if (review == null || review.IsDeleted)
                 return false;
 
             // Check if user already reported this review
-            var hasReported = await _unitOfWork.ReviewReports.HasUserReportedReviewAsync(userId, reviewId);
+            var hasReported = await _reviewReports.HasUserReportedReviewAsync(userId, reviewId);
             if (hasReported)
                 return false;
 
@@ -367,27 +374,27 @@ public class ReviewService : IReviewService
                 CreatedAt = DateTime.UtcNow
             };
 
-            await _unitOfWork.ReviewReports.AddAsync(report);
-            
+            await _db.ReviewReports.AddAsync(report);
+
             // Increment report count
             review.ReportCount++;
-            
+
             // Auto-hide if threshold reached
             if (review.ReportCount >= AUTO_HIDE_REPORT_THRESHOLD && !review.IsHidden)
             {
                 review.IsHidden = true;
                 review.HiddenReason = $"Tự động ẩn do có {review.ReportCount} báo cáo";
                 review.HiddenAt = DateTime.UtcNow;
-                
-                _logger.LogWarning("Review {ReviewId} auto-hidden due to {ReportCount} reports", 
+
+                _logger.LogWarning("Review {ReviewId} auto-hidden due to {ReportCount} reports",
                     reviewId, review.ReportCount);
             }
-            
-            _unitOfWork.ReviewRepository.Update(review);
-            await _unitOfWork.SaveChangesAsync();
+
+            _db.Reviews.Update(review);
+            await _db.SaveChangesAsync();
 
             _logger.LogInformation("User {UserId} reported review {ReviewId}", userId, reviewId);
-            
+
             return true;
         }
         catch (Exception ex)
@@ -401,13 +408,13 @@ public class ReviewService : IReviewService
     {
         try
         {
-            var review = await _unitOfWork.Reviews.GetByIdAsync(reviewId);
+            var review = await _db.Reviews.FindAsync(reviewId);
             if (review == null || review.IsDeleted || review.IsHidden)
                 return false;
 
             // Check if user already voted helpful for this review
-            var alreadyVoted = _unitOfWork.ReviewHelpfuls
-                .Query()
+            var alreadyVoted = _db.ReviewHelpfuls
+
                 .Any(h => h.ReviewId == reviewId && h.UserId == userId);
 
             if (alreadyVoted)
@@ -420,13 +427,13 @@ public class ReviewService : IReviewService
                 UserId = userId,
                 CreatedAt = DateTime.UtcNow
             };
-            await _unitOfWork.ReviewHelpfuls.AddAsync(helpful);
+            await _db.ReviewHelpfuls.AddAsync(helpful);
 
 
             // Increment count
             review.HelpfulCount++;
-            _unitOfWork.ReviewRepository.Update(review);
-            await _unitOfWork.SaveChangesAsync();
+            _db.Reviews.Update(review);
+            await _db.SaveChangesAsync();
 
             return true;
         }
@@ -458,8 +465,8 @@ public class ReviewService : IReviewService
             CreatedAt = review.CreatedAt,
             UpdatedAt = review.UpdatedAt,
             IsOwner = currentUserId.HasValue && currentUserId.Value == review.UserId,
-            CanEdit = currentUserId.HasValue && 
-                     currentUserId.Value == review.UserId && 
+            CanEdit = currentUserId.HasValue &&
+                     currentUserId.Value == review.UserId &&
                      (DateTime.UtcNow - review.CreatedAt).TotalHours <= EDIT_TIME_LIMIT_HOURS,
             HasReported = false // TODO: Check if current user has reported
         };
@@ -473,8 +480,8 @@ public class ReviewService : IReviewService
     {
         try
         {
-            var result = await _unitOfWork.ReviewRepository.GetAllReviewsForAdminAsync(filter);
-            
+            var result = await _reviewRepository.GetAllReviewsForAdminAsync(filter);
+
             var viewModels = result.Items.Select(r => new ReviewAdminViewModel
             {
                 Id = r.Id,
@@ -519,7 +526,7 @@ public class ReviewService : IReviewService
     {
         try
         {
-            var review = await _unitOfWork.Reviews.GetByIdAsync(reviewId);
+            var review = await _db.Reviews.FindAsync(reviewId);
             if (review == null || review.IsDeleted)
                 return false;
 
@@ -528,14 +535,14 @@ public class ReviewService : IReviewService
             review.HiddenByAdminId = adminId;
             review.HiddenAt = DateTime.UtcNow;
 
-            _unitOfWork.ReviewRepository.Update(review);
-            await _unitOfWork.SaveChangesAsync();
+            _db.Reviews.Update(review);
+            await _db.SaveChangesAsync();
 
             // Recalculate product rating (hidden reviews don't count)
             await RecalculateProductRatingAsync(review.ProductId);
 
             _logger.LogInformation("Admin {AdminId} hid review {ReviewId}", adminId, reviewId);
-            
+
             return true;
         }
         catch (Exception ex)
@@ -549,7 +556,7 @@ public class ReviewService : IReviewService
     {
         try
         {
-            var review = await _unitOfWork.Reviews.GetByIdAsync(reviewId);
+            var review = await _db.Reviews.FindAsync(reviewId);
             if (review == null || review.IsDeleted)
                 return false;
 
@@ -558,14 +565,14 @@ public class ReviewService : IReviewService
             review.HiddenByAdminId = null;
             review.HiddenAt = null;
 
-            _unitOfWork.ReviewRepository.Update(review);
-            await _unitOfWork.SaveChangesAsync();
+            _db.Reviews.Update(review);
+            await _db.SaveChangesAsync();
 
             // Recalculate product rating
             await RecalculateProductRatingAsync(review.ProductId);
 
             _logger.LogInformation("Admin {AdminId} showed review {ReviewId}", adminId, reviewId);
-            
+
             return true;
         }
         catch (Exception ex)
@@ -579,7 +586,7 @@ public class ReviewService : IReviewService
     {
         try
         {
-            var review = await _unitOfWork.Reviews.GetByIdAsync(reviewId);
+            var review = await _db.Reviews.FindAsync(reviewId);
             if (review == null || review.IsDeleted)
                 return false;
 
@@ -589,14 +596,14 @@ public class ReviewService : IReviewService
             // Store reason in HiddenReason field (reuse)
             review.HiddenReason = reason;
 
-            _unitOfWork.ReviewRepository.Update(review);
-            await _unitOfWork.SaveChangesAsync();
+            _db.Reviews.Update(review);
+            await _db.SaveChangesAsync();
 
             // Recalculate product rating
             await RecalculateProductRatingAsync(review.ProductId);
 
             _logger.LogInformation("Admin {AdminId} deleted review {ReviewId}", adminId, reviewId);
-            
+
             return true;
         }
         catch (Exception ex)
@@ -610,8 +617,8 @@ public class ReviewService : IReviewService
     {
         try
         {
-            var result = await _unitOfWork.ReviewReports.GetAllReportsAsync(filter);
-            
+            var result = await _reviewReports.GetAllReportsAsync(filter);
+
             var viewModels = result.Items.Select(rr => new ReviewReportViewModel
             {
                 Id = rr.Id,
@@ -651,11 +658,10 @@ public class ReviewService : IReviewService
     {
         try
         {
-            var report = await _unitOfWork.ReviewReports
-                .Query()
+            var report = await _db.ReviewReports
                 .Include(rr => rr.Review)
                 .FirstOrDefaultAsync(rr => rr.Id == reportId);
-                
+
             if (report == null)
                 return false;
 
@@ -663,7 +669,7 @@ public class ReviewService : IReviewService
             report.HandledByAdminId = adminId;
             report.HandledAt = DateTime.UtcNow;
 
-            _unitOfWork.ReviewReports.Update(report);
+            _db.ReviewReports.Update(report);
 
             // If resolved, hide the review
             if (action == ReportAction.Resolve && !report.Review.IsHidden)
@@ -671,11 +677,11 @@ public class ReviewService : IReviewService
                 await HideReviewAsync(report.ReviewId, $"Ẩn do xử lý báo cáo #{reportId}", adminId);
             }
 
-            await _unitOfWork.SaveChangesAsync();
+            await _db.SaveChangesAsync();
 
-            _logger.LogInformation("Admin {AdminId} handled report {ReportId} with action {Action}", 
+            _logger.LogInformation("Admin {AdminId} handled report {ReportId} with action {Action}",
                 adminId, reportId, action);
-            
+
             return true;
         }
         catch (Exception ex)
@@ -694,7 +700,7 @@ public class ReviewService : IReviewService
             var weekAgo = now.AddDays(-7);
             var monthAgo = now.AddMonths(-1);
 
-            var query = _unitOfWork.Reviews.Query();
+            var query = _db.Reviews;
             var counts = await query
                 .GroupBy(r => 1)
                 .Select(g => new
@@ -724,8 +730,8 @@ public class ReviewService : IReviewService
                 DeletedReviews = counts?.Deleted ?? 0,
                 ReportedReviews = counts?.Reported ?? 0,
                 ValidReviews = counts?.Valid ?? 0,
-                TotalReports = await _unitOfWork.ReviewReports.CountAsync(),
-                PendingReports = await _unitOfWork.ReviewReports.CountPendingReportsAsync(),
+                TotalReports = await _db.ReviewReports.CountAsync(),
+                PendingReports = await _reviewReports.CountPendingReportsAsync(),
                 AverageRating = counts?.AverageRating ?? 0,
                 ReviewsToday = counts?.Today ?? 0,
                 ReviewsThisWeek = counts?.Week ?? 0,
@@ -733,8 +739,8 @@ public class ReviewService : IReviewService
             };
 
             // Top reviewed products
-            var topReviewed = await _unitOfWork.Products
-                .Query()
+            var topReviewed = await _db.Products
+
                 .OrderByDescending(p => p.ReviewCount)
                 .Take(10)
                 .Select(p => new TopReviewedProduct
@@ -748,8 +754,8 @@ public class ReviewService : IReviewService
             stats.MostReviewedProducts = topReviewed;
 
             // Top rated products
-            var topRated = await _unitOfWork.Products
-                .Query()
+            var topRated = await _db.Products
+
                 .Where(p => p.ReviewCount > 0)
                 .OrderByDescending(p => p.AverageRating)
                 .ThenByDescending(p => p.ReviewCount)
@@ -781,15 +787,15 @@ public class ReviewService : IReviewService
     {
         try
         {
-            var reviews = await _unitOfWork.Reviews
-                .Query()
-                .Where(r => r.ProductId == productId 
-                    && r.Status == ReviewStatus.Approved 
-                    && !r.IsHidden 
+            var reviews = await _db.Reviews
+
+                .Where(r => r.ProductId == productId
+                    && r.Status == ReviewStatus.Approved
+                    && !r.IsHidden
                     && !r.IsDeleted)
                 .ToListAsync();
 
-            var product = await _unitOfWork.Products.GetByIdAsync(productId);
+            var product = await _db.Products.FindAsync(productId);
             if (product == null)
                 return;
 
@@ -804,14 +810,14 @@ public class ReviewService : IReviewService
                 product.ReviewCount = 0;
             }
 
-            _unitOfWork.Products.Update(product);
-            await _unitOfWork.SaveChangesAsync();
+            _db.Products.Update(product);
+            await _db.SaveChangesAsync();
 
             // Clear cache
             var cacheKey = $"{RATING_CACHE_KEY_PREFIX}{productId}";
             _cache.Remove(cacheKey);
 
-            _logger.LogInformation("Recalculated rating for product {ProductId}: {AverageRating} ({ReviewCount} reviews)", 
+            _logger.LogInformation("Recalculated rating for product {ProductId}: {AverageRating} ({ReviewCount} reviews)",
                 productId, product.AverageRating, product.ReviewCount);
         }
         catch (Exception ex)
@@ -827,8 +833,8 @@ public class ReviewService : IReviewService
         {
             // Check if user has an order containing this product
             // Allow review for all orders except Cancelled
-            var hasOrdered = await _unitOfWork.Orders
-                .Query()
+            var hasOrdered = await _db.Orders
+
                 .Include(o => o.Items)
                 .Where(o => o.UserId == userId &&
                        o.Status != OrderStatus.Cancelled)
@@ -839,7 +845,7 @@ public class ReviewService : IReviewService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error checking verified purchase for user {UserId} and product {ProductId}", 
+            _logger.LogError(ex, "Error checking verified purchase for user {UserId} and product {ProductId}",
                 userId, productId);
             return false;
         }
@@ -853,7 +859,7 @@ public class ReviewService : IReviewService
         try
         {
             // Đã đánh giá rồi
-            var hasReviewed = await _unitOfWork.ReviewRepository.HasUserReviewedProductAsync(userId, productId);
+            var hasReviewed = await _reviewRepository.HasUserReviewedProductAsync(userId, productId);
             if (hasReviewed)
                 return ReviewPermission.AlreadyReviewed;
 
@@ -864,7 +870,7 @@ public class ReviewService : IReviewService
 
             // Vượt rate limit
             var today = DateTime.UtcNow.Date;
-            var reviewCountToday = await _unitOfWork.ReviewRepository.CountUserReviewsInPeriodAsync(userId, today);
+            var reviewCountToday = await _reviewRepository.CountUserReviewsInPeriodAsync(userId, today);
             if (reviewCountToday >= MAX_REVIEWS_PER_DAY)
                 return ReviewPermission.RateLimitExceeded;
 
@@ -883,8 +889,8 @@ public class ReviewService : IReviewService
     {
         try
         {
-            var allOrders = await _unitOfWork.Orders
-                .Query()
+            var allOrders = await _db.Orders
+
                 .Include(o => o.Items)
                 .Where(o => o.UserId == userId)
                 .Select(o => new
@@ -933,12 +939,12 @@ public class ReviewService : IReviewService
             OutboxMessageTypes.ReviewSentimentAnalyze,
             new { ReviewId = reviewId },
             revision is null ? $"sentiment-{reviewId}" : $"sentiment-{reviewId}-{revision}");
-        await _unitOfWork.SaveChangesAsync();
+        await _db.SaveChangesAsync();
     }
 
     private async Task InvalidateSentimentAfterReviewChangeAsync(int reviewId)
     {
-        var sentiment = await _unitOfWork.ReviewSentiments
+        var sentiment = await _db.ReviewSentiments
             .FirstOrDefaultAsync(s => s.ReviewId == reviewId);
         if (sentiment is null) return;
 
@@ -956,7 +962,7 @@ public class ReviewService : IReviewService
         sentiment.AdminOverrideById = null;
         sentiment.AdminOverrideAtUtc = null;
         sentiment.AdminReviewNote = null;
-        _unitOfWork.ReviewSentiments.Update(sentiment);
-        await _unitOfWork.SaveChangesAsync();
+        _db.ReviewSentiments.Update(sentiment);
+        await _db.SaveChangesAsync();
     }
 }

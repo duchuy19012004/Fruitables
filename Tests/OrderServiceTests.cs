@@ -133,7 +133,7 @@ namespace Fruitables.Tests
             var notifier = new Mock<IRealtimeNotifier>();
 
             var service = new OrderService(
-                new UnitOfWork(context),
+                context,
                 cartService.Object,
                 notifier.Object,
                 CreatePricingForCart(cart),
@@ -150,6 +150,113 @@ namespace Fruitables.Tests
 
             context.ChangeTracker.Clear();
             Assert.Equal(7, (await context.Products.FindAsync(1))!.StockQuantity);
+        }
+
+        [Fact]
+        public async Task CreateOrderAsync_reuses_order_for_duplicate_checkout_request()
+        {
+            var options = TestDbContextFactory.CreateSqliteOptions();
+            await using var context = new ApplicationDbContext(options);
+            await SeedSuccessfulOrderScenarioAsync(context);
+
+            var cart = CreateSuccessfulCart();
+            var cartService = new Mock<ICartService>();
+            cartService.Setup(service => service.RepriceForCheckoutAsync("same-session"))
+                .ReturnsAsync(cart);
+            var service = new OrderService(
+                context,
+                cartService.Object,
+                Mock.Of<IRealtimeNotifier>(),
+                CreatePricingForCart(cart),
+                Mock.Of<ILogger<OrderService>>());
+
+            var checkout = CreateSuccessfulCheckout();
+            var requestProperty = typeof(CheckoutViewModel).GetProperty("CheckoutRequestId");
+            Assert.NotNull(requestProperty);
+            requestProperty!.SetValue(checkout, "same-checkout-request");
+
+            var first = await service.CreateOrderAsync(checkout, "same-session", userId: 100);
+            var second = await service.CreateOrderAsync(checkout, "same-session", userId: 100);
+
+            Assert.Equal(first.Id, second.Id);
+            Assert.Equal(1, await context.Orders.CountAsync());
+        }
+
+        [Fact]
+        public async Task CreateOrderAsync_retries_cart_cleanup_when_replaying_a_committed_order()
+        {
+            var options = TestDbContextFactory.CreateSqliteOptions();
+            await using var context = new ApplicationDbContext(options);
+            await SeedSuccessfulOrderScenarioAsync(context);
+
+            var cart = CreateSuccessfulCart();
+            var clearAttempts = 0;
+            var cartService = new Mock<ICartService>();
+            cartService.Setup(service => service.RepriceForCheckoutAsync("replay-cleanup"))
+                .ReturnsAsync(cart);
+            cartService.Setup(service => service.ClearCartAsync("replay-cleanup"))
+                .Callback(() => clearAttempts++)
+                .Returns(() => clearAttempts == 1
+                    ? Task.FromException(new InvalidOperationException("cart cleanup failed"))
+                    : Task.CompletedTask);
+
+            var service = new OrderService(
+                context,
+                cartService.Object,
+                Mock.Of<IRealtimeNotifier>(),
+                CreatePricingForCart(cart),
+                Mock.Of<ILogger<OrderService>>());
+
+            var checkout = CreateSuccessfulCheckout();
+            checkout.CheckoutRequestId = "replay-request";
+
+            var first = await service.CreateOrderAsync(checkout, "replay-cleanup", userId: 100);
+            var second = await service.CreateOrderAsync(checkout, "replay-cleanup", userId: 100);
+
+            Assert.Equal(first.Id, second.Id);
+            Assert.Equal(2, clearAttempts);
+        }
+
+        [Fact]
+        public async Task CreateOrderAsync_does_not_clear_items_added_after_the_original_order()
+        {
+            var options = TestDbContextFactory.CreateSqliteOptions();
+            await using var context = new ApplicationDbContext(options);
+            await SeedSuccessfulOrderScenarioAsync(context);
+
+            var originalCart = CreateSuccessfulCart();
+            var changedCart = CreateSuccessfulCart();
+            changedCart.Items.Add(new CartItemViewModel
+            {
+                ProductId = 2,
+                ProductName = "Orange",
+                Price = 20,
+                Quantity = 1
+            });
+            var repriceCalls = 0;
+            var clearAttempts = 0;
+            var cartService = new Mock<ICartService>();
+            cartService.Setup(service => service.RepriceForCheckoutAsync("replay-with-new-items"))
+                .ReturnsAsync(() => Interlocked.Increment(ref repriceCalls) == 1 ? originalCart : changedCart);
+            cartService.Setup(service => service.ClearCartAsync("replay-with-new-items"))
+                .Callback(() => clearAttempts++)
+                .Returns(Task.CompletedTask);
+
+            var service = new OrderService(
+                context,
+                cartService.Object,
+                Mock.Of<IRealtimeNotifier>(),
+                CreatePricingForCart(originalCart),
+                Mock.Of<ILogger<OrderService>>());
+
+            var checkout = CreateSuccessfulCheckout();
+            checkout.CheckoutRequestId = "replay-with-new-items-request";
+
+            await service.CreateOrderAsync(checkout, "replay-with-new-items", userId: 100);
+            await service.CreateOrderAsync(checkout, "replay-with-new-items", userId: 100);
+
+            Assert.Equal(1, clearAttempts);
+            Assert.Equal(2, repriceCalls);
         }
 
         [Fact]
@@ -171,7 +278,7 @@ namespace Fruitables.Tests
                 .ThrowsAsync(new InvalidOperationException("signalr unavailable"));
 
             var service = new OrderService(
-                new UnitOfWork(context),
+                context,
                 cartService.Object,
                 notifier.Object,
                 CreatePricingForCart(cart),
@@ -195,7 +302,6 @@ namespace Fruitables.Tests
             // Arrange
             var options = CreateInMemoryOptions();
             using var context = new ApplicationDbContext(options);
-            var unitOfWork = new UnitOfWork(context);
 
             var cartServiceMock = new Mock<ICartService>();
             var sessionId = "test-session";
@@ -214,7 +320,7 @@ namespace Fruitables.Tests
             cartServiceMock.Setup(c => c.GetCartAsync(sessionId, null)).ReturnsAsync(cart);
 
             var notifierMock = new Mock<IRealtimeNotifier>();
-            var orderService = new OrderService(unitOfWork, cartServiceMock.Object, notifierMock.Object, CreatePricingForCart(cart), Mock.Of<ILogger<OrderService>>());
+            var orderService = new OrderService(context, cartServiceMock.Object, notifierMock.Object, CreatePricingForCart(cart), Mock.Of<ILogger<OrderService>>());
             var checkoutModel = new CheckoutViewModel
             {
                 FirstName = "Test",
@@ -255,8 +361,7 @@ namespace Fruitables.Tests
             context.Products.Add(product);
             await context.SaveChangesAsync();
 
-            var unitOfWork = new UnitOfWork(context);
-            var cartServiceMock = new Mock<ICartService>();
+                var cartServiceMock = new Mock<ICartService>();
             var sessionId = "test-session";
 
             var cart = new CartViewModel
@@ -273,7 +378,7 @@ namespace Fruitables.Tests
             cartServiceMock.Setup(c => c.GetCartAsync(sessionId, null)).ReturnsAsync(cart);
 
             var notifierMock = new Mock<IRealtimeNotifier>();
-            var orderService = new OrderService(unitOfWork, cartServiceMock.Object, notifierMock.Object, CreatePricingForCart(cart), Mock.Of<ILogger<OrderService>>());
+            var orderService = new OrderService(context, cartServiceMock.Object, notifierMock.Object, CreatePricingForCart(cart), Mock.Of<ILogger<OrderService>>());
             var checkoutModel = new CheckoutViewModel
             {
                 FirstName = "Test",
@@ -314,8 +419,7 @@ namespace Fruitables.Tests
             });
             await context.SaveChangesAsync();
 
-            var unitOfWork = new UnitOfWork(context);
-            var cartServiceMock = new Mock<ICartService>();
+                var cartServiceMock = new Mock<ICartService>();
             var sessionId = "dup-session";
             var cart = new CartViewModel
             {
@@ -329,7 +433,7 @@ namespace Fruitables.Tests
             cartServiceMock.Setup(c => c.GetCartAsync(sessionId, null)).ReturnsAsync(cart);
 
             var notifierMock = new Mock<IRealtimeNotifier>();
-            var orderService = new OrderService(unitOfWork, cartServiceMock.Object, notifierMock.Object, CreatePricingForCart(cart), Mock.Of<ILogger<OrderService>>());
+            var orderService = new OrderService(context, cartServiceMock.Object, notifierMock.Object, CreatePricingForCart(cart), Mock.Of<ILogger<OrderService>>());
             var checkoutModel = new CheckoutViewModel
             {
                 FirstName = "Test", StreetAddress = "123 St", Mobile = "0123456789",
@@ -384,8 +488,7 @@ namespace Fruitables.Tests
             context.Products.Add(product);
             await context.SaveChangesAsync();
 
-            var unitOfWork = new UnitOfWork(context);
-            var cartServiceMock = new Mock<ICartService>();
+                var cartServiceMock = new Mock<ICartService>();
             var sessionId = "atomic-session";
 
             var cart = new CartViewModel
@@ -402,7 +505,7 @@ namespace Fruitables.Tests
             cartServiceMock.Setup(c => c.GetCartAsync(sessionId, null)).ReturnsAsync(cart);
 
             var notifierMock = new Mock<IRealtimeNotifier>();
-            var orderService = new OrderService(unitOfWork, cartServiceMock.Object, notifierMock.Object, CreatePricingForCart(cart), Mock.Of<ILogger<OrderService>>());
+            var orderService = new OrderService(context, cartServiceMock.Object, notifierMock.Object, CreatePricingForCart(cart), Mock.Of<ILogger<OrderService>>());
             var checkoutModel = new CheckoutViewModel
             {
                 FirstName = "Test",
@@ -477,8 +580,7 @@ namespace Fruitables.Tests
             // Reset tracker — the first context still sees the old stock value.
             context.ChangeTracker.Clear();
 
-            var unitOfWork = new UnitOfWork(context);
-            var cartServiceMock = new Mock<ICartService>();
+                var cartServiceMock = new Mock<ICartService>();
             var sessionId = "stale-session";
             var cart = new CartViewModel
             {
@@ -491,7 +593,7 @@ namespace Fruitables.Tests
             cartServiceMock.Setup(c => c.GetCartAsync(sessionId, null)).ReturnsAsync(cart);
 
             var notifierMock = new Mock<IRealtimeNotifier>();
-            var orderService = new OrderService(unitOfWork, cartServiceMock.Object, notifierMock.Object, CreatePricingForCart(cart), Mock.Of<ILogger<OrderService>>());
+            var orderService = new OrderService(context, cartServiceMock.Object, notifierMock.Object, CreatePricingForCart(cart), Mock.Of<ILogger<OrderService>>());
             var checkoutModel = new CheckoutViewModel
             {
                 FirstName = "Test", StreetAddress = "123 St", Mobile = "0123456789",
@@ -564,8 +666,7 @@ namespace Fruitables.Tests
             }
 
             using var context = new ApplicationDbContext(options);
-            var unitOfWork = new UnitOfWork(context);
-            var cartServiceMock = new Mock<ICartService>();
+                var cartServiceMock = new Mock<ICartService>();
             var sessionId = "n1-session";
 
             var cart = new CartViewModel
@@ -580,7 +681,7 @@ namespace Fruitables.Tests
             cartServiceMock.Setup(c => c.GetCartAsync(sessionId, null)).ReturnsAsync(cart);
 
             var notifierMock = new Mock<IRealtimeNotifier>();
-            var orderService = new OrderService(unitOfWork, cartServiceMock.Object, notifierMock.Object, CreatePricingForCart(cart), Mock.Of<ILogger<OrderService>>());
+            var orderService = new OrderService(context, cartServiceMock.Object, notifierMock.Object, CreatePricingForCart(cart), Mock.Of<ILogger<OrderService>>());
             var checkoutModel = new CheckoutViewModel
             {
                 FirstName = "Bulk",
@@ -630,8 +731,7 @@ namespace Fruitables.Tests
             });
             await context.SaveChangesAsync();
 
-            var unitOfWork = new UnitOfWork(context);
-            var cartServiceMock = new Mock<ICartService>();
+                var cartServiceMock = new Mock<ICartService>();
             const string sessionId = "sepay-bank-transfer";
             var cart = new CartViewModel
             {
@@ -646,7 +746,7 @@ namespace Fruitables.Tests
             cartServiceMock.Setup(c => c.GetCartAsync(sessionId, null)).ReturnsAsync(cart);
 
             var notifierMock = new Mock<IRealtimeNotifier>();
-            var service = new OrderService(unitOfWork, cartServiceMock.Object, notifierMock.Object, CreatePricingForCart(cart), Mock.Of<ILogger<OrderService>>());
+            var service = new OrderService(context, cartServiceMock.Object, notifierMock.Object, CreatePricingForCart(cart), Mock.Of<ILogger<OrderService>>());
 
             var order = await service.CreateOrderAsync(new CheckoutViewModel
             {
@@ -682,8 +782,7 @@ namespace Fruitables.Tests
             });
             await context.SaveChangesAsync();
 
-            var unitOfWork = new UnitOfWork(context);
-            var cartServiceMock = new Mock<ICartService>();
+                var cartServiceMock = new Mock<ICartService>();
             const string sessionId = "sepay-cod";
             var cart = new CartViewModel
             {
@@ -698,7 +797,7 @@ namespace Fruitables.Tests
             cartServiceMock.Setup(c => c.GetCartAsync(sessionId, null)).ReturnsAsync(cart);
 
             var notifierMock = new Mock<IRealtimeNotifier>();
-            var service = new OrderService(unitOfWork, cartServiceMock.Object, notifierMock.Object, CreatePricingForCart(cart), Mock.Of<ILogger<OrderService>>());
+            var service = new OrderService(context, cartServiceMock.Object, notifierMock.Object, CreatePricingForCart(cart), Mock.Of<ILogger<OrderService>>());
 
             var order = await service.CreateOrderAsync(new CheckoutViewModel
             {
@@ -744,7 +843,7 @@ namespace Fruitables.Tests
             var cartService = new Mock<ICartService>();
             cartService.Setup(service => service.RepriceForCheckoutAsync("combo-order")).ReturnsAsync(cart);
             var service = new OrderService(
-                new UnitOfWork(context),
+                context,
                 cartService.Object,
                 Mock.Of<IRealtimeNotifier>(),
                 CreatePricingForCart(cart),

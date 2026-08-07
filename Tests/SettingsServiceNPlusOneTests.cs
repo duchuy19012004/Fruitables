@@ -31,7 +31,7 @@ public class SettingsServiceNPlusOneTests
 
         using var context = new ApplicationDbContext(options);
         var service = new SettingsService(
-            new UnitOfWork(context),
+            context,
             Mock.Of<IMemoryCache>(),
             Mock.Of<IWebHostEnvironment>(),
             Mock.Of<IIndexingService>(),
@@ -56,7 +56,7 @@ public class SettingsServiceNPlusOneTests
 
         using var context = new ApplicationDbContext(options);
         var service = new SettingsService(
-            new UnitOfWork(context),
+            context,
             Mock.Of<IMemoryCache>(),
             Mock.Of<IWebHostEnvironment>(),
             Mock.Of<IIndexingService>(),
