@@ -421,6 +421,7 @@ public sealed class ChatService : IChatService
     {
         var now = DateTime.UtcNow;
 
+        var assistantCreatedAt = DateTime.UtcNow;
         var userMessage = new ChatMessage
         {
             SessionId = session.Id,
@@ -435,7 +436,7 @@ public sealed class ChatService : IChatService
             SessionId = session.Id,
             Role = "assistant",
             Content = assistantContent,
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = assistantCreatedAt,
             MetaJson = JsonSerializer.Serialize(new
             {
                 refused,
@@ -445,7 +446,18 @@ public sealed class ChatService : IChatService
         };
         _db.ChatMessages.Add(assistantMessage);
 
+        AppendMessagesJson(session,
+            new Fruitables.Models.Json.ChatMessageDocument { Role = "user", Content = userContent, CreatedAt = now },
+            new Fruitables.Models.Json.ChatMessageDocument
+            {
+                Role = "assistant",
+                Content = assistantContent,
+                CreatedAt = assistantCreatedAt,
+                Metadata = new Fruitables.Models.Json.ChatMessageMetadata { Refused = refused, Action = action }
+            });
+
         session.LastMessageAt = assistantMessage.CreatedAt;
+        session.RowVersion = Guid.NewGuid().ToByteArray();
         await _db.SaveChangesAsync(ct);
 
         return new SendChatMessageResponse
@@ -474,6 +486,7 @@ public sealed class ChatService : IChatService
         bool streamed = false)
     {
         var now = DateTime.UtcNow;
+        var assistantCreatedAt = DateTime.UtcNow;
 
         var userMessage = new ChatMessage
         {
@@ -489,7 +502,7 @@ public sealed class ChatService : IChatService
             SessionId = session.Id,
             Role = "assistant",
             Content = assistantContent,
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = assistantCreatedAt,
             MetaJson = JsonSerializer.Serialize(new
             {
                 refused,
@@ -500,10 +513,36 @@ public sealed class ChatService : IChatService
         };
         _db.ChatMessages.Add(assistantMessage);
 
+        AppendMessagesJson(session,
+            new Fruitables.Models.Json.ChatMessageDocument { Role = "user", Content = userContent, CreatedAt = now },
+            new Fruitables.Models.Json.ChatMessageDocument
+            {
+                Role = "assistant",
+                Content = assistantContent,
+                CreatedAt = assistantCreatedAt,
+                Metadata = new Fruitables.Models.Json.ChatMessageMetadata { Refused = refused, Action = action }
+            });
+
         session.LastMessageAt = assistantMessage.CreatedAt;
+        session.RowVersion = Guid.NewGuid().ToByteArray();
         await _db.SaveChangesAsync(ct);
 
         return assistantMessage;
+    }
+
+    private void AppendMessagesJson(ChatSession session, params Fruitables.Models.Json.ChatMessageDocument[] messages)
+    {
+        var serializer = new Fruitables.Services.Infrastructure.Json.VersionedJsonSerializer();
+        Fruitables.Models.Json.ChatMessagesDocument document;
+        if (string.IsNullOrWhiteSpace(session.MessagesJson) || session.MessagesJson.Trim() == "[]")
+            document = new Fruitables.Models.Json.ChatMessagesDocument();
+        else
+            document = serializer.Deserialize<Fruitables.Models.Json.ChatMessagesDocument>(session.MessagesJson);
+
+        session.MessagesJson = serializer.Serialize(new Fruitables.Models.Json.ChatMessagesDocument
+        {
+            Messages = [..document.Messages, ..messages]
+        });
     }
 
     private void EnforceRateLimit(Guid sessionId, string? clientIp)
@@ -533,6 +572,36 @@ public sealed class ChatService : IChatService
 
     public async Task<IReadOnlyList<ChatMessageDto>> GetMessagesAsync(Guid sessionId, CancellationToken ct = default)
     {
+        var session = await _db.ChatSessions.AsNoTracking().FirstOrDefaultAsync(item => item.Id == sessionId, ct);
+        if (session != null &&
+            !string.IsNullOrWhiteSpace(session.MessagesJson) &&
+            session.MessagesJson.Trim() != "[]")
+        {
+            try
+            {
+                var serializer = new Fruitables.Services.Infrastructure.Json.VersionedJsonSerializer();
+                var document = serializer.Deserialize<Fruitables.Models.Json.ChatMessagesDocument>(session.MessagesJson);
+                if (document.Messages.Count > 0)
+                {
+                    return document.Messages
+                        .Select((message, index) => new ChatMessageDto
+                        {
+                            Id = index + 1,
+                            Role = message.Role,
+                            Content = message.Content,
+                            CreatedAt = message.CreatedAt,
+                            Refused = message.Metadata?.Refused ?? false,
+                            Action = message.Metadata?.Action
+                        })
+                        .ToList();
+                }
+            }
+            catch
+            {
+                // fall through to legacy rows
+            }
+        }
+
         var messages = await _db.ChatMessages
             .AsNoTracking()
             .Where(m => m.SessionId == sessionId)

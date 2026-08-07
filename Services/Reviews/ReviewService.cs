@@ -1,9 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Fruitables.Models;
+using Fruitables.Models.Json;
 using Fruitables.Options;
 using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Communications;
+using Fruitables.Services.Infrastructure.Json;
 using Fruitables.Services.Outbox;
 using Fruitables.ViewModels;
 using Microsoft.Extensions.Options;
@@ -17,6 +19,7 @@ public class ReviewService : IReviewService
     private readonly IMemoryCache _cache;
     private readonly ILogger<ReviewService> _logger;
     private readonly IOutboxService? _outbox;
+    private readonly IJsonDocumentSerializer _serializer;
     private readonly bool _sentimentEnabled;
 
     private const int MAX_REVIEWS_PER_DAY = 100; // Tăng lên cho môi trường test
@@ -31,13 +34,15 @@ public class ReviewService : IReviewService
         IMemoryCache cache,
         ILogger<ReviewService> logger,
         IOutboxService? outbox = null,
-        IOptions<SentimentOptions>? sentimentOptions = null)
+        IOptions<SentimentOptions>? sentimentOptions = null,
+        IJsonDocumentSerializer? serializer = null)
     {
         _unitOfWork = unitOfWork;
         _wordMaskingService = wordMaskingService;
         _cache = cache;
         _logger = logger;
         _outbox = outbox;
+        _serializer = serializer ?? new VersionedJsonSerializer();
         _sentimentEnabled = sentimentOptions?.Value.Enabled ?? true;
     }
 
@@ -351,9 +356,9 @@ public class ReviewService : IReviewService
             if (review == null || review.IsDeleted)
                 return false;
 
-            // Check if user already reported this review
-            var hasReported = await _unitOfWork.ReviewReports.HasUserReportedReviewAsync(userId, reviewId);
-            if (hasReported)
+            var metadata = ReviewAggregateJson.Read(review, _serializer);
+            if (metadata.Reports.Any(item => item.ReportedByUserId == userId) ||
+                await _unitOfWork.ReviewReports.HasUserReportedReviewAsync(userId, reviewId))
                 return false;
 
             // Create report
@@ -368,21 +373,41 @@ public class ReviewService : IReviewService
             };
 
             await _unitOfWork.ReviewReports.AddAsync(report);
-            
-            // Increment report count
-            review.ReportCount++;
-            
-            // Auto-hide if threshold reached
-            if (review.ReportCount >= AUTO_HIDE_REPORT_THRESHOLD && !review.IsHidden)
+
+            var nextCount = metadata.ReportCount + 1;
+            var isHidden = metadata.IsHidden;
+            string? hiddenReason = metadata.HiddenReason;
+            DateTime? hiddenAt = metadata.HiddenAt;
+            if (nextCount >= AUTO_HIDE_REPORT_THRESHOLD && !isHidden)
             {
-                review.IsHidden = true;
-                review.HiddenReason = $"Tự động ẩn do có {review.ReportCount} báo cáo";
-                review.HiddenAt = DateTime.UtcNow;
-                
-                _logger.LogWarning("Review {ReviewId} auto-hidden due to {ReportCount} reports", 
-                    reviewId, review.ReportCount);
+                isHidden = true;
+                hiddenReason = $"Tự động ẩn do có {nextCount} báo cáo";
+                hiddenAt = DateTime.UtcNow;
+                _logger.LogWarning("Review {ReviewId} auto-hidden due to {ReportCount} reports",
+                    reviewId, nextCount);
             }
-            
+
+            ReviewAggregateJson.Write(review, metadata.With(
+                reportCount: nextCount,
+                isHidden: isHidden,
+                hiddenReason: hiddenReason,
+                hiddenReasonSet: true,
+                hiddenAt: hiddenAt,
+                hiddenAtSet: true,
+                updatedAt: DateTime.UtcNow,
+                updatedAtSet: true,
+                reports:
+                [
+                    ..metadata.Reports,
+                    new ReviewReportEntry
+                    {
+                        ReportedByUserId = userId,
+                        Reason = dto.Reason,
+                        Description = dto.Description,
+                        Status = ReportStatus.Pending,
+                        CreatedAt = DateTime.UtcNow
+                    }
+                ]), _serializer);
             _unitOfWork.ReviewRepository.Update(review);
             await _unitOfWork.SaveChangesAsync();
 
@@ -405,11 +430,9 @@ public class ReviewService : IReviewService
             if (review == null || review.IsDeleted || review.IsHidden)
                 return false;
 
-            // Check if user already voted helpful for this review
-            var alreadyVoted = _unitOfWork.ReviewHelpfuls
-                .Query()
-                .Any(h => h.ReviewId == reviewId && h.UserId == userId);
-
+            var metadata = ReviewAggregateJson.Read(review, _serializer);
+            var alreadyVoted = metadata.HelpfulUserIds.Contains(userId) ||
+                _unitOfWork.ReviewHelpfuls.Query().Any(h => h.ReviewId == reviewId && h.UserId == userId);
             if (alreadyVoted)
                 return false;
 
@@ -422,9 +445,11 @@ public class ReviewService : IReviewService
             };
             await _unitOfWork.ReviewHelpfuls.AddAsync(helpful);
 
-
-            // Increment count
-            review.HelpfulCount++;
+            ReviewAggregateJson.Write(review, metadata.With(
+                helpfulCount: metadata.HelpfulCount + 1,
+                helpfulUserIds: [..metadata.HelpfulUserIds, userId],
+                updatedAt: DateTime.UtcNow,
+                updatedAtSet: true), _serializer);
             _unitOfWork.ReviewRepository.Update(review);
             await _unitOfWork.SaveChangesAsync();
 
