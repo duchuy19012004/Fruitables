@@ -40,6 +40,12 @@ using Fruitables.Services.Shipping.Address;
 using Fruitables.Services.Shipping.Delivery;
 using Fruitables.Services.Shipping.Providers;
 
+if (args.Any(argument => argument.Equals("--database-consolidation-backfill", StringComparison.OrdinalIgnoreCase) ||
+                         argument.Equals("--database-consolidation-verify", StringComparison.OrdinalIgnoreCase)))
+{
+    ApplicationDbContext.EnableLegacySchemaForExpansion = true;
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Configure Antiforgery to accept token from AJAX header (for PUT/DELETE JSON requests)
@@ -72,9 +78,15 @@ builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<ICartService, CartService>();
 builder.Services.AddScoped<IOrderService, OrderService>();
-builder.Services.AddScoped<IContactService, ContactService>();
+builder.Services.AddScoped<IContactService>(serviceProvider =>
+    new ContactService(
+        serviceProvider.GetRequiredService<ApplicationDbContext>(),
+        serviceProvider.GetRequiredService<IJsonDocumentSerializer>()));
 builder.Services.AddScoped<IReviewService, ReviewService>();
-builder.Services.AddScoped<ITestimonialService, TestimonialService>();
+builder.Services.AddScoped<ITestimonialService>(serviceProvider =>
+    new TestimonialService(
+        serviceProvider.GetRequiredService<ApplicationDbContext>(),
+        serviceProvider.GetRequiredService<IJsonDocumentSerializer>()));
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 builder.Services.AddScoped<ISettingsService, SettingsService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();

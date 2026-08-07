@@ -22,6 +22,8 @@ public sealed class PriceManagementService : IPriceManagementService
     private readonly IJsonDocumentSerializer _serializer;
     private readonly IAuditLogWriter? _auditLogWriter;
 
+    private bool UseTargetSchema => _dbContext?.Database.IsSqlServer() == true;
+
     public PriceManagementService(IUnitOfWork unitOfWork, TimeProvider timeProvider,
         IRealtimeNotifier? notifier = null, IIndexingService? indexing = null,
         ILogger<PriceManagementService>? logger = null,
@@ -237,26 +239,30 @@ public sealed class PriceManagementService : IPriceManagementService
             if (validation != null) return PriceManagementResult.Fail(validation);
 
             var now = _timeProvider.GetUtcNow();
-            var legacySchedule = new PriceSchedule
+            PriceSchedule? legacySchedule = null;
+            if (!UseTargetSchema)
             {
-                ProductId = request.ProductId,
-                ProductVariantId = request.ProductVariantId,
-                DiscountType = request.DiscountType,
-                Value = request.Value,
-                StartsAt = request.StartsAt.ToUniversalTime(),
-                EndsAt = request.EndsAt?.ToUniversalTime(),
-                CreatedByAdminId = adminId,
-                CreatedAt = now,
-                UpdatedAt = now
-            };
-            await _unitOfWork.PriceSchedules.AddAsync(legacySchedule);
-            await _unitOfWork.SaveChangesAsync();
+                legacySchedule = new PriceSchedule
+                {
+                    ProductId = request.ProductId,
+                    ProductVariantId = request.ProductVariantId,
+                    DiscountType = request.DiscountType,
+                    Value = request.Value,
+                    StartsAt = request.StartsAt.ToUniversalTime(),
+                    EndsAt = request.EndsAt?.ToUniversalTime(),
+                    CreatedByAdminId = adminId,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                };
+                await _unitOfWork.PriceSchedules.AddAsync(legacySchedule);
+                await _unitOfWork.SaveChangesAsync();
+            }
 
             var payload = new PriceSchedulePayload
             {
                 ProductId = request.ProductId,
                 ProductVariantId = request.ProductVariantId,
-                LegacyScheduleId = legacySchedule.Id,
+                LegacyScheduleId = legacySchedule?.Id ?? 0,
                 DiscountType = request.DiscountType,
                 Value = request.Value,
                 StartsAt = request.StartsAt.ToUniversalTime(),
@@ -268,7 +274,9 @@ public sealed class PriceManagementService : IPriceManagementService
             var promotion = new Promotion
             {
                 Type = "price-schedule",
-                Code = $"price-schedule:{legacySchedule.Id}",
+                Code = legacySchedule is null
+                    ? $"price-schedule:new-{Guid.NewGuid():N}"
+                    : $"price-schedule:{legacySchedule.Id}",
                 PayloadJson = _serializer.Serialize(payload),
                 IsActive = true,
                 StartsAt = payload.StartsAt,
@@ -305,7 +313,9 @@ public sealed class PriceManagementService : IPriceManagementService
 
             var validation = await ValidateScheduleAsync(request, id);
             if (validation != null) return PriceManagementResult.Fail(validation);
-            var legacySchedule = await EnsureLegacyScheduleAsync(promotion, schedule);
+            var legacySchedule = UseTargetSchema
+                ? schedule
+                : await EnsureLegacyScheduleAsync(promotion, schedule);
             schedule.Id = legacySchedule.Id;
             schedule.DiscountType = request.DiscountType;
             schedule.Value = request.Value;
@@ -318,7 +328,8 @@ public sealed class PriceManagementService : IPriceManagementService
             promotion.EndsAt = schedule.EndsAt;
             promotion.Revision = schedule.Revision;
             promotion.UpdatedAt = schedule.UpdatedAt.UtcDateTime;
-            CopyToLegacySchedule(legacySchedule, schedule);
+            if (!UseTargetSchema)
+                CopyToLegacySchedule(legacySchedule, schedule);
             await AddLogAsync(request.ProductId, adminId, "PriceScheduleUpdate", $"Cập nhật lịch giá #{id}");
             await _dbContext.SaveChangesAsync();
             return PriceManagementResult.Ok(schedule.Revision);
@@ -357,7 +368,9 @@ public sealed class PriceManagementService : IPriceManagementService
             if (reason?.Length > 500)
                 return PriceManagementResult.Fail("Lý do hủy không được vượt quá 500 ký tự.");
 
-            var legacySchedule = await EnsureLegacyScheduleAsync(promotion, schedule);
+            var legacySchedule = UseTargetSchema
+                ? schedule
+                : await EnsureLegacyScheduleAsync(promotion, schedule);
             schedule.Id = legacySchedule.Id;
             schedule.IsCancelled = true;
             schedule.CancelledAt = now;
@@ -377,7 +390,8 @@ public sealed class PriceManagementService : IPriceManagementService
                 ? "PriceScheduleStoppedEarly"
                 : "PriceScheduleCancel";
             var detail = $"{action} #{id}; reason={schedule.CancellationReason ?? "không có"}; cancelledAt={now:O}";
-            CopyToLegacySchedule(legacySchedule, schedule);
+            if (!UseTargetSchema)
+                CopyToLegacySchedule(legacySchedule, schedule);
             await AddLogAsync(schedule.ProductId, adminId, action, detail);
             await _dbContext.SaveChangesAsync();
 

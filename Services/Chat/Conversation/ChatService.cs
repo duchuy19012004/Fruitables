@@ -26,6 +26,8 @@ public sealed class ChatService : IChatService
     private readonly ChatOptions _options;
     private readonly ILogger<ChatService> _logger;
 
+    private bool UseTargetSchema => _db.Database.IsSqlServer();
+
     // Regex patterns cho sensitive guard
     private static readonly string[] SensitivePatterns = new[]
     {
@@ -429,7 +431,6 @@ public sealed class ChatService : IChatService
             Content = userContent,
             CreatedAt = now
         };
-        _db.ChatMessages.Add(userMessage);
 
         var assistantMessage = new ChatMessage
         {
@@ -444,9 +445,13 @@ public sealed class ChatService : IChatService
                 action
             })
         };
-        _db.ChatMessages.Add(assistantMessage);
+        if (!UseTargetSchema)
+        {
+            _db.ChatMessages.Add(userMessage);
+            _db.ChatMessages.Add(assistantMessage);
+        }
 
-        AppendMessagesJson(session,
+        var document = AppendMessagesJson(session,
             new Fruitables.Models.Json.ChatMessageDocument { Role = "user", Content = userContent, CreatedAt = now },
             new Fruitables.Models.Json.ChatMessageDocument
             {
@@ -465,7 +470,7 @@ public sealed class ChatService : IChatService
             SessionId = session.Id,
             AssistantMessage = new ChatMessageDto
             {
-                Id = assistantMessage.Id,
+                Id = UseTargetSchema ? document.Messages.Count : assistantMessage.Id,
                 Role = assistantMessage.Role,
                 Content = assistantMessage.Content,
                 CreatedAt = assistantMessage.CreatedAt,
@@ -495,8 +500,6 @@ public sealed class ChatService : IChatService
             Content = userContent,
             CreatedAt = now
         };
-        _db.ChatMessages.Add(userMessage);
-
         var assistantMessage = new ChatMessage
         {
             SessionId = session.Id,
@@ -511,9 +514,14 @@ public sealed class ChatService : IChatService
                 action
             })
         };
-        _db.ChatMessages.Add(assistantMessage);
 
-        AppendMessagesJson(session,
+        if (!UseTargetSchema)
+        {
+            _db.ChatMessages.Add(userMessage);
+            _db.ChatMessages.Add(assistantMessage);
+        }
+
+        var document = AppendMessagesJson(session,
             new Fruitables.Models.Json.ChatMessageDocument { Role = "user", Content = userContent, CreatedAt = now },
             new Fruitables.Models.Json.ChatMessageDocument
             {
@@ -527,10 +535,12 @@ public sealed class ChatService : IChatService
         session.RowVersion = Guid.NewGuid().ToByteArray();
         await _db.SaveChangesAsync(ct);
 
+        if (UseTargetSchema)
+            assistantMessage.Id = document.Messages.Count;
         return assistantMessage;
     }
 
-    private void AppendMessagesJson(ChatSession session, params Fruitables.Models.Json.ChatMessageDocument[] messages)
+    private Fruitables.Models.Json.ChatMessagesDocument AppendMessagesJson(ChatSession session, params Fruitables.Models.Json.ChatMessageDocument[] messages)
     {
         var serializer = new Fruitables.Services.Infrastructure.Json.VersionedJsonSerializer();
         Fruitables.Models.Json.ChatMessagesDocument document;
@@ -539,10 +549,12 @@ public sealed class ChatService : IChatService
         else
             document = serializer.Deserialize<Fruitables.Models.Json.ChatMessagesDocument>(session.MessagesJson);
 
-        session.MessagesJson = serializer.Serialize(new Fruitables.Models.Json.ChatMessagesDocument
+        var updated = new Fruitables.Models.Json.ChatMessagesDocument
         {
             Messages = [..document.Messages, ..messages]
-        });
+        };
+        session.MessagesJson = serializer.Serialize(updated);
+        return updated;
     }
 
     private void EnforceRateLimit(Guid sessionId, string? clientIp)
@@ -602,6 +614,9 @@ public sealed class ChatService : IChatService
             }
         }
 
+        if (UseTargetSchema)
+            return [];
+
         var messages = await _db.ChatMessages
             .AsNoTracking()
             .Where(m => m.SessionId == sessionId)
@@ -637,32 +652,66 @@ public sealed class ChatService : IChatService
 
         var query = _db.ChatSessions.AsNoTracking();
         var totalCount = await query.CountAsync(ct);
-
-        var items = await query
+        var sessions = await query
+            .Include(s => s.User)
             .OrderByDescending(s => s.LastMessageAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(s => new ChatSessionListItem
-            {
-                Id = s.Id,
-                UserId = s.UserId,
-                UserEmail = s.User != null ? s.User.Email : null,
-                MessageCount = s.Messages.Count,
-                LastMessageAt = s.LastMessageAt,
-                Source = s.Source
-            })
             .ToListAsync(ct);
+
+        var serializer = new Fruitables.Services.Infrastructure.Json.VersionedJsonSerializer();
+        var items = sessions.Select(s => new ChatSessionListItem
+        {
+            Id = s.Id,
+            UserId = s.UserId,
+            UserEmail = s.User?.Email,
+            MessageCount = UseTargetSchema ? MessageCount(s.MessagesJson, serializer) : s.Messages.Count,
+            LastMessageAt = s.LastMessageAt,
+            Source = s.Source
+        }).ToList();
 
         return (items, totalCount);
     }
 
     public async Task<ChatSession?> GetSessionWithMessagesAsync(Guid id, CancellationToken ct = default)
     {
-        return await _db.ChatSessions
-            .AsNoTracking()
-            .Include(s => s.User)
-            .Include(s => s.Messages.OrderBy(m => m.CreatedAt))
-            .FirstOrDefaultAsync(s => s.Id == id, ct);
+        var session = UseTargetSchema
+            ? await _db.ChatSessions.AsNoTracking().Include(s => s.User).FirstOrDefaultAsync(s => s.Id == id, ct)
+            : await _db.ChatSessions.AsNoTracking().Include(s => s.User)
+                .Include(s => s.Messages.OrderBy(m => m.CreatedAt))
+                .FirstOrDefaultAsync(s => s.Id == id, ct);
+        if (session is null || !UseTargetSchema)
+            return session;
+
+        var serializer = new Fruitables.Services.Infrastructure.Json.VersionedJsonSerializer();
+        try
+        {
+            var document = serializer.Deserialize<Fruitables.Models.Json.ChatMessagesDocument>(session.MessagesJson);
+            session.Messages = document.Messages.Select((message, index) => new ChatMessage
+            {
+                Id = index + 1,
+                SessionId = session.Id,
+                Role = message.Role,
+                Content = message.Content,
+                CreatedAt = message.CreatedAt,
+                MetaJson = JsonSerializer.Serialize(new
+                {
+                    refused = message.Metadata?.Refused ?? false,
+                    action = message.Metadata?.Action
+                })
+            }).ToList();
+        }
+        catch (JsonException)
+        {
+            session.Messages = [];
+        }
+        return session;
+    }
+
+    private static int MessageCount(string json, Fruitables.Services.Infrastructure.Json.VersionedJsonSerializer serializer)
+    {
+        try { return serializer.Deserialize<Fruitables.Models.Json.ChatMessagesDocument>(json).Messages.Count; }
+        catch (JsonException) { return 0; }
     }
 
     private static bool ParseRefused(string? metaJson)

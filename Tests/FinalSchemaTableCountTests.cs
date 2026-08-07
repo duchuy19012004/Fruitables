@@ -17,7 +17,9 @@ public sealed class FinalSchemaTableCountTests
     [Fact]
     public void Ef_model_contains_all_19_target_business_tables()
     {
-        var options = TestDbContextFactory.CreateSqliteOptions();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseSqlServer("Server=(localdb)\\MSSQLLocalDB;Database=FruitablesContractModel;Trusted_Connection=True;TrustServerCertificate=True")
+            .Options;
         using var context = new ApplicationDbContext(options);
         var tables = context.Model.GetEntityTypes()
             .Select(entity => entity.GetTableName())
@@ -25,9 +27,10 @@ public sealed class FinalSchemaTableCountTests
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var table in TargetBusinessTables)
-            Assert.Contains(table, tables);
-
         Assert.Equal(19, TargetBusinessTables.Length);
+        Assert.Equal(TargetBusinessTables.Length, tables.Count);
+        Assert.Equal(
+            TargetBusinessTables.Order(StringComparer.OrdinalIgnoreCase),
+            tables.Order(StringComparer.OrdinalIgnoreCase));
     }
 }

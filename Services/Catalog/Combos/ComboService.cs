@@ -28,6 +28,8 @@ public class ComboService : IComboService
     private readonly IJsonDocumentSerializer _serializer;
     private readonly IAuditLogWriter? _auditLogWriter;
 
+    private bool UseTargetSchema => _dbContext?.Database.IsSqlServer() == true;
+
     public ComboService(
         IUnitOfWork unitOfWork,
         IProductPricingService pricing,
@@ -160,7 +162,8 @@ public class ComboService : IComboService
             };
             _dbContext.Promotions.Add(promotion);
             await _dbContext.SaveChangesAsync();
-            await SyncLegacyComboAsync(promotion, payload);
+            if (!UseTargetSchema)
+                await SyncLegacyComboAsync(promotion, payload);
 
             var combo = ToCombo(promotion, payload, new Dictionary<int, Product>());
             await AddAuditAsync(combo, adminId, ComboAuditActions.Create, Describe(combo));
@@ -217,7 +220,8 @@ public class ComboService : IComboService
             promotion.Revision = updatedPayload.Revision;
             promotion.UpdatedAt = DateTime.UtcNow;
             await _dbContext.SaveChangesAsync();
-            await SyncLegacyComboAsync(promotion, updatedPayload);
+            if (!UseTargetSchema)
+                await SyncLegacyComboAsync(promotion, updatedPayload);
             var updated = ToCombo(promotion, updatedPayload, new Dictionary<int, Product>());
             await AddAuditAsync(updated, adminId, ComboAuditActions.Update, Describe(updated));
             _logger?.LogInformation("Combo {ComboId} updated to revision {Revision} by admin {AdminId}", updated.Id, updated.Revision, adminId);
@@ -262,7 +266,8 @@ public class ComboService : IComboService
             promotion.Revision = archived.Revision;
             promotion.UpdatedAt = DateTime.UtcNow;
             await _dbContext.SaveChangesAsync();
-            await SyncLegacyComboAsync(promotion, archived);
+            if (!UseTargetSchema)
+                await SyncLegacyComboAsync(promotion, archived);
             var combo = ToCombo(promotion, archived, new Dictionary<int, Product>());
             await AddAuditAsync(combo, adminId, ComboAuditActions.Archive, "Lưu trữ combo.");
             _logger?.LogInformation("Combo {ComboId} archived by admin {AdminId}", combo.Id, adminId);
@@ -839,7 +844,7 @@ public class ComboService : IComboService
 
     private async Task SyncLegacyComboAsync(Promotion promotion, ComboPayload payload)
     {
-        if (_dbContext == null)
+        if (_dbContext == null || UseTargetSchema)
             return;
 
         Combo? legacy = null;
@@ -898,7 +903,7 @@ public class ComboService : IComboService
 
     private async Task<int> ResolveLegacyComboIdAsync(int promotionId)
     {
-        if (_dbContext == null)
+        if (_dbContext == null || UseTargetSchema)
             return promotionId;
 
         var promotion = await _dbContext.Promotions.AsNoTracking()

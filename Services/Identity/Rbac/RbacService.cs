@@ -1,3 +1,4 @@
+using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Models.Json;
 using Fruitables.Repositories.Interfaces;
@@ -25,6 +26,10 @@ public class RbacService : IRbacService
     private const string CacheKeyPrefix = "rbac:user:";
     private const string CacheKeySuffix = ":permissions";
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(5);
+    private const string PermissionCatalogKey = "rbac.permission-catalog";
+
+    private ApplicationDbContext Context => ((Repositories.UnitOfWork)_unitOfWork).Context;
+    private bool UseTargetSchema => Context.Database.IsSqlServer();
 
     public RbacService(
         IUnitOfWork unitOfWork,
@@ -53,6 +58,8 @@ public class RbacService : IRbacService
         string? newValue = null)
     {
         await _auditLogWriter.WriteAsync(action, entityType, entityId, adminId, oldValue, newValue);
+        if (UseTargetSchema)
+            return;
 
         // Expand-phase mirror so existing admin screens/tests still see RbacAuditLogs.
         await _unitOfWork.RbacAuditLogs.AddAsync(new RbacAuditLog
@@ -67,6 +74,53 @@ public class RbacService : IRbacService
         });
         await _unitOfWork.SaveChangesAsync();
     }
+
+    private async Task<RbacPermissionCatalogDocument> ReadPermissionCatalogAsync()
+    {
+        if (!UseTargetSchema)
+            return new RbacPermissionCatalogDocument();
+
+        var setting = await Context.Settings.FirstOrDefaultAsync(item => item.Key == PermissionCatalogKey);
+        if (setting is not null && !string.IsNullOrWhiteSpace(setting.Value))
+            return _serializer.Deserialize<RbacPermissionCatalogDocument>(setting.Value);
+
+        var definitions = (await Context.Roles.AsNoTracking().ToListAsync())
+            .SelectMany(role => RbacAggregateJson.ReadRolePermissions(role.PermissionsJson, _serializer).Permissions)
+            .GroupBy(permission => permission.PermissionId)
+            .Select(group => new PermissionDefinition
+            {
+                Id = group.Key,
+                Name = group.First().PermissionName,
+                Module = group.First().PermissionName.Split('.', 2)[0]
+            })
+            .OrderBy(permission => permission.Id)
+            .ToList();
+        return new RbacPermissionCatalogDocument { Permissions = definitions };
+    }
+
+    private async Task SavePermissionCatalogAsync(RbacPermissionCatalogDocument document)
+    {
+        var setting = await Context.Settings.FirstOrDefaultAsync(item => item.Key == PermissionCatalogKey);
+        var json = _serializer.Serialize(document);
+        if (setting is null)
+        {
+            Context.Settings.Add(new Setting { Key = PermissionCatalogKey, Group = "RBAC", Value = json });
+        }
+        else
+        {
+            setting.Value = json;
+            setting.Group = "RBAC";
+        }
+        await Context.SaveChangesAsync();
+    }
+
+    private static Permission ToPermission(PermissionDefinition definition) => new()
+    {
+        Id = definition.Id,
+        Name = definition.Name,
+        Module = definition.Module,
+        Description = definition.Description
+    };
 
     // ==================== Kiểm tra quyền hạn ====================
     
@@ -395,6 +449,27 @@ public class RbacService : IRbacService
         }
         
         // Check for duplicate name
+        if (UseTargetSchema)
+        {
+            var catalog = await ReadPermissionCatalogAsync();
+            if (catalog.Permissions.Any(permission => string.Equals(permission.Name, name, StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidOperationException("Permission name already exists");
+            var definition = new PermissionDefinition
+            {
+                Id = catalog.Permissions.Select(permission => permission.Id).DefaultIfEmpty(0).Max() + 1,
+                Name = name,
+                Module = module,
+                Description = description
+            };
+            await SavePermissionCatalogAsync(new RbacPermissionCatalogDocument
+            {
+                Permissions = [..catalog.Permissions, definition]
+            });
+            await CreateAuditLogAsync("Create", "Permission", definition.Id, adminId, null,
+                JsonSerializer.Serialize(new { definition.Name, definition.Module, definition.Description }));
+            return ToPermission(definition);
+        }
+
         var existingPermission = await _unitOfWork.Permissions
             .Query()
             .FirstOrDefaultAsync(p => p.Name == name);
@@ -433,11 +508,21 @@ public class RbacService : IRbacService
     
     public async Task<Permission?> GetPermissionByIdAsync(int permissionId)
     {
+        if (UseTargetSchema)
+            return (await ReadPermissionCatalogAsync()).Permissions.FirstOrDefault(permission => permission.Id == permissionId) is { } definition
+                ? ToPermission(definition)
+                : null;
         return await _unitOfWork.Permissions.GetByIdAsync(permissionId);
     }
     
     public async Task<List<Permission>> GetAllPermissionsAsync()
     {
+        if (UseTargetSchema)
+            return (await ReadPermissionCatalogAsync()).Permissions
+                .OrderBy(permission => permission.Module)
+                .ThenBy(permission => permission.Name)
+                .Select(ToPermission)
+                .ToList();
         return await _unitOfWork.Permissions
             .Query()
             .OrderBy(p => p.Module)
@@ -447,6 +532,12 @@ public class RbacService : IRbacService
     
     public async Task<List<Permission>> GetPermissionsByModuleAsync(string module)
     {
+        if (UseTargetSchema)
+            return (await ReadPermissionCatalogAsync()).Permissions
+                .Where(permission => permission.Module == module)
+                .OrderBy(permission => permission.Name)
+                .Select(ToPermission)
+                .ToList();
         return await _unitOfWork.Permissions
             .Query()
             .Where(p => p.Module == module)
@@ -464,6 +555,26 @@ public class RbacService : IRbacService
     
     public async Task DeletePermissionAsync(int permissionId, int adminId)
     {
+        if (UseTargetSchema)
+        {
+            var catalog = await ReadPermissionCatalogAsync();
+            var definition = catalog.Permissions.FirstOrDefault(permission => permission.Id == permissionId);
+            if (definition is null)
+                throw new InvalidOperationException("Permission not found");
+            var assigned = (await Context.Roles.AsNoTracking().ToListAsync())
+                .Any(role => RbacAggregateJson.ReadRolePermissions(role.PermissionsJson, _serializer)
+                    .Permissions.Any(permission => permission.PermissionId == permissionId));
+            if (assigned)
+                throw new InvalidOperationException("Cannot delete permission that is assigned to roles");
+            await SavePermissionCatalogAsync(new RbacPermissionCatalogDocument
+            {
+                Permissions = catalog.Permissions.Where(permission => permission.Id != permissionId).ToList()
+            });
+            await CreateAuditLogAsync("Delete", "Permission", permissionId, adminId,
+                JsonSerializer.Serialize(definition), null);
+            return;
+        }
+
         var permission = await _unitOfWork.Permissions.GetByIdAsync(permissionId);
         if (permission == null)
         {
@@ -519,9 +630,11 @@ public class RbacService : IRbacService
             throw new InvalidOperationException("Cannot assign permission to inactive role");
 
         var uniquePermissionIds = permissionIds.Distinct().ToList();
-        var permissions = await _unitOfWork.Permissions.Query()
-            .Where(permission => uniquePermissionIds.Contains(permission.Id))
-            .ToListAsync();
+        var permissions = UseTargetSchema
+            ? (await GetAllPermissionsAsync()).Where(permission => uniquePermissionIds.Contains(permission.Id)).ToList()
+            : await _unitOfWork.Permissions.Query()
+                .Where(permission => uniquePermissionIds.Contains(permission.Id))
+                .ToListAsync();
         if (permissions.Count != uniquePermissionIds.Count)
             throw new InvalidOperationException("One or more permissions not found");
 
@@ -551,27 +664,26 @@ public class RbacService : IRbacService
         role.UpdatedAt = DateTime.UtcNow;
         _unitOfWork.Roles.Update(role);
 
-        var newMappings = new List<RolePermission>();
-        foreach (var entry in added)
+        if (!UseTargetSchema)
         {
-            var mapping = new RolePermission
+            foreach (var entry in added)
             {
-                RoleId = roleId,
-                PermissionId = entry.PermissionId,
-                AssignedAt = entry.AssignedAt,
-                AssignedByAdminId = adminId
-            };
-            await _unitOfWork.RolePermissions.AddAsync(mapping);
-            newMappings.Add(mapping);
+                await _unitOfWork.RolePermissions.AddAsync(new RolePermission
+                {
+                    RoleId = roleId,
+                    PermissionId = entry.PermissionId,
+                    AssignedAt = entry.AssignedAt,
+                    AssignedByAdminId = adminId
+                });
+            }
         }
 
         await _unitOfWork.SaveChangesAsync();
 
-        foreach (var mapping in newMappings)
+        foreach (var entry in added)
         {
-            var permissionName = added.First(item => item.PermissionId == mapping.PermissionId).PermissionName;
-            await CreateAuditLogAsync("Assign", "RolePermission", mapping.Id, adminId, null,
-                JsonSerializer.Serialize(new { RoleId = roleId, PermissionId = mapping.PermissionId, PermissionName = permissionName }));
+            await CreateAuditLogAsync("Assign", "RolePermission", entry.PermissionId, adminId, null,
+                JsonSerializer.Serialize(new { RoleId = roleId, PermissionId = entry.PermissionId, PermissionName = entry.PermissionName }));
         }
 
         await InvalidateRoleCacheAsync(roleId);
@@ -585,9 +697,11 @@ public class RbacService : IRbacService
 
         var document = RbacAggregateJson.ReadRolePermissions(role.PermissionsJson, _serializer);
         var remaining = document.Permissions.Where(item => item.PermissionId != permissionId).ToList();
-        var legacy = await _unitOfWork.RolePermissions.Query()
-            .Include(item => item.Permission)
-            .FirstOrDefaultAsync(item => item.RoleId == roleId && item.PermissionId == permissionId);
+        var legacy = UseTargetSchema
+            ? null
+            : await _unitOfWork.RolePermissions.Query()
+                .Include(item => item.Permission)
+                .FirstOrDefaultAsync(item => item.RoleId == roleId && item.PermissionId == permissionId);
         if (remaining.Count == document.Permissions.Count && legacy == null)
             return;
 
@@ -621,6 +735,13 @@ public class RbacService : IRbacService
         if (permissionIds.Count == 0)
             return [];
 
+        if (UseTargetSchema)
+            return (await GetAllPermissionsAsync())
+                .Where(permission => permissionIds.Contains(permission.Id))
+                .OrderBy(permission => permission.Module)
+                .ThenBy(permission => permission.Name)
+                .ToList();
+
         return await _unitOfWork.Permissions.Query()
             .Where(permission => permissionIds.Contains(permission.Id))
             .OrderBy(permission => permission.Module)
@@ -650,10 +771,12 @@ public class RbacService : IRbacService
             ?? throw new InvalidOperationException("User not found");
 
         var current = RbacAggregateJson.ReadUserRoles(user.RoleIdsJson, _serializer);
-        var legacyRoleIds = await _unitOfWork.UserRoleMappings.Query()
-            .Where(mapping => mapping.UserId == userId)
-            .Select(mapping => mapping.RoleId)
-            .ToListAsync();
+        var legacyRoleIds = UseTargetSchema
+            ? []
+            : await _unitOfWork.UserRoleMappings.Query()
+                .Where(mapping => mapping.UserId == userId)
+                .Select(mapping => mapping.RoleId)
+                .ToListAsync();
         var existingRoleIds = current.Roles.Select(role => role.RoleId).Union(legacyRoleIds).Distinct().ToList();
         var allRoleIds = uniqueRoleIds.Union(existingRoleIds).Distinct().ToList();
         var roles = await _unitOfWork.Roles.Query().Where(role => allRoleIds.Contains(role.Id)).ToListAsync();
@@ -685,23 +808,28 @@ public class RbacService : IRbacService
         user.UpdatedAt = DateTime.UtcNow;
         _unitOfWork.Users.Update(user);
 
-        var legacyMappings = await _unitOfWork.UserRoleMappings.Query()
-            .Where(mapping => mapping.UserId == userId)
-            .ToListAsync();
+        var legacyMappings = UseTargetSchema
+            ? []
+            : await _unitOfWork.UserRoleMappings.Query()
+                .Where(mapping => mapping.UserId == userId)
+                .ToListAsync();
         var removeMappings = legacyMappings.Where(mapping => !uniqueRoleIds.Contains(mapping.RoleId)).ToList();
-        if (removeMappings.Count > 0)
+        if (!UseTargetSchema && removeMappings.Count > 0)
             _unitOfWork.UserRoleMappings.RemoveRange(removeMappings);
 
         var existingLegacyIds = legacyMappings.Select(mapping => mapping.RoleId).ToHashSet();
-        foreach (var roleId in uniqueRoleIds.Where(id => !existingLegacyIds.Contains(id)))
+        if (!UseTargetSchema)
         {
-            await _unitOfWork.UserRoleMappings.AddAsync(new UserRoleMapping
+            foreach (var roleId in uniqueRoleIds.Where(id => !existingLegacyIds.Contains(id)))
             {
-                UserId = userId,
-                RoleId = roleId,
-                AssignedAt = DateTime.UtcNow,
-                AssignedByAdminId = adminId
-            });
+                await _unitOfWork.UserRoleMappings.AddAsync(new UserRoleMapping
+                {
+                    UserId = userId,
+                    RoleId = roleId,
+                    AssignedAt = DateTime.UtcNow,
+                    AssignedByAdminId = adminId
+                });
+            }
         }
 
         await _unitOfWork.SaveChangesAsync();
@@ -716,8 +844,10 @@ public class RbacService : IRbacService
 
         foreach (var added in uniqueRoleIds.Except(existingRoleIds))
         {
-            var mappingId = (await _unitOfWork.UserRoleMappings.Query()
-                .FirstAsync(item => item.UserId == userId && item.RoleId == added)).Id;
+            var mappingId = UseTargetSchema
+                ? added
+                : (await _unitOfWork.UserRoleMappings.Query()
+                    .FirstAsync(item => item.UserId == userId && item.RoleId == added)).Id;
             await CreateAuditLogAsync("Assign", "UserRole", mappingId, adminId, null,
                 JsonSerializer.Serialize(new { UserId = userId, RoleId = added, RoleName = rolesDict[added].Name }));
         }
@@ -734,8 +864,11 @@ public class RbacService : IRbacService
 
         var document = RbacAggregateJson.ReadUserRoles(user.RoleIdsJson, _serializer);
         var remaining = document.Roles.Where(role => role.RoleId != roleId).ToList();
-        var legacy = await _unitOfWork.UserRoleMappings.Query()
-            .FirstOrDefaultAsync(mapping => mapping.UserId == userId && mapping.RoleId == roleId);
+        var legacy = UseTargetSchema
+            ? null
+            : await _unitOfWork.UserRoleMappings
+                .Query()
+                .FirstOrDefaultAsync(mapping => mapping.UserId == userId && mapping.RoleId == roleId);
         if (remaining.Count == document.Roles.Count && legacy == null)
             return;
 
@@ -839,7 +972,37 @@ public class RbacService : IRbacService
         DateTime? startDate = null,
         DateTime? endDate = null)
     {
-        // Expand phase: dual-written RbacAuditLogs remain the admin read path until Task 9.
+        if (UseTargetSchema)
+        {
+            var targetQuery = Context.AuditLogs.AsNoTracking().AsQueryable();
+            if (!string.IsNullOrWhiteSpace(entityType))
+                targetQuery = targetQuery.Where(item => item.EntityType == entityType);
+            if (entityId.HasValue)
+                targetQuery = targetQuery.Where(item => item.EntityId == entityId.Value);
+            if (changedByAdminId.HasValue)
+                targetQuery = targetQuery.Where(item => item.ChangedByAdminId == changedByAdminId.Value);
+            if (startDate.HasValue)
+                targetQuery = targetQuery.Where(item => item.ChangedAt >= startDate.Value);
+            if (endDate.HasValue)
+                targetQuery = targetQuery.Where(item => item.ChangedAt <= endDate.Value);
+            var total = await targetQuery.CountAsync();
+            var targetLogs = await targetQuery.OrderByDescending(item => item.ChangedAt)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+            return (targetLogs.Select(item => new RbacAuditLog
+            {
+                Id = item.Id,
+                Action = item.Action,
+                EntityType = item.EntityType,
+                EntityId = item.EntityId,
+                ChangedByAdminId = item.ChangedByAdminId,
+                ChangedAt = item.ChangedAt,
+                OldValue = item.OldValue,
+                NewValue = item.NewValue
+            }).ToList(), total);
+        }
+
         IQueryable<RbacAuditLog> query = _unitOfWork.RbacAuditLogs
             .Query()
             .Include(item => item.ChangedByAdmin);

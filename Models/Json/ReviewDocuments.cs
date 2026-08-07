@@ -151,6 +151,12 @@ public sealed class ReviewReportEntry
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; init; }
 
+    [JsonPropertyName("handledByAdminId")]
+    public int? HandledByAdminId { get; init; }
+
+    [JsonPropertyName("handledAt")]
+    public DateTime? HandledAt { get; init; }
+
     public void Validate()
     {
         JsonDocumentValidation.Require(ReportedByUserId > 0, "reportedByUserId");
@@ -162,14 +168,14 @@ public sealed class ReviewReportEntry
 
 public sealed class ReviewSentimentPayload
 {
-    [JsonPropertyName("sentiment")]
-    public SentimentLabel Sentiment { get; init; }
-
     [JsonPropertyName("ratingSentiment")]
     public SentimentLabel RatingSentiment { get; init; }
 
     [JsonPropertyName("commentSentiment")]
-    public SentimentLabel CommentSentiment { get; init; }
+    public SentimentLabel? CommentSentiment { get; init; }
+
+    [JsonPropertyName("sentiment")]
+    public SentimentLabel Sentiment { get; init; }
 
     [JsonPropertyName("hasRatingCommentConflict")]
     public bool HasRatingCommentConflict { get; init; }
@@ -180,11 +186,51 @@ public sealed class ReviewSentimentPayload
     [JsonPropertyName("aspects")]
     public List<ReviewSentimentAspectPayload> Aspects { get; init; } = [];
 
+    [JsonPropertyName("hasSafetyRisk")]
+    public bool HasSafetyRisk { get; init; }
+
+    [JsonPropertyName("severity")]
+    public int? Severity { get; init; }
+
+    [JsonPropertyName("confidence")]
+    public float? Confidence { get; init; }
+
+    [JsonPropertyName("reason")]
+    public string? Reason { get; init; }
+
+    [JsonPropertyName("source")]
+    public SentimentSource Source { get; init; }
+
+    [JsonPropertyName("analyzedAtUtc")]
+    public DateTime? AnalyzedAtUtc { get; init; }
+
+    [JsonPropertyName("analysisVersion")]
+    public string? AnalysisVersion { get; init; }
+
+    [JsonPropertyName("adminOverrideById")]
+    public int? AdminOverrideById { get; init; }
+
+    [JsonPropertyName("adminOverrideAtUtc")]
+    public DateTime? AdminOverrideAtUtc { get; init; }
+
+    [JsonPropertyName("adminReviewNote")]
+    public string? AdminReviewNote { get; init; }
+
+    [JsonPropertyName("alertStatus")]
+    public SentimentAlertStatus AlertStatus { get; init; }
+
+    [JsonPropertyName("acknowledgedById")]
+    public int? AcknowledgedById { get; init; }
+
+    [JsonPropertyName("acknowledgedAtUtc")]
+    public DateTime? AcknowledgedAtUtc { get; init; }
+
     public void Validate()
     {
         JsonDocumentValidation.RequireDefinedEnum(Sentiment, "sentiment");
         JsonDocumentValidation.RequireDefinedEnum(RatingSentiment, "ratingSentiment");
-        JsonDocumentValidation.RequireDefinedEnum(CommentSentiment, "commentSentiment");
+        if (CommentSentiment.HasValue)
+            JsonDocumentValidation.RequireDefinedEnum(CommentSentiment.Value, "commentSentiment");
         foreach (var aspect in Aspects ?? [])
             aspect.Validate();
     }

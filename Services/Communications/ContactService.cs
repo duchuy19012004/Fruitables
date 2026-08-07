@@ -12,6 +12,7 @@ public class ContactService : IContactService
     private readonly ApplicationDbContext _db;
     private readonly IJsonDocumentSerializer _serializer;
 
+    [Microsoft.Extensions.DependencyInjection.ActivatorUtilitiesConstructor]
     public ContactService(ApplicationDbContext db, IJsonDocumentSerializer? serializer = null)
     {
         _db = db;

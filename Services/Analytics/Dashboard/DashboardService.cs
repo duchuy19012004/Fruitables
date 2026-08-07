@@ -2,6 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using Fruitables.Models;
 using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Communications;
+using Fruitables.Services.Infrastructure.Json;
+using Fruitables.Services.Reviews;
 using Fruitables.ViewModels;
 
 namespace Fruitables.Services.Analytics.Dashboard;
@@ -43,6 +45,25 @@ public class DashboardService : IDashboardService
         try
         {
             var since = DateTime.UtcNow.AddDays(-7);
+            if (_unitOfWork is Repositories.UnitOfWork concrete && concrete.Context.Database.IsSqlServer())
+            {
+                var serializer = new VersionedJsonSerializer();
+                var reviews = await concrete.Context.Reviews.AsNoTracking()
+                    .Where(review => !review.IsDeleted && review.CreatedAt >= since)
+                    .ToListAsync();
+                var targetRows = reviews
+                    .Select(review => ReviewAggregateJson.Read(review, serializer).Sentiment)
+                    .Where(sentiment => sentiment is not null)
+                    .ToList();
+                var targetEligible = targetRows.Where(sentiment => !sentiment!.NeedsManualReview && sentiment.Sentiment != SentimentLabel.Failed).ToList();
+                return new DashboardSentimentStatistics
+                {
+                    Negative7d = targetEligible.Count(sentiment => sentiment!.Sentiment == SentimentLabel.Negative),
+                    Total7d = targetEligible.Count,
+                    PendingAlerts = targetRows.Count(sentiment => sentiment!.AlertStatus == SentimentAlertStatus.Pending),
+                    PendingReviews = targetRows.Count(sentiment => sentiment!.NeedsManualReview)
+                };
+            }
 
             var rows = await (
                 from r in _unitOfWork.Reviews.Query()

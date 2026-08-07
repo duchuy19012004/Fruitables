@@ -3,6 +3,69 @@ using System.Text.Json.Serialization;
 
 namespace Fruitables.Models.Json;
 
+public sealed class RbacPermissionCatalogDocument : VersionedJsonDocument
+{
+    private static readonly string[] RequiredPropertyNames = ["permissions"];
+
+    [JsonPropertyName("permissions")]
+    public List<PermissionDefinition> Permissions { get; init; } = [];
+
+    [JsonIgnore]
+    public override IReadOnlyCollection<string> RequiredProperties => RequiredPropertyNames;
+
+    public override void Validate()
+    {
+        base.Validate();
+        foreach (var permission in Permissions ?? [])
+        {
+            if (permission is null)
+                throw JsonDocumentValidation.Invalid("permissions", "a null child");
+            permission.Validate();
+        }
+    }
+
+    internal override void Validate(JsonElement json)
+    {
+        base.Validate(json);
+        var raw = JsonDocumentValidation.RequireArray(json, "permissions");
+        if (Permissions is null || Permissions.Count != raw.GetArrayLength())
+            throw JsonDocumentValidation.Invalid("permissions", "an invalid child collection");
+        for (var index = 0; index < raw.GetArrayLength(); index++)
+            Permissions[index].Validate(raw[index]);
+    }
+}
+
+public sealed class PermissionDefinition
+{
+    [JsonPropertyName("id")]
+    public int Id { get; init; }
+
+    [JsonPropertyName("name")]
+    public string Name { get; init; } = string.Empty;
+
+    [JsonPropertyName("module")]
+    public string Module { get; init; } = string.Empty;
+
+    [JsonPropertyName("description")]
+    public string? Description { get; init; }
+
+    public void Validate()
+    {
+        if (Id <= 0 || string.IsNullOrWhiteSpace(Name) || string.IsNullOrWhiteSpace(Module) || !Name.Contains('.'))
+            throw JsonDocumentValidation.Invalid("permission", "invalid definition");
+    }
+
+    internal void Validate(JsonElement json)
+    {
+        JsonDocumentValidation.RequireObject(json, "permission");
+        JsonDocumentValidation.RequireProperties(json, ["id", "name", "module"]);
+        JsonDocumentValidation.RequireNumber(json, "id");
+        JsonDocumentValidation.RequireString(json, "name");
+        JsonDocumentValidation.RequireString(json, "module");
+        Validate();
+    }
+}
+
 public sealed class RolePermissionsDocument : VersionedJsonDocument
 {
     private static readonly string[] RequiredPropertyNames = ["roleId", "permissions"];

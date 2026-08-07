@@ -13,6 +13,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Fruitables.Services.Chat.Knowledge;
 using Fruitables.Services.Orders;
+using Fruitables.Services.Reviews;
 
 namespace Fruitables.Services.Catalog.Products;
 
@@ -355,7 +356,10 @@ public class ProductAdminService : IProductAdminService
         if ((await GetPriceSchedulesAsync()).Any(schedule => schedule.ProductId == id))
             return ProductResult.Fail(ProductErrorType.ValidationError,
                 "Không thể xóa vĩnh viễn sản phẩm đã có lịch sử giá. Hãy sử dụng chức năng xóa mềm.");
-        if (await _unitOfWork.CartItems.AnyAsync(item => item.ProductId == id))
+        var productInCart = _dbContext?.Database.IsSqlServer() == true
+            ? await IsProductInCartAsync(id, null)
+            : await _unitOfWork.CartItems.AnyAsync(item => item.ProductId == id);
+        if (productInCart)
             return ProductResult.Fail(ProductErrorType.ValidationError,
                 "Không thể xóa vĩnh viễn sản phẩm đang nằm trong giỏ hàng. Hãy sử dụng chức năng xóa mềm.");
         if (await IsReferencedByComboPayloadAsync(id))
@@ -775,7 +779,9 @@ public class ProductAdminService : IProductAdminService
 
         if (await _unitOfWork.OrderItems.AnyAsync(i => i.ProductVariantId == variantId) ||
             (await GetPriceSchedulesAsync()).Any(schedule => schedule.ProductVariantId == variantId) ||
-            await _unitOfWork.CartItems.AnyAsync(item => item.ProductVariantId == variantId))
+            (_dbContext?.Database.IsSqlServer() == true
+                ? await IsProductInCartAsync(variant.ProductId, variantId)
+                : await _unitOfWork.CartItems.AnyAsync(item => item.ProductVariantId == variantId)))
             variant.IsActive = false;
         else
             _unitOfWork.ProductVariants.Remove(variant);
@@ -902,6 +908,16 @@ public class ProductAdminService : IProductAdminService
             : null;
     }
 
+    private async Task<bool> IsProductInCartAsync(int productId, int? variantId)
+    {
+        if (_dbContext is null)
+            return false;
+        var carts = await _dbContext.Carts.AsNoTracking().Select(cart => cart.LinesJson).ToListAsync();
+        return carts.Any(json => _serializer.TryDeserialize<CartLinesDocument>(json, out var document, out _) &&
+            document!.Lines.Any(line => line.ProductId == productId &&
+                (!variantId.HasValue || line.ProductVariantId == variantId.Value)));
+    }
+
     private async Task<bool> IsReferencedByComboPayloadAsync(int productId)
     {
         if (_dbContext == null)
@@ -921,18 +937,32 @@ public class ProductAdminService : IProductAdminService
         var ids = productIds.Distinct().ToArray();
         if (ids.Length == 0) return new Dictionary<int, ProductSentimentSummary>();
 
-        var rows = await (
-            from r in _unitOfWork.Reviews.Query()
-            join s in _unitOfWork.ReviewSentiments.Query() on r.Id equals s.ReviewId
-            where ids.Contains(r.ProductId) && !r.IsDeleted && !s.NeedsManualReview
-            group s by r.ProductId into g
-            select new
-            {
-                ProductId = g.Key,
-                Negative = g.Count(x => x.Sentiment == SentimentLabel.Negative),
-                Conflict = g.Count(x => x.HasRatingCommentConflict),
-                Total = g.Count()
-            }).ToListAsync();
+        var rows = _dbContext?.Database.IsSqlServer() == true
+            ? (await _dbContext.Reviews.AsNoTracking()
+                .Where(review => ids.Contains(review.ProductId) && !review.IsDeleted)
+                .ToListAsync())
+                .Select(review => new { Review = review, Sentiment = ReviewAggregateJson.Read(review, _serializer).Sentiment })
+                .Where(item => item.Sentiment is not null && !item.Sentiment.NeedsManualReview)
+                .GroupBy(item => item.Review.ProductId)
+                .Select(group => new
+                {
+                    ProductId = group.Key,
+                    Negative = group.Count(item => item.Sentiment!.Sentiment == SentimentLabel.Negative),
+                    Conflict = group.Count(item => item.Sentiment!.HasRatingCommentConflict),
+                    Total = group.Count()
+                }).ToList()
+            : await (
+                from r in _unitOfWork.Reviews.Query()
+                join s in _unitOfWork.ReviewSentiments.Query() on r.Id equals s.ReviewId
+                where ids.Contains(r.ProductId) && !r.IsDeleted && !s.NeedsManualReview
+                group s by r.ProductId into g
+                select new
+                {
+                    ProductId = g.Key,
+                    Negative = g.Count(x => x.Sentiment == SentimentLabel.Negative),
+                    Conflict = g.Count(x => x.HasRatingCommentConflict),
+                    Total = g.Count()
+                }).ToListAsync();
 
         return rows.ToDictionary(
             x => x.ProductId,

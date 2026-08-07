@@ -31,6 +31,40 @@ public sealed class MigrationGuardTests
     }
 
     [Fact]
+    public void ContractAggregateSchema_drops_only_approved_legacy_tables()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var migrationFile = Assert.Single(Directory.GetFiles(
+            Path.Combine(repositoryRoot, "Migrations"),
+            "*_ContractAggregateSchema.cs"));
+        var source = File.ReadAllText(migrationFile);
+        var upMethod = source[..source.IndexOf("protected override void Down", StringComparison.Ordinal)];
+        var drops = System.Text.RegularExpressions.Regex.Matches(
+                upMethod,
+                "DropTable\\(\\s*name: \\\"([^\\\"]+)\\\"",
+                System.Text.RegularExpressions.RegexOptions.Singleline)
+            .Select(match => match.Groups[1].Value)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var approved = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "CartItems", "ChatMessages", "ComboAuditLogs", "ComboItems", "ContactMessages", "Coupons",
+            "Faqs", "OrderNotes", "OrderStatusHistories", "PriceSchedules", "ProductImages", "ProductLogs",
+            "ProductTagMapping", "RbacAuditLogs", "Refunds", "ReturnEvents", "ReturnEvidence", "ReviewHelpfuls",
+            "ReviewReports", "ReviewSentimentAspects", "RolePermissions", "SearchHotKeywords", "SePayTransactions",
+            "Testimonials", "UserAccountLogs", "UserRoleMappings", "Wishlists", "CartGroups", "ProductTags",
+            "ReturnRequestItems", "ReviewSentiments", "Permissions", "Combos", "ReturnRequests"
+        };
+        Assert.Equal(approved, drops);
+        foreach (var retained in new[]
+        {
+            "OrderItems", "Products", "ProductVariants", "Orders", "Users", "Roles", "Addresses",
+            "Categories", "Settings", "KnowledgeChunks", "OutboxMessages", "Payments", "Promotions",
+            "Reviews", "Returns", "ContentEntries", "ChatSessions", "AuditLogs", "Carts"
+        })
+            Assert.DoesNotContain($"name: \"{retained}\"", upMethod, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Consolidation_identity_migration_preserves_colliding_audit_rows()
     {
         await using var connection = new SqliteConnection("DataSource=:memory:");

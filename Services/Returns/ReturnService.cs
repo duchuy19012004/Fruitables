@@ -21,6 +21,8 @@ public sealed class ReturnService : IReturnService
     private readonly IJsonDocumentSerializer _serializer;
     private readonly TimeProvider _timeProvider;
 
+    private bool UseTargetSchema => _context.Database.IsSqlServer();
+
     public ReturnService(
         ApplicationDbContext context,
         IImageUploadService imageUploadService,
@@ -40,16 +42,22 @@ public sealed class ReturnService : IReturnService
             .Include(item => item.Items)
                 .ThenInclude(item => item.Product)
             .FirstOrDefaultAsync(item => item.Id == orderId && item.UserId == userId);
-        var existing = await _context.ReturnRequests
-            .AsNoTracking()
-            .FirstOrDefaultAsync(item => item.OrderId == orderId);
+        var existingId = UseTargetSchema
+            ? await _context.Returns.AsNoTracking()
+                .Where(item => item.OrderId == orderId)
+                .Select(item => (int?)item.Id)
+                .FirstOrDefaultAsync()
+            : await _context.ReturnRequests.AsNoTracking()
+                .Where(item => item.OrderId == orderId)
+                .Select(item => (int?)item.Id)
+                .FirstOrDefaultAsync();
 
         var deadline = order?.DeliveredAtUtc?.AddHours(24);
         var canCreate = order != null &&
                         order.Status == OrderStatus.Delivered &&
                         deadline.HasValue &&
                         _timeProvider.GetUtcNow().UtcDateTime <= deadline.Value &&
-                        existing == null;
+                        !existingId.HasValue;
 
         return new ReturnEligibilityViewModel
         {
@@ -58,7 +66,7 @@ public sealed class ReturnService : IReturnService
             CanCreate = canCreate,
             DeliveredAtUtc = order?.DeliveredAtUtc,
             ClaimDeadlineAtUtc = deadline,
-            ExistingRequestId = existing?.Id,
+            ExistingRequestId = existingId,
             Items = order?.Items.Select(item => new ReturnEligibleItemViewModel
             {
                 OrderItemId = item.Id,
@@ -92,7 +100,10 @@ public sealed class ReturnService : IReturnService
         var deadline = order.DeliveredAtUtc.Value.AddHours(24);
         if (now > deadline)
             return Fail("Đã quá thời hạn 24 giờ để gửi khiếu nại.");
-        if (await _context.ReturnRequests.AnyAsync(item => item.OrderId == order.Id))
+        var hasExistingReturn = UseTargetSchema
+            ? await _context.Returns.AnyAsync(item => item.OrderId == order.Id)
+            : await _context.ReturnRequests.AnyAsync(item => item.OrderId == order.Id);
+        if (hasExistingReturn)
             return Fail("Đơn hàng này đã có yêu cầu khiếu nại.");
         if (submittedItems.Select(item => item.OrderItemId).Distinct().Count() != submittedItems.Count)
             return Fail("Mỗi sản phẩm chỉ được xuất hiện một lần trong yêu cầu.");
@@ -163,9 +174,20 @@ public sealed class ReturnService : IReturnService
                 }
             }
 
-            _context.ReturnRequests.Add(request);
-            await _context.SaveChangesAsync();
-            await SyncReturnCaseAsync(request);
+            if (UseTargetSchema)
+            {
+                var target = ToReturnCase(request);
+                _context.Returns.Add(target);
+                await _context.SaveChangesAsync();
+                request.Id = target.Id;
+                request.RowVersion = target.RowVersion;
+            }
+            else
+            {
+                _context.ReturnRequests.Add(request);
+                await _context.SaveChangesAsync();
+                await SyncReturnCaseAsync(request);
+            }
             if (transaction != null)
                 await transaction.CommitAsync();
 
@@ -240,6 +262,52 @@ public sealed class ReturnService : IReturnService
     {
         var page = Math.Max(1, filter.Page);
         var pageSize = Math.Clamp(filter.PageSize, 1, 100);
+        if (UseTargetSchema)
+        {
+            var targetQuery = _context.Returns
+                .AsNoTracking()
+                .Include(item => item.Order)
+                .Include(item => item.User)
+                .AsQueryable();
+            if (filter.Status.HasValue)
+                targetQuery = targetQuery.Where(item => item.Status == filter.Status.Value);
+            if (!string.IsNullOrWhiteSpace(filter.Search))
+            {
+                var search = filter.Search.Trim();
+                targetQuery = targetQuery.Where(item => item.ReturnNumber.Contains(search) ||
+                    item.Order.OrderNumber.Contains(search) || item.User.Name.Contains(search));
+            }
+            if (filter.FromDateUtc.HasValue)
+                targetQuery = targetQuery.Where(item => item.SubmittedAtUtc >= filter.FromDateUtc.Value);
+            if (filter.ToDateUtc.HasValue)
+                targetQuery = targetQuery.Where(item => item.SubmittedAtUtc < filter.ToDateUtc.Value.AddDays(1));
+
+            var total = await targetQuery.CountAsync();
+            var targetRows = await targetQuery
+                .OrderByDescending(item => item.SubmittedAtUtc)
+                .ThenByDescending(item => item.Id)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(item => new ReturnQueueRowViewModel
+                {
+                    Id = item.Id,
+                    ReturnNumber = item.ReturnNumber,
+                    OrderNumber = item.Order.OrderNumber,
+                    CustomerName = item.User.Name,
+                    RequestedAmount = item.RequestedAmount,
+                    Status = item.Status,
+                    SubmittedAtUtc = item.SubmittedAtUtc
+                })
+                .ToListAsync();
+            return new PagedResult<ReturnQueueRowViewModel>
+            {
+                Items = targetRows,
+                TotalCount = total,
+                Page = page,
+                PageSize = pageSize
+            };
+        }
+
         var query = _context.ReturnRequests
             .AsNoTracking()
             .Include(request => request.Order)
@@ -392,9 +460,14 @@ public sealed class ReturnService : IReturnService
                 AddEvent(request, ReturnEventType.RefundCreated, ReturnRequestStatus.UnderReview, request.Status, adminId, command.DecisionNote.Trim());
             }
 
-            TouchRowVersion(request);
-            await _context.SaveChangesAsync();
-            await SyncReturnCaseAsync(request);
+            if (UseTargetSchema)
+                await SaveTargetReturnCaseAsync(request);
+            else
+            {
+                TouchRowVersion(request);
+                await _context.SaveChangesAsync();
+                await SyncReturnCaseAsync(request);
+            }
             if (transaction != null)
                 await transaction.CommitAsync();
             return Success(request);
@@ -454,12 +527,16 @@ public sealed class ReturnService : IReturnService
                 var oldStatus = request.Status;
                 request.Status = ReturnRequestStatus.Refunded;
                 AddEvent(request, ReturnEventType.RefundCompleted, oldStatus, request.Status, adminId, request.Refund.TransactionReference);
-                var successfulRefundTotal = request.Refund.Amount + (await _context.Refunds
-                    .Where(refund => refund.OrderId == request.OrderId &&
-                        refund.Id != request.Refund.Id &&
-                        refund.Status == RefundStatus.Succeeded)
-                    .ToListAsync())
-                    .Sum(refund => refund.Amount);
+                var successfulRefundTotal = request.Refund.Amount;
+                if (!UseTargetSchema)
+                {
+                    successfulRefundTotal += (await _context.Refunds
+                        .Where(refund => refund.OrderId == request.OrderId &&
+                            refund.Id != request.Refund.Id &&
+                            refund.Status == RefundStatus.Succeeded)
+                        .ToListAsync())
+                        .Sum(refund => refund.Amount);
+                }
                 if (successfulRefundTotal + 0.005m >= request.Order.Total)
                     request.Order.PaymentStatus = PaymentStatus.Refunded;
             }
@@ -468,9 +545,14 @@ public sealed class ReturnService : IReturnService
                 AddEvent(request, ReturnEventType.RefundFailed, request.Status, request.Status, adminId, request.Refund.FailureReason);
             }
 
-            TouchRowVersion(request);
-            await _context.SaveChangesAsync();
-            await SyncReturnCaseAsync(request);
+            if (UseTargetSchema)
+                await SaveTargetReturnCaseAsync(request);
+            else
+            {
+                TouchRowVersion(request);
+                await _context.SaveChangesAsync();
+                await SyncReturnCaseAsync(request);
+            }
             if (transaction != null)
                 await transaction.CommitAsync();
             return Success(request);
@@ -550,9 +632,14 @@ public sealed class ReturnService : IReturnService
             request.SupplementDeadlineAtUtc = null;
             request.CustomerNote = command.Description.Trim();
             AddEvent(request, ReturnEventType.CustomerInfoAdded, oldStatus, request.Status, userId, request.CustomerNote);
-            TouchRowVersion(request);
-            await _context.SaveChangesAsync();
-            await SyncReturnCaseAsync(request);
+            if (UseTargetSchema)
+                await SaveTargetReturnCaseAsync(request);
+            else
+            {
+                TouchRowVersion(request);
+                await _context.SaveChangesAsync();
+                await SyncReturnCaseAsync(request);
+            }
             if (transaction != null)
                 await transaction.CommitAsync();
 
@@ -581,6 +668,9 @@ public sealed class ReturnService : IReturnService
 
     private async Task<ReturnRequest?> LoadRequestAsync(int returnRequestId, int? userId = null)
     {
+        if (UseTargetSchema)
+            return await LoadTargetRequestAsync(returnRequestId, userId);
+
         var query = _context.ReturnRequests
             .Include(request => request.Order)
                 .ThenInclude(order => order.Items)
@@ -600,13 +690,143 @@ public sealed class ReturnService : IReturnService
         return await query.FirstOrDefaultAsync(request => request.Id == returnRequestId);
     }
 
+    private async Task<ReturnRequest?> LoadTargetRequestAsync(int returnCaseId, int? userId)
+    {
+        var target = await _context.Returns
+            .Include(item => item.Order)
+                .ThenInclude(order => order.Items)
+                    .ThenInclude(item => item.Product)
+            .Include(item => item.Order)
+                .ThenInclude(order => order.Items)
+                    .ThenInclude(item => item.ProductVariant)
+            .Include(item => item.User)
+            .FirstOrDefaultAsync(item => item.Id == returnCaseId &&
+                (!userId.HasValue || item.UserId == userId.Value));
+        if (target is null)
+            return null;
+
+        var details = _serializer.Deserialize<ReturnDetailsDocument>(target.DetailsJson);
+        var request = new ReturnRequest
+        {
+            Id = target.Id,
+            ReturnNumber = target.ReturnNumber,
+            OrderId = target.OrderId,
+            UserId = target.UserId,
+            Status = target.Status,
+            SubmittedAtUtc = target.SubmittedAtUtc,
+            ClaimDeadlineAtUtc = target.ClaimDeadlineAtUtc,
+            SupplementDeadlineAtUtc = target.SupplementDeadlineAtUtc,
+            SupplementCount = target.SupplementCount,
+            RequestedAmount = target.RequestedAmount,
+            ApprovedAmount = target.ApprovedAmount,
+            ApprovedShippingFeeAmount = target.ApprovedShippingFeeAmount,
+            CustomerNote = details.CustomerNote,
+            AdminNote = details.AdminNote,
+            RowVersion = target.RowVersion?.ToArray(),
+            Order = target.Order,
+            User = target.User
+        };
+
+        var orderItems = target.Order.Items.ToDictionary(item => item.Id);
+        var itemMap = new Dictionary<int, ReturnRequestItem>();
+        foreach (var detail in details.Items)
+        {
+            if (!orderItems.TryGetValue(detail.OrderItemId, out var orderItem))
+                throw new InvalidOperationException($"ReturnCase {target.Id} references missing order item {detail.OrderItemId}.");
+            var item = new ReturnRequestItem
+            {
+                Id = detail.Id != 0 ? detail.Id : detail.OrderItemId,
+                ReturnRequestId = request.Id,
+                ReturnRequest = request,
+                OrderItemId = detail.OrderItemId,
+                OrderItem = orderItem,
+                DecisionStatus = detail.DecisionStatus,
+                RequestedQuantity = detail.RequestedQuantity,
+                ApprovedQuantity = detail.ApprovedQuantity,
+                Reason = detail.Reason,
+                Description = detail.Description,
+                DecisionReason = detail.DecisionReason,
+                RequestedAmount = detail.RequestedAmount,
+                ApprovedAmount = detail.ApprovedAmount
+            };
+            request.Items.Add(item);
+            itemMap[item.Id] = item;
+        }
+
+        foreach (var detail in details.Evidence)
+        {
+            itemMap.TryGetValue(detail.ReturnRequestItemId ?? 0, out var item);
+            request.Evidence.Add(new ReturnEvidence
+            {
+                Id = detail.Id,
+                ReturnRequestId = request.Id,
+                ReturnRequest = request,
+                ReturnRequestItemId = item?.Id,
+                ReturnRequestItem = item,
+                StorageKey = detail.StorageKey,
+                OriginalFileName = detail.OriginalFileName,
+                ContentType = detail.ContentType,
+                SizeBytes = detail.SizeBytes,
+                UploadedByUserId = detail.UploadedByUserId,
+                UploadedAtUtc = detail.UploadedAtUtc
+            });
+        }
+
+        foreach (var detail in details.Events)
+        {
+            itemMap.TryGetValue(detail.ReturnRequestItemId ?? 0, out var item);
+            request.Events.Add(new ReturnEvent
+            {
+                Id = detail.Id,
+                ReturnRequestId = request.Id,
+                ReturnRequest = request,
+                ReturnRequestItemId = item?.Id,
+                ReturnRequestItem = item,
+                OldStatus = detail.OldStatus,
+                NewStatus = detail.NewStatus,
+                EventType = detail.EventType,
+                ActorUserId = detail.ActorUserId,
+                Note = detail.Note,
+                CreatedAtUtc = detail.CreatedAtUtc
+            });
+        }
+
+        if (details.Refund is { } refund)
+        {
+            request.Refund = new Refund
+            {
+                Id = refund.Id,
+                ReturnRequestId = request.Id,
+                ReturnRequest = request,
+                OrderId = request.OrderId,
+                Order = request.Order,
+                Amount = refund.Amount,
+                ShippingFeeAmount = refund.ShippingFeeAmount,
+                Status = refund.Status,
+                TransactionReference = refund.TransactionReference,
+                FailureReason = refund.FailureReason,
+                CreatedByUserId = refund.CreatedByUserId,
+                ProcessedByUserId = refund.ProcessedByUserId,
+                CreatedAtUtc = refund.CreatedAtUtc,
+                ProcessedAtUtc = refund.ProcessedAtUtc
+            };
+        }
+
+        return request;
+    }
+
     private async Task<ReturnOperationResult> SaveStatusChangeAsync(ReturnRequest request)
     {
         try
         {
-            TouchRowVersion(request);
-            await _context.SaveChangesAsync();
-            await SyncReturnCaseAsync(request);
+            if (UseTargetSchema)
+                await SaveTargetReturnCaseAsync(request);
+            else
+            {
+                TouchRowVersion(request);
+                await _context.SaveChangesAsync();
+                await SyncReturnCaseAsync(request);
+            }
             return Success(request);
         }
         catch (DbUpdateConcurrencyException)
@@ -615,9 +835,125 @@ public sealed class ReturnService : IReturnService
         }
     }
 
+    private ReturnCase ToReturnCase(ReturnRequest request)
+    {
+        return new ReturnCase
+        {
+            ReturnNumber = request.ReturnNumber,
+            OrderId = request.OrderId,
+            UserId = request.UserId,
+            Status = request.Status,
+            SubmittedAtUtc = request.SubmittedAtUtc,
+            ClaimDeadlineAtUtc = request.ClaimDeadlineAtUtc,
+            SupplementDeadlineAtUtc = request.SupplementDeadlineAtUtc,
+            SupplementCount = request.SupplementCount,
+            RequestedAmount = request.RequestedAmount,
+            ApprovedAmount = request.ApprovedAmount,
+            ApprovedShippingFeeAmount = request.ApprovedShippingFeeAmount,
+            DetailsJson = _serializer.Serialize(BuildDetails(request)),
+            RowVersion = request.RowVersion?.ToArray() ?? NewRowVersion()
+        };
+    }
+
+    private ReturnDetailsDocument BuildDetails(ReturnRequest request)
+    {
+        var itemIds = request.Items.ToDictionary(item => item.OrderItemId, item => item.Id != 0 ? item.Id : item.OrderItemId);
+        return new ReturnDetailsDocument
+        {
+            Status = request.Status,
+            SubmittedAtUtc = request.SubmittedAtUtc,
+            ClaimDeadlineAtUtc = request.ClaimDeadlineAtUtc,
+            SupplementDeadlineAtUtc = request.SupplementDeadlineAtUtc,
+            SupplementCount = request.SupplementCount,
+            RequestedAmount = request.RequestedAmount,
+            ApprovedAmount = request.ApprovedAmount,
+            ApprovedShippingFeeAmount = request.ApprovedShippingFeeAmount,
+            CustomerNote = request.CustomerNote,
+            AdminNote = request.AdminNote,
+            Items = request.Items.Select(item => new ReturnItemDetails
+            {
+                Id = itemIds[item.OrderItemId],
+                OrderItemId = item.OrderItemId,
+                DecisionStatus = item.DecisionStatus,
+                RequestedQuantity = item.RequestedQuantity,
+                ApprovedQuantity = item.ApprovedQuantity,
+                Reason = item.Reason,
+                Description = item.Description,
+                DecisionReason = item.DecisionReason,
+                RequestedAmount = item.RequestedAmount,
+                ApprovedAmount = item.ApprovedAmount
+            }).ToList(),
+            Evidence = request.Evidence.Select(item => new ReturnEvidenceDetails
+            {
+                Id = item.Id,
+                ReturnRequestItemId = item.ReturnRequestItemId ?? item.ReturnRequestItem?.Id ??
+                    (item.ReturnRequestItem is null ? null : itemIds.GetValueOrDefault(item.ReturnRequestItem.OrderItemId)),
+                StorageKey = item.StorageKey,
+                OriginalFileName = item.OriginalFileName,
+                ContentType = item.ContentType,
+                SizeBytes = item.SizeBytes,
+                UploadedByUserId = item.UploadedByUserId,
+                UploadedAtUtc = item.UploadedAtUtc
+            }).ToList(),
+            Events = request.Events.Select(item => new ReturnEventDetails
+            {
+                Id = item.Id,
+                ReturnRequestItemId = item.ReturnRequestItemId ?? item.ReturnRequestItem?.Id,
+                OldStatus = item.OldStatus,
+                NewStatus = item.NewStatus,
+                EventType = item.EventType,
+                ActorUserId = item.ActorUserId,
+                Note = item.Note,
+                CreatedAtUtc = item.CreatedAtUtc
+            }).ToList(),
+            Refund = request.Refund is { } refund ? new RefundDetails
+            {
+                Id = refund.Id,
+                Amount = refund.Amount,
+                ShippingFeeAmount = refund.ShippingFeeAmount,
+                Status = refund.Status,
+                TransactionReference = refund.TransactionReference,
+                FailureReason = refund.FailureReason,
+                CreatedByUserId = refund.CreatedByUserId,
+                ProcessedByUserId = refund.ProcessedByUserId,
+                CreatedAtUtc = refund.CreatedAtUtc,
+                ProcessedAtUtc = refund.ProcessedAtUtc
+            } : null
+        };
+    }
+
+    private async Task SaveTargetReturnCaseAsync(ReturnRequest request)
+    {
+        var target = await _context.Returns.FirstOrDefaultAsync(item => item.Id == request.Id);
+        if (target is null || !HasMatchingRowVersion(target.RowVersion, request.RowVersion))
+            throw new DbUpdateConcurrencyException();
+
+        target.Status = request.Status;
+        target.SubmittedAtUtc = request.SubmittedAtUtc;
+        target.ClaimDeadlineAtUtc = request.ClaimDeadlineAtUtc;
+        target.SupplementDeadlineAtUtc = request.SupplementDeadlineAtUtc;
+        target.SupplementCount = request.SupplementCount;
+        target.RequestedAmount = request.RequestedAmount;
+        target.ApprovedAmount = request.ApprovedAmount;
+        target.ApprovedShippingFeeAmount = request.ApprovedShippingFeeAmount;
+        target.DetailsJson = _serializer.Serialize(BuildDetails(request));
+        target.RowVersion = NewRowVersion();
+        request.RowVersion = target.RowVersion;
+        await _context.SaveChangesAsync();
+    }
+
+    private static bool HasMatchingRowVersion(byte[]? actual, byte[]? expected) =>
+        actual is not null && expected is not null && actual.AsSpan().SequenceEqual(expected);
+
     private async Task SyncReturnCaseAsync(ReturnRequest request)
     {
         // Expand-phase mirror into target Returns aggregate.
+        if (UseTargetSchema)
+        {
+            await SaveTargetReturnCaseAsync(request);
+            return;
+        }
+
         var loaded = await _context.ReturnRequests
             .AsNoTracking()
             .Include(item => item.Items)
@@ -642,6 +978,7 @@ public sealed class ReturnService : IReturnService
             AdminNote = loaded.AdminNote,
             Items = loaded.Items.Select(item => new ReturnItemDetails
             {
+                Id = item.Id,
                 OrderItemId = item.OrderItemId,
                 DecisionStatus = item.DecisionStatus,
                 RequestedQuantity = item.RequestedQuantity,
@@ -654,6 +991,7 @@ public sealed class ReturnService : IReturnService
             }).ToList(),
             Evidence = loaded.Evidence.Select(item => new ReturnEvidenceDetails
             {
+                Id = item.Id,
                 ReturnRequestItemId = item.ReturnRequestItemId,
                 StorageKey = item.StorageKey,
                 OriginalFileName = item.OriginalFileName,
@@ -664,6 +1002,7 @@ public sealed class ReturnService : IReturnService
             }).ToList(),
             Events = loaded.Events.Select(item => new ReturnEventDetails
             {
+                Id = item.Id,
                 ReturnRequestItemId = item.ReturnRequestItemId,
                 OldStatus = item.OldStatus,
                 NewStatus = item.NewStatus,
@@ -674,6 +1013,7 @@ public sealed class ReturnService : IReturnService
             }).ToList(),
             Refund = loaded.Refund == null ? null : new RefundDetails
             {
+                Id = loaded.Refund.Id,
                 Amount = loaded.Refund.Amount,
                 ShippingFeeAmount = loaded.Refund.ShippingFeeAmount,
                 Status = loaded.Refund.Status,

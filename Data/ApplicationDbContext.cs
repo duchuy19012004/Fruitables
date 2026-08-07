@@ -6,6 +6,9 @@ namespace Fruitables.Data;
 
 public class ApplicationDbContext : DbContext
 {
+    // CLI backfill/verify runs during the expand window and must see legacy source tables.
+    public static bool EnableLegacySchemaForExpansion { get; set; }
+
     // Pre-generated BCrypt hash for "Admin@123" password
     // Generated using BCrypt.Net.BCrypt.HashPassword("Admin@123")
     private const string AdminPasswordHash = "$2a$11$lA/jMR6h6Qga83lrdc0xd.Fx1TLBOiefaI1vAvCcVTjhYFqTYisHO";
@@ -1042,6 +1045,68 @@ public class ApplicationDbContext : DbContext
             }
         );
 
+        // SQL Server is the contracted production model. SQLite/InMemory keep the
+        // legacy graph for existing fixture/backfill tests until the contract migration.
+        if (isSqlServer && !EnableLegacySchemaForExpansion)
+            IgnoreLegacySchema(modelBuilder);
+    }
+
+    private static void IgnoreLegacySchema(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Product>().Ignore(product => product.Images);
+        modelBuilder.Entity<Product>().Ignore(product => product.Tags);
+        modelBuilder.Entity<Product>().Ignore(product => product.PriceSchedules);
+        modelBuilder.Entity<ProductVariant>().Ignore(variant => variant.PriceSchedules);
+        modelBuilder.Entity<User>().Ignore(user => user.Wishlists);
+        modelBuilder.Entity<User>().Ignore(user => user.AccountLogs);
+        modelBuilder.Entity<User>().Ignore(user => user.ReturnRequests);
+        modelBuilder.Entity<User>().Ignore(user => user.UserRoleMappings);
+        modelBuilder.Entity<Role>().Ignore(role => role.UserRoleMappings);
+        modelBuilder.Entity<Role>().Ignore(role => role.RolePermissions);
+        modelBuilder.Entity<Cart>().Ignore(cart => cart.Items);
+        modelBuilder.Entity<Cart>().Ignore(cart => cart.Groups);
+        modelBuilder.Entity<Order>().Ignore(order => order.StatusHistory);
+        modelBuilder.Entity<Order>().Ignore(order => order.OrderNotes);
+        modelBuilder.Entity<Order>().Ignore(order => order.ReturnRequest);
+        modelBuilder.Entity<OrderItem>().Ignore(item => item.ReturnRequestItems);
+        modelBuilder.Entity<Review>().Ignore(review => review.Reports);
+        modelBuilder.Entity<Review>().Ignore(review => review.HelpfulVotes);
+        modelBuilder.Entity<Review>().Ignore(review => review.Sentiment);
+        modelBuilder.Entity<ChatSession>().Ignore(session => session.Messages);
+
+        modelBuilder.Ignore<ProductImage>();
+        modelBuilder.Ignore<ProductTag>();
+        modelBuilder.Ignore<ReviewReport>();
+        modelBuilder.Ignore<ReviewHelpful>();
+        modelBuilder.Ignore<ReviewSentiment>();
+        modelBuilder.Ignore<ReviewSentimentAspect>();
+        modelBuilder.Ignore<CartGroup>();
+        modelBuilder.Ignore<CartItem>();
+        modelBuilder.Ignore<ReturnRequest>();
+        modelBuilder.Ignore<ReturnRequestItem>();
+        modelBuilder.Ignore<ReturnEvidence>();
+        modelBuilder.Ignore<ReturnEvent>();
+        modelBuilder.Ignore<Refund>();
+        modelBuilder.Ignore<SePayTransaction>();
+        modelBuilder.Ignore<Coupon>();
+        modelBuilder.Ignore<Wishlist>();
+        modelBuilder.Ignore<Testimonial>();
+        modelBuilder.Ignore<ContactMessage>();
+        modelBuilder.Ignore<Faq>();
+        modelBuilder.Ignore<ChatMessage>();
+        modelBuilder.Ignore<SearchHotKeyword>();
+        modelBuilder.Ignore<ProductLog>();
+        modelBuilder.Ignore<PriceSchedule>();
+        modelBuilder.Ignore<Combo>();
+        modelBuilder.Ignore<ComboItem>();
+        modelBuilder.Ignore<ComboAuditLog>();
+        modelBuilder.Ignore<OrderStatusHistory>();
+        modelBuilder.Ignore<OrderNote>();
+        modelBuilder.Ignore<UserAccountLog>();
+        modelBuilder.Ignore<Permission>();
+        modelBuilder.Ignore<UserRoleMapping>();
+        modelBuilder.Ignore<RolePermission>();
+        modelBuilder.Ignore<RbacAuditLog>();
     }
 
     private static void ConfigureOutbox(ModelBuilder modelBuilder)

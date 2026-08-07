@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using Fruitables.Data;
 using Fruitables.Models;
@@ -12,6 +13,11 @@ namespace Fruitables.Services.Infrastructure.DatabaseConsolidation;
 
 public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
 {
+    private const int CartJsonLimitBytes = 64 * 1024;
+    private const int ReviewJsonLimitBytes = 32 * 1024;
+    private const int ReturnJsonLimitBytes = 256 * 1024;
+    private const int ChatJsonLimitBytes = 512 * 1024;
+
     private static readonly JsonSerializerOptions WishlistJsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly ApplicationDbContext _db;
@@ -51,6 +57,11 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
     public async Task<ConsolidationVerificationReport> VerifyAsync(CancellationToken cancellationToken)
     {
         var report = new ConsolidationVerificationReport();
+        if (_db.Database.IsSqlServer() && !await LegacySourceTablesExistAsync(cancellationToken))
+        {
+            await VerifyContractedSchemaAsync(report, cancellationToken);
+            return report;
+        }
 
         await RunVerificationStageAsync(report, "Products", VerifyProductsAsync, cancellationToken);
         await RunVerificationStageAsync(report, "Roles", VerifyRolesAsync, cancellationToken);
@@ -67,6 +78,138 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
         await RunVerificationStageAsync(report, "SqlServerISJSON", VerifySqlServerJsonAsync, cancellationToken);
 
         return report;
+    }
+
+    private async Task<bool> LegacySourceTablesExistAsync(CancellationToken cancellationToken)
+    {
+        var connection = _db.Database.GetDbConnection();
+        if (connection.State != System.Data.ConnectionState.Open)
+            await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT CASE WHEN EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'ProductImages') THEN 1 ELSE 0 END";
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken)) == 1;
+    }
+
+    private async Task VerifyContractedSchemaAsync(
+        ConsolidationVerificationReport report,
+        CancellationToken cancellationToken)
+    {
+        var connection = _db.Database.GetDbConnection();
+        {
+            if (connection.State != System.Data.ConnectionState.Open)
+                await connection.OpenAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_NAME <> '__EFMigrationsHistory'";
+            var tableCount = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
+            report.MutableTargetCounts["businessTables"] = tableCount;
+            if (tableCount != 19)
+                report.AddError("Schema", "businessTables", $"Expected 19 business tables, found {tableCount}.");
+        }
+
+        var products = await _db.Products.AsNoTracking().ToListAsync(cancellationToken);
+        report.MutableTargetCounts["products"] = products.Count;
+        foreach (var product in products)
+        {
+            VerifyDocument<ProductImagesDocument>(report, "Product", SourceId("Product", product.Id), product.ImagesJson, _serializer.TryDeserialize<ProductImagesDocument>);
+            VerifyDocument<ProductTagsDocument>(report, "Product", SourceId("Product", product.Id), product.TagsJson, _serializer.TryDeserialize<ProductTagsDocument>);
+        }
+
+        var roles = await _db.Roles.AsNoTracking().ToListAsync(cancellationToken);
+        report.MutableTargetCounts["roles"] = roles.Count;
+        foreach (var role in roles)
+            VerifyDocument<RolePermissionsDocument>(report, "RolePermissions", SourceId("Role", role.Id), role.PermissionsJson, _serializer.TryDeserialize<RolePermissionsDocument>);
+
+        var users = await _db.Users.AsNoTracking().ToListAsync(cancellationToken);
+        report.MutableTargetCounts["users"] = users.Count;
+        foreach (var user in users)
+        {
+            VerifyDocument<UserRolesDocument>(report, "UserRoles", SourceId("User", user.Id), user.RoleIdsJson, _serializer.TryDeserialize<UserRolesDocument>);
+            VerifyWishlistJson(report, user);
+        }
+
+        var carts = await _db.Carts.AsNoTracking().ToListAsync(cancellationToken);
+        report.MutableTargetCounts["carts"] = carts.Count;
+        foreach (var cart in carts)
+        {
+            var sourceId = SourceId("Cart", cart.Id);
+            VerifyDocument<CartLinesDocument>(report, "Cart", sourceId, cart.LinesJson, _serializer.TryDeserialize<CartLinesDocument>);
+            VerifyJsonSize(report, "Cart", sourceId, cart.LinesJson, CartJsonLimitBytes);
+        }
+
+        var orders = await _db.Orders.AsNoTracking().ToListAsync(cancellationToken);
+        report.MutableTargetCounts["orders"] = orders.Count;
+        foreach (var order in orders)
+        {
+            VerifyDocument<OrderStatusHistoryDocument>(report, "OrderHistory", SourceId("Order", order.Id), order.StatusHistoryJson, _serializer.TryDeserialize<OrderStatusHistoryDocument>);
+            VerifyDocument<OrderNotesDocument>(report, "OrderNotes", SourceId("Order", order.Id), order.NotesJson, _serializer.TryDeserialize<OrderNotesDocument>);
+            var items = await _db.OrderItems.AsNoTracking().Where(item => item.OrderId == order.Id).ToListAsync(cancellationToken);
+            var subtotal = items.Sum(item => item.Price * item.Quantity - item.ComboDiscount);
+            if (subtotal != order.Subtotal)
+                report.AddError("Order", SourceId("Order", order.Id), $"Order subtotal mismatch: {subtotal} != {order.Subtotal}.");
+            if (subtotal + order.ShippingFee - order.Discount != order.Total)
+                report.AddError("Order", SourceId("Order", order.Id), "Order total reconciliation failed.");
+        }
+
+        var payments = await _db.Payments.AsNoTracking().ToListAsync(cancellationToken);
+        report.MutableTargetCounts["payments"] = payments.Count;
+        foreach (var duplicate in payments.GroupBy(payment => (payment.Provider, payment.ProviderTransactionId)).Where(group => group.Count() > 1))
+            report.AddError("Payment", $"{duplicate.Key.Provider}:{duplicate.Key.ProviderTransactionId}", "Duplicate provider transaction identity.");
+        var promotions = await _db.Promotions.AsNoTracking().ToListAsync(cancellationToken);
+        report.MutableTargetCounts["promotions"] = promotions.Count;
+        foreach (var promotion in promotions)
+        {
+            var valid = promotion.Type switch
+            {
+                "coupon" => VerifyDocument<CouponPayload>(report, "Promotion", $"Promotion:{promotion.Id}", promotion.PayloadJson, _serializer.TryDeserialize<CouponPayload>),
+                "combo" => VerifyDocument<ComboPayload>(report, "Promotion", $"Promotion:{promotion.Id}", promotion.PayloadJson, _serializer.TryDeserialize<ComboPayload>),
+                "price-schedule" => VerifyDocument<PriceSchedulePayload>(report, "Promotion", $"Promotion:{promotion.Id}", promotion.PayloadJson, _serializer.TryDeserialize<PriceSchedulePayload>),
+                _ => VerifyDocument<JsonElement>(report, "Promotion", $"Promotion:{promotion.Id}", promotion.PayloadJson, _serializer.TryDeserialize<JsonElement>)
+            };
+            _ = valid;
+        }
+
+        var reviews = await _db.Reviews.AsNoTracking().ToListAsync(cancellationToken);
+        report.MutableTargetCounts["reviews"] = reviews.Count;
+        foreach (var review in reviews)
+        {
+            var sourceId = SourceId("Review", review.Id);
+            VerifyDocument<ReviewMetadataDocument>(report, "ReviewMetadata", sourceId, review.MetadataJson, _serializer.TryDeserialize<ReviewMetadataDocument>);
+            VerifyJsonSize(report, "ReviewMetadata", sourceId, review.MetadataJson, ReviewJsonLimitBytes);
+        }
+
+        var returns = await _db.Returns.AsNoTracking().ToListAsync(cancellationToken);
+        report.MutableTargetCounts["returns"] = returns.Count;
+        foreach (var item in returns)
+        {
+            var sourceId = $"Return:{item.OrderId}";
+            VerifyDocument<ReturnDetailsDocument>(report, "Return", sourceId, item.DetailsJson, _serializer.TryDeserialize<ReturnDetailsDocument>);
+            VerifyJsonSize(report, "Return", sourceId, item.DetailsJson, ReturnJsonLimitBytes);
+            if (item.ApprovedAmount < 0 || item.ApprovedShippingFeeAmount < 0 || item.ApprovedAmount > item.RequestedAmount)
+                report.AddError("Return", $"Return:{item.OrderId}", "Return monetary summary is invalid.");
+        }
+
+        var content = await _db.ContentEntries.AsNoTracking().ToListAsync(cancellationToken);
+        report.MutableTargetCounts["content"] = content.Count;
+        foreach (var item in content)
+            VerifyDocument<ContentPayload>(report, "ContentEntry", $"ContentEntry:{item.Id}", item.PayloadJson, _serializer.TryDeserialize<ContentPayload>);
+
+        var sessions = await _db.ChatSessions.AsNoTracking().ToListAsync(cancellationToken);
+        report.MutableTargetCounts["chatSessions"] = sessions.Count;
+        foreach (var session in sessions)
+        {
+            var sourceId = SourceId("ChatSession", session.Id);
+            VerifyDocument<ChatMessagesDocument>(report, "ChatMessages", sourceId, session.MessagesJson, _serializer.TryDeserialize<ChatMessagesDocument>);
+            VerifyJsonSize(report, "ChatMessages", sourceId, session.MessagesJson, ChatJsonLimitBytes);
+        }
+
+        var audits = await _db.AuditLogs.AsNoTracking().ToListAsync(cancellationToken);
+        report.MutableTargetCounts["auditLogs"] = audits.Count;
+        foreach (var audit in audits)
+        {
+            VerifyOptionalJson(report, "AuditLog", $"AuditLog:{audit.Id}", audit.OldValue);
+            VerifyOptionalJson(report, "AuditLog", $"AuditLog:{audit.Id}", audit.NewValue);
+        }
+        await RunVerificationStageAsync(report, "SqlServerISJSON", VerifySqlServerJsonAsync, cancellationToken);
     }
 
     private async Task RunVerificationStageAsync(
@@ -620,6 +763,7 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
                         throw new InvalidOperationException($"ReturnRequestItem {item.Id} references an invalid order item.");
                     itemDocuments.Add(new ReturnItemDetails
                     {
+                        Id = item.Id,
                         OrderItemId = item.OrderItemId,
                         DecisionStatus = item.DecisionStatus,
                         RequestedQuantity = item.RequestedQuantity,
@@ -646,6 +790,7 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
                         throw new InvalidOperationException($"ReturnEvidence {evidence.Id} references an invalid return item.");
                     evidenceDocuments.Add(new ReturnEvidenceDetails
                     {
+                        Id = evidence.Id,
                         ReturnRequestItemId = evidence.ReturnRequestItemId,
                         StorageKey = RequireText(evidence.StorageKey, $"ReturnEvidence:{evidence.Id}.StorageKey"),
                         OriginalFileName = RequireText(evidence.OriginalFileName, $"ReturnEvidence:{evidence.Id}.OriginalFileName"),
@@ -671,6 +816,7 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
                         throw new InvalidOperationException($"ReturnEvent {eventItem.Id} references an invalid return item.");
                     eventDocuments.Add(new ReturnEventDetails
                     {
+                        Id = eventItem.Id,
                         ReturnRequestItemId = eventItem.ReturnRequestItemId,
                         OldStatus = eventItem.OldStatus,
                         NewStatus = eventItem.NewStatus,
@@ -694,6 +840,7 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
                         await RequireUserReferenceAsync(refund.ProcessedByUserId.Value, $"Refund:{refund.Id}.ProcessedByUserId", cancellationToken);
                     refundDocument = new RefundDetails
                     {
+                        Id = refund.Id,
                         Amount = refund.Amount,
                         ShippingFeeAmount = refund.ShippingFeeAmount,
                         Status = refund.Status,
@@ -1641,6 +1788,20 @@ public sealed class DatabaseConsolidationService : IDatabaseConsolidationService
             return true;
         report.AddError(aggregateType, sourceId, $"Typed JSON validation failed: {error}");
         return false;
+    }
+
+    private static void VerifyJsonSize(
+        ConsolidationVerificationReport report,
+        string aggregateType,
+        string sourceId,
+        string? json,
+        int maxBytes)
+    {
+        if (string.IsNullOrEmpty(json))
+            return;
+        var bytes = Encoding.UTF8.GetByteCount(json);
+        if (bytes > maxBytes)
+            report.AddError(aggregateType, sourceId, $"JSON document is {bytes} bytes; configured limit is {maxBytes} bytes.");
     }
 
     private bool VerifyJson(ConsolidationVerificationReport report, string aggregateType, string sourceId, string? json)

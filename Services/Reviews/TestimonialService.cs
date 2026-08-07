@@ -12,6 +12,7 @@ public class TestimonialService : ITestimonialService
     private readonly ApplicationDbContext _db;
     private readonly IJsonDocumentSerializer _serializer;
 
+    [Microsoft.Extensions.DependencyInjection.ActivatorUtilitiesConstructor]
     public TestimonialService(ApplicationDbContext db, IJsonDocumentSerializer? serializer = null)
     {
         _db = db;
@@ -60,14 +61,28 @@ public class TestimonialService : ITestimonialService
         if (review is null || review.Rating < 4 || string.IsNullOrWhiteSpace(review.Comment))
             return null;
 
-        var sentiment = await _db.ReviewSentiments.FirstOrDefaultAsync(item => item.ReviewId == reviewId);
-        if (sentiment is null
-            || sentiment.Sentiment != SentimentLabel.Positive
-            || sentiment.RatingSentiment != SentimentLabel.Positive
-            || sentiment.CommentSentiment != SentimentLabel.Positive
-            || sentiment.HasRatingCommentConflict
-            || sentiment.NeedsManualReview)
-            return null;
+        if (_db.Database.IsSqlServer())
+        {
+            var sentiment = ReviewAggregateJson.Read(review, _serializer).Sentiment;
+            if (sentiment is null
+                || sentiment.Sentiment != SentimentLabel.Positive
+                || sentiment.RatingSentiment != SentimentLabel.Positive
+                || sentiment.CommentSentiment != SentimentLabel.Positive
+                || sentiment.HasRatingCommentConflict
+                || sentiment.NeedsManualReview)
+                return null;
+        }
+        else
+        {
+            var sentiment = await _db.ReviewSentiments.FirstOrDefaultAsync(item => item.ReviewId == reviewId);
+            if (sentiment is null
+                || sentiment.Sentiment != SentimentLabel.Positive
+                || sentiment.RatingSentiment != SentimentLabel.Positive
+                || sentiment.CommentSentiment != SentimentLabel.Positive
+                || sentiment.HasRatingCommentConflict
+                || sentiment.NeedsManualReview)
+                return null;
+        }
 
         return await AddTestimonialAsync(new Testimonial
         {

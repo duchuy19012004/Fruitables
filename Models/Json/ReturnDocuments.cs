@@ -141,6 +141,9 @@ public sealed class ReturnDetailsDocument : VersionedJsonDocument
 
 public sealed class ReturnItemDetails
 {
+    [JsonPropertyName("id")]
+    public int Id { get; init; }
+
     private static readonly string[] RequiredPropertyNames =
         ["orderItemId", "decisionStatus", "requestedQuantity", "approvedQuantity", "reason", "description", "requestedAmount", "approvedAmount"];
 
@@ -207,6 +210,9 @@ public sealed class ReturnItemDetails
 
 public sealed class ReturnEvidenceDetails
 {
+    [JsonPropertyName("id")]
+    public int Id { get; init; }
+
     private static readonly string[] RequiredPropertyNames =
         ["storageKey", "originalFileName", "contentType", "sizeBytes", "uploadedByUserId", "uploadedAtUtc"];
 
@@ -271,6 +277,9 @@ public sealed class ReturnEvidenceDetails
 
 public sealed class ReturnEventDetails
 {
+    [JsonPropertyName("id")]
+    public long Id { get; init; }
+
     private static readonly string[] RequiredPropertyNames = ["eventType", "createdAtUtc"];
 
     [JsonPropertyName("oldStatus")]
@@ -332,6 +341,9 @@ public sealed class ReturnEventDetails
 
 public sealed class RefundDetails
 {
+    [JsonPropertyName("id")]
+    public int Id { get; init; }
+
     private static readonly string[] RequiredPropertyNames = ["amount", "shippingFeeAmount", "status", "createdByUserId", "createdAtUtc"];
 
     [JsonPropertyName("amount")]

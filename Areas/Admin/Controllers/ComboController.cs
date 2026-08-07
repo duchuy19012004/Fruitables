@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Fruitables.Services.Catalog.Combos;
 using Fruitables.Services.Catalog.Products;
 using Fruitables.Services.Infrastructure.Json;
+using Fruitables.Services.Reviews;
 
 namespace Fruitables.Areas.Admin.Controllers;
 
@@ -70,17 +71,30 @@ public class ComboController : Controller
                 .Where(product => productIds.Contains(product.Id))
                 .ToDictionaryAsync(product => product.Id);
 
-            var sentiments = await (
-                from r in _unitOfWork.Reviews.Query()
-                join s in _unitOfWork.ReviewSentiments.Query() on r.Id equals s.ReviewId
-                where productIds.Contains(r.ProductId) && !r.IsDeleted
-                group s by r.ProductId into g
-                select new
-                {
-                    ProductId = g.Key,
-                    Negative = g.Count(x => x.Sentiment == Fruitables.Models.SentimentLabel.Negative),
-                    Total = g.Count()
-                }).ToListAsync();
+            var sentiments = _dbContext.Database.IsSqlServer()
+                ? (await _dbContext.Reviews.AsNoTracking()
+                    .Where(review => productIds.Contains(review.ProductId) && !review.IsDeleted)
+                    .ToListAsync())
+                    .Select(review => new { Review = review, Sentiment = ReviewAggregateJson.Read(review, _serializer).Sentiment })
+                    .Where(item => item.Sentiment is not null)
+                    .GroupBy(item => item.Review.ProductId)
+                    .Select(group => new
+                    {
+                        ProductId = group.Key,
+                        Negative = group.Count(item => item.Sentiment!.Sentiment == Fruitables.Models.SentimentLabel.Negative),
+                        Total = group.Count()
+                    }).ToList()
+                : await (
+                    from r in _unitOfWork.Reviews.Query()
+                    join s in _unitOfWork.ReviewSentiments.Query() on r.Id equals s.ReviewId
+                    where productIds.Contains(r.ProductId) && !r.IsDeleted
+                    group s by r.ProductId into g
+                    select new
+                    {
+                        ProductId = g.Key,
+                        Negative = g.Count(x => x.Sentiment == Fruitables.Models.SentimentLabel.Negative),
+                        Total = g.Count()
+                    }).ToListAsync();
 
             foreach (var combo in payloads)
             {

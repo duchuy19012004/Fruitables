@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Models.Json;
 using Fruitables.Repositories.Interfaces;
@@ -22,19 +23,24 @@ public class CartService : ICartService
     private readonly IProductPricingService _pricing;
     private readonly IJsonDocumentSerializer _serializer;
     private readonly TimeProvider _timeProvider;
+    private readonly ApplicationDbContext? _dbContext;
+
+    private bool UseTargetSchema => _dbContext?.Database.IsSqlServer() == true;
 
     public CartService(
         IUnitOfWork unitOfWork,
         ICouponService couponService,
         IProductPricingService pricing,
         IJsonDocumentSerializer? serializer = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        ApplicationDbContext? dbContext = null)
     {
         _unitOfWork = unitOfWork;
         _couponService = couponService;
         _pricing = pricing;
         _serializer = serializer ?? new VersionedJsonSerializer();
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _dbContext = dbContext ?? (_unitOfWork as Repositories.UnitOfWork)?.Context;
     }
 
     public async Task<CartViewModel> GetCartAsync(string sessionId, string? district = null)
@@ -238,14 +244,7 @@ public class CartService : ICartService
 
     public async Task<CartMutationResult> AddComboToCartAsync(string sessionId, int comboId)
     {
-        var combo = await _unitOfWork.Combos.Query()
-            .Where(item => item.Id == comboId && item.IsActive)
-            .Include(item => item.Items)
-                .ThenInclude(item => item.Product)
-                    .ThenInclude(product => product.Variants)
-            .Include(item => item.Items)
-                .ThenInclude(item => item.ProductVariant)
-            .FirstOrDefaultAsync();
+        var combo = await LoadComboAsync(comboId);
         if (combo == null || !combo.IsAvailableAt(_timeProvider.GetUtcNow()) || combo.Items.Count < 2)
             return CartMutationResult.Fail("Combo không tồn tại, chưa đến lịch bán hoặc đã ngừng bán.");
 
@@ -348,14 +347,7 @@ public class CartService : ICartService
 
         var comboId = groupLines[0].ComboId ?? 0;
         var comboRevision = groupLines[0].ComboRevision ?? 0;
-        var combo = await _unitOfWork.Combos.Query()
-            .Where(item => item.Id == comboId)
-            .Include(item => item.Items)
-                .ThenInclude(item => item.Product)
-                    .ThenInclude(product => product.Variants)
-            .Include(item => item.Items)
-                .ThenInclude(item => item.ProductVariant)
-            .FirstOrDefaultAsync();
+        var combo = await LoadComboAsync(comboId);
         if (combo == null || !combo.IsAvailableAt(_timeProvider.GetUtcNow()) || combo.Revision != comboRevision)
             return CartMutationResult.Fail("Combo đã thay đổi hoặc ngừng bán. Vui lòng xóa và thêm lại.");
 
@@ -525,11 +517,7 @@ public class CartService : ICartService
             ProductAggregateJson.Hydrate(products.Values, _serializer);
 
         var comboIds = document.Lines.Where(line => line.ComboId.HasValue).Select(line => line.ComboId!.Value).Distinct().ToList();
-        var combos = comboIds.Count == 0
-            ? new Dictionary<int, Combo>()
-            : await _unitOfWork.Combos.Query()
-                .Where(combo => comboIds.Contains(combo.Id))
-                .ToDictionaryAsync(combo => combo.Id);
+        var combos = await LoadCombosAsync(comboIds);
 
         var cartViewModel = new CartViewModel
         {
@@ -669,9 +657,7 @@ public class CartService : ICartService
         var comboIds = lines.Where(line => line.ComboId.HasValue).Select(line => line.ComboId!.Value).Distinct().ToList();
         if (comboIds.Count == 0) return changed;
 
-        var combos = await _unitOfWork.Combos.Query()
-            .Where(combo => comboIds.Contains(combo.Id))
-            .ToDictionaryAsync(combo => combo.Id);
+        var combos = await LoadCombosAsync(comboIds);
 
         foreach (var group in lines.Where(line => line.CartGroupId.HasValue).GroupBy(line => line.CartGroupId!.Value))
         {
@@ -764,6 +750,109 @@ public class CartService : ICartService
         groupLines.Clear();
         groupLines.AddRange(result);
     }
+
+    private async Task<Combo?> LoadComboAsync(int comboId)
+    {
+        if (!UseTargetSchema)
+        {
+            return await _unitOfWork.Combos.Query()
+                .Where(item => item.Id == comboId)
+                .Include(item => item.Items)
+                    .ThenInclude(item => item.Product)
+                        .ThenInclude(product => product.Variants)
+                .Include(item => item.Items)
+                    .ThenInclude(item => item.ProductVariant)
+                .FirstOrDefaultAsync();
+        }
+
+        var promotion = await _dbContext!.Promotions.AsNoTracking()
+            .Where(item => item.Type == "combo" &&
+                (item.Id == comboId || item.Code == $"combo:{comboId}"))
+            .FirstOrDefaultAsync();
+        return promotion is null ? null : await ToComboAsync(promotion);
+    }
+
+    private async Task<Dictionary<int, Combo>> LoadCombosAsync(IReadOnlyCollection<int> comboIds)
+    {
+        if (comboIds.Count == 0)
+            return new Dictionary<int, Combo>();
+        if (!UseTargetSchema)
+        {
+            return await _unitOfWork.Combos.Query()
+                .Where(combo => comboIds.Contains(combo.Id))
+                .ToDictionaryAsync(combo => combo.Id);
+        }
+
+        var idSet = comboIds.ToHashSet();
+        var promotions = await _dbContext!.Promotions.AsNoTracking()
+            .Where(item => item.Type == "combo")
+            .ToListAsync();
+        var result = new Dictionary<int, Combo>();
+        foreach (var promotion in promotions)
+        {
+            var legacyId = TryLegacyComboId(promotion.Code);
+            if (!idSet.Contains(promotion.Id) && (!legacyId.HasValue || !idSet.Contains(legacyId.Value)))
+                continue;
+            var combo = await ToComboAsync(promotion);
+            result[promotion.Id] = combo;
+            if (legacyId.HasValue)
+                result[legacyId.Value] = combo;
+        }
+        return result;
+    }
+
+    private async Task<Combo> ToComboAsync(Promotion promotion)
+    {
+        var payload = _serializer.Deserialize<ComboPayload>(promotion.PayloadJson);
+        var productIds = payload.Items.Select(item => item.ProductId).Distinct().ToArray();
+        var products = await _unitOfWork.Products.Query()
+            .AsNoTracking()
+            .Where(product => productIds.Contains(product.Id))
+            .Include(product => product.Variants)
+            .ToDictionaryAsync(product => product.Id);
+        ProductAggregateJson.Hydrate(products.Values, _serializer);
+
+        var combo = new Combo
+        {
+            Id = promotion.Id,
+            Name = payload.Name,
+            Slug = payload.Slug,
+            Description = payload.Description,
+            ImageUrl = payload.ImageUrl,
+            IsActive = promotion.IsActive && payload.IsActive,
+            Status = payload.Status,
+            StartsAt = payload.StartsAt,
+            EndsAt = payload.EndsAt,
+            PricingType = payload.PricingType,
+            FixedPrice = payload.FixedPrice,
+            DiscountValue = payload.DiscountValue,
+            AllowCouponStacking = payload.AllowCouponStacking,
+            Revision = payload.Revision,
+            SortOrder = payload.SortOrder,
+            CreatedAt = promotion.CreatedAt,
+            UpdatedAt = promotion.UpdatedAt
+        };
+        combo.Items = payload.Items.OrderBy(item => item.SortOrder).Select((item, index) =>
+        {
+            products.TryGetValue(item.ProductId, out var product);
+            return new ComboItem
+            {
+                Id = index + 1,
+                ComboId = combo.Id,
+                ProductId = item.ProductId,
+                ProductVariantId = item.ProductVariantId,
+                Quantity = item.Quantity,
+                SortOrder = item.SortOrder,
+                Product = product!,
+                ProductVariant = product?.Variants.FirstOrDefault(variant => variant.Id == item.ProductVariantId)
+            };
+        }).ToList();
+        return combo;
+    }
+
+    private static int? TryLegacyComboId(string? code) =>
+        code is not null && code.StartsWith("combo:", StringComparison.OrdinalIgnoreCase) &&
+        int.TryParse(code["combo:".Length..], out var id) && id > 0 ? id : null;
 
     private async Task<CartMutationResult> PersistAsync(CartEntity cart, CartLinesDocument document, string successMessage)
     {

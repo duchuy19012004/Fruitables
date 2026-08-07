@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Fruitables.Models;
 using Fruitables.Repositories.Interfaces;
 using Fruitables.Services.Communications;
+using Fruitables.Services.Catalog.Products;
 
 namespace Fruitables.Services.Catalog.Categories;
 
@@ -206,11 +207,21 @@ public class CategoryService : ICategoryService
             }
 
             // Delete all products in this category (they have no orders)
-            // Delete product images
-            var images = await _unitOfWork.ProductImages.Query()
-                .Where(pi => productIds.Contains(pi.ProductId))
-                .ToListAsync();
-            _unitOfWork.ProductImages.RemoveRange(images);
+            if (_unitOfWork is Repositories.UnitOfWork concrete && concrete.Context.Database.IsSqlServer())
+            {
+                foreach (var product in category.Products)
+                {
+                    product.ImagesJson = "[]";
+                    product.TagsJson = "[]";
+                }
+            }
+            else
+            {
+                var images = await _unitOfWork.ProductImages.Query()
+                    .Where(pi => productIds.Contains(pi.ProductId))
+                    .ToListAsync();
+                _unitOfWork.ProductImages.RemoveRange(images);
+            }
 
             // Delete product variants
             var variants = await _unitOfWork.ProductVariants.Query()

@@ -11,6 +11,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Fruitables.Services.Pricing.ProductPricing;
 using Fruitables.Services.Chat.Providers;
+using Fruitables.Services.Infrastructure.Json;
+using Fruitables.Services.Reviews;
 
 namespace Fruitables.Services.Chat.Knowledge;
 
@@ -257,11 +259,19 @@ public sealed class IndexingService : IIndexingService
     // Index tóm tắt cảm xúc cho mọi sản phẩm có review đã phân tích
     internal async Task IndexAllReviewSummariesAsync(CancellationToken ct = default)
     {
-        var productIds = await _db.Reviews.AsNoTracking()
-            .Where(r => !r.IsDeleted && r.Sentiment != null)
-            .Select(r => r.ProductId)
-            .Distinct()
-            .ToListAsync(ct);
+        var productIds = _db.Database.IsSqlServer()
+            ? (await _db.Reviews.AsNoTracking()
+                .Where(review => !review.IsDeleted)
+                .ToListAsync(ct))
+                .Where(review => ReviewAggregateJson.Read(review, new VersionedJsonSerializer()).Sentiment is not null)
+                .Select(review => review.ProductId)
+                .Distinct()
+                .ToList()
+            : await _db.Reviews.AsNoTracking()
+                .Where(r => !r.IsDeleted && r.Sentiment != null)
+                .Select(r => r.ProductId)
+                .Distinct()
+                .ToListAsync(ct);
 
         foreach (var id in productIds)
             await IndexProductReviewSummaryAsync(id, ct);
@@ -269,8 +279,60 @@ public sealed class IndexingService : IIndexingService
         _logger.LogInformation("Indexed {Count} product review summaries", productIds.Count);
     }
 
+    private async Task<string?> BuildReviewSummaryTargetAsync(Product product, CancellationToken ct)
+    {
+        var serializer = new VersionedJsonSerializer();
+        var reviewRows = await _db.Reviews.AsNoTracking()
+            .Where(review => review.ProductId == product.Id && !review.IsDeleted && !review.IsHidden)
+            .ToListAsync(ct);
+        var targetRows = reviewRows
+            .Select(review => new { Review = review, Sentiment = ReviewAggregateJson.Read(review, serializer).Sentiment })
+            .Where(row => row.Sentiment is not null && !row.Sentiment.NeedsManualReview && row.Sentiment.Sentiment != SentimentLabel.Failed)
+            .ToList();
+        if (targetRows.Count == 0)
+            return null;
+
+        var positive = targetRows.Count(row => row.Sentiment!.Sentiment == SentimentLabel.Positive);
+        var neutral = targetRows.Count(row => row.Sentiment!.Sentiment == SentimentLabel.Neutral);
+        var negative = targetRows.Count(row => row.Sentiment!.Sentiment == SentimentLabel.Negative);
+        var total = targetRows.Count;
+        var satisfiedPct = total == 0 ? 0 : (positive + neutral) * 100 / total;
+        var aspects = targetRows.SelectMany(row => row.Sentiment!.Aspects)
+            .Where(aspect => aspect.Sentiment == SentimentLabel.Negative)
+            .GroupBy(aspect => aspect.Aspect)
+            .OrderByDescending(group => group.Count())
+            .Take(3)
+            .Select(group => new { Aspect = group.Key, Count = group.Count() })
+            .ToList();
+        var sb = new StringBuilder();
+        sb.Append($"Đánh giá của khách về sản phẩm {SanitizeCatalogText(product.Name, MaxProductNameChars)}: {total} lượt đánh giá, ");
+        sb.Append($"{satisfiedPct}% khách hài lòng (tích cực {positive}, trung tính {neutral}, tiêu cực {negative}).");
+        if (aspects.Count > 0)
+        {
+            sb.Append(" Khách thường chê về: ");
+            sb.Append(string.Join(", ", aspects.Select(item => $"{AspectDisplay(item.Aspect)} ({item.Count} lượt)")));
+            sb.Append('.');
+        }
+        var quoteLines = targetRows
+            .Where(row => row.Sentiment!.Sentiment == SentimentLabel.Negative && !string.IsNullOrWhiteSpace(row.Review.Comment))
+            .OrderByDescending(row => row.Sentiment!.Severity)
+            .Take(2)
+            .Select(row => "Bình luận của khách: " + SanitizeCatalogText(row.Review.Comment, 100))
+            .ToList();
+        var positiveQuote = targetRows.FirstOrDefault(row => row.Sentiment!.Sentiment == SentimentLabel.Positive && !string.IsNullOrWhiteSpace(row.Review.Comment));
+        if (positiveQuote is not null)
+            quoteLines.Add("Bình luận của khách: " + SanitizeCatalogText(positiveQuote.Review.Comment, 100));
+        if (quoteLines.Count > 0)
+            sb.Append(' ').Append(string.Join(" ", quoteLines));
+        sb.Append(" Từ khóa: đánh giá review cảm xúc nhận xét phản hồi khách hàng comment");
+        return sb.ToString();
+    }
+
     internal async Task<string?> BuildReviewSummaryChunkAsync(Product product, CancellationToken ct)
     {
+        if (_db.Database.IsSqlServer())
+            return await BuildReviewSummaryTargetAsync(product, ct);
+
         var rows = await (
             from r in _db.Reviews.AsNoTracking()
             join s in _db.ReviewSentiments.AsNoTracking() on r.Id equals s.ReviewId
