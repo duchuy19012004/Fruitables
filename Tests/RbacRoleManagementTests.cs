@@ -147,6 +147,8 @@ public class RbacRoleManagementTests
 
         // Remove permission mapping directly, then update role (triggers cache invalidation)
         ctx.RolePermissions.RemoveRange(ctx.RolePermissions);
+        foreach (var role in ctx.Roles)
+            role.PermissionsJson = "[]";
         await ctx.SaveChangesAsync();
         await svc.UpdateRoleAsync(10, "Editor", null, adminId: 1001);
 
@@ -383,10 +385,14 @@ public class RbacRoleManagementTests
         // Remove perm A from Role A directly in DB
         var rpA = await ctx.RolePermissions.FirstAsync(rp => rp.RoleId == 10);
         ctx.RolePermissions.Remove(rpA);
+        var roleA = await ctx.Roles.FirstAsync(role => role.Id == 10);
+        roleA.PermissionsJson = "[]";
 
         // Remove perm B from Role B directly in DB to verify cache isolation
         var rpB = await ctx.RolePermissions.FirstAsync(rp => rp.RoleId == 20);
         ctx.RolePermissions.Remove(rpB);
+        // Keep Role B JSON so cache isolation still returns perm.b from cache,
+        // while Role A re-read is empty.
 
         await ctx.SaveChangesAsync();
 

@@ -1,44 +1,46 @@
 using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Services.Communications;
+using Fruitables.Services.Infrastructure.Content;
+using Fruitables.Services.Infrastructure.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace Fruitables.Services.Chat.Knowledge;
 
-// ============================================================
-// QUẢN LÝ FAQ CHO ADMIN
-//
-// Lưu/sửa bài FAQ trong DB, rồi cố gắng "dạy bot" ngay.
-// Nếu bước dạy bot lỗi (mạng AI/embed) → FAQ vẫn được lưu (không làm hỏng thao tác Admin).
-// ============================================================
 public sealed class FaqService : IFaqService
 {
     private readonly ApplicationDbContext _db;
     private readonly IIndexingService _indexingService;
     private readonly ILogger<FaqService> _logger;
+    private readonly IJsonDocumentSerializer _serializer;
 
     public FaqService(
         ApplicationDbContext db,
         IIndexingService indexingService,
-        ILogger<FaqService> logger)
+        ILogger<FaqService> logger,
+        IJsonDocumentSerializer? serializer = null)
     {
         _db = db;
         _indexingService = indexingService;
         _logger = logger;
+        _serializer = serializer ?? new VersionedJsonSerializer();
     }
 
     public async Task<List<Faq>> GetAllAsync(CancellationToken ct = default)
     {
-        return await _db.Faqs
-            .AsNoTracking()
-            .OrderByDescending(f => f.Id)
+        var entries = await _db.ContentEntries.AsNoTracking()
+            .Where(entry => entry.EntryType == ContentEntryMapper.FaqType)
+            .OrderByDescending(entry => entry.Id)
             .ToListAsync(ct);
+        return entries.Select(entry => ContentEntryMapper.ToFaq(entry, _serializer)).ToList();
     }
 
     public async Task<Faq?> GetByIdAsync(int id, CancellationToken ct = default)
     {
-        return await _db.Faqs.AsNoTracking().FirstOrDefaultAsync(f => f.Id == id, ct);
+        var entry = await _db.ContentEntries.AsNoTracking()
+            .FirstOrDefaultAsync(item => item.Id == id && item.EntryType == ContentEntryMapper.FaqType, ct);
+        return entry is null ? null : ContentEntryMapper.ToFaq(entry, _serializer);
     }
 
     public async Task<Faq> CreateAsync(
@@ -49,7 +51,7 @@ public sealed class FaqService : IFaqService
         CancellationToken ct = default)
     {
         var now = DateTime.UtcNow;
-        var faq = new Faq
+        var entry = ContentEntryMapper.FromFaq(new Faq
         {
             Title = title.Trim(),
             Body = body.Trim(),
@@ -57,14 +59,13 @@ public sealed class FaqService : IFaqService
             IsActive = isActive,
             CreatedAt = now,
             UpdatedAt = now
-        };
-
-        _db.Faqs.Add(faq);
+        }, _serializer);
+        _db.ContentEntries.Add(entry);
         await _db.SaveChangesAsync(ct);
-
-        // Dạy bot bài mới
-        await TryIndexAsync(faq.Id, ct);
-        return faq;
+        entry.Key = ContentEntryMapper.Key("faq", entry.Id);
+        await _db.SaveChangesAsync(ct);
+        await TryIndexAsync(entry.Id, ct);
+        return ContentEntryMapper.ToFaq(entry, _serializer);
     }
 
     public async Task<Faq?> UpdateAsync(
@@ -75,40 +76,43 @@ public sealed class FaqService : IFaqService
         bool isActive,
         CancellationToken ct = default)
     {
-        var faq = await _db.Faqs.FirstOrDefaultAsync(f => f.Id == id, ct);
-        if (faq is null)
+        var entry = await _db.ContentEntries.FirstOrDefaultAsync(
+            item => item.Id == id && item.EntryType == ContentEntryMapper.FaqType, ct);
+        if (entry is null)
             return null;
 
-        faq.Title = title.Trim();
-        faq.Body = body.Trim();
-        faq.Category = string.IsNullOrWhiteSpace(category) ? "general" : category.Trim();
-        faq.IsActive = isActive;
-        faq.UpdatedAt = DateTime.UtcNow;
-
+        ContentEntryMapper.FromFaq(new Faq
+        {
+            Id = id,
+            Title = title.Trim(),
+            Body = body.Trim(),
+            Category = string.IsNullOrWhiteSpace(category) ? "general" : category.Trim(),
+            IsActive = isActive,
+            CreatedAt = entry.CreatedAt,
+            UpdatedAt = DateTime.UtcNow
+        }, _serializer, entry);
         await _db.SaveChangesAsync(ct);
-        await TryIndexAsync(faq.Id, ct);
-        return faq;
+        await TryIndexAsync(entry.Id, ct);
+        return ContentEntryMapper.ToFaq(entry, _serializer);
     }
 
     public async Task SetActiveAsync(int id, bool isActive, CancellationToken ct = default)
     {
-        var faq = await _db.Faqs.FirstOrDefaultAsync(f => f.Id == id, ct);
-        if (faq is null)
+        var entry = await _db.ContentEntries.FirstOrDefaultAsync(
+            item => item.Id == id && item.EntryType == ContentEntryMapper.FaqType, ct);
+        if (entry is null)
             return;
 
+        var faq = ContentEntryMapper.ToFaq(entry, _serializer);
         faq.IsActive = isActive;
-        faq.UpdatedAt = DateTime.UtcNow;
+        ContentEntryMapper.FromFaq(faq, _serializer, entry);
         await _db.SaveChangesAsync(ct);
-        // Bật → học lại; Tắt → IndexingService sẽ gỡ khỏi sổ tri thức
-        await TryIndexAsync(faq.Id, ct);
+        await TryIndexAsync(entry.Id, ct);
     }
 
-    public async Task ReindexAllAsync(CancellationToken ct = default)
-    {
-        await _indexingService.ReindexAllAsync(ct);
-    }
+    public Task ReindexAllAsync(CancellationToken ct = default) =>
+        _indexingService.ReindexAllAsync(ct);
 
-    // Lỗi index không được làm hỏng thao tác lưu FAQ
     private async Task TryIndexAsync(int faqId, CancellationToken ct)
     {
         try
@@ -117,7 +121,7 @@ public sealed class FaqService : IFaqService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to index FAQ {FaqId}; CRUD operation still succeeded", faqId);
+            _logger.LogWarning(ex, "Failed to index FAQ {FaqId}; content was still saved.", faqId);
         }
     }
 }

@@ -1,48 +1,64 @@
-using Microsoft.EntityFrameworkCore;
+using Fruitables.Data;
 using Fruitables.Models;
 using Fruitables.Repositories.Interfaces;
-using Fruitables.Services.Communications;
+using Fruitables.Services.Infrastructure.Content;
+using Fruitables.Services.Infrastructure.Json;
+using Microsoft.EntityFrameworkCore;
 
 namespace Fruitables.Services.Communications;
 
 public class ContactService : IContactService
 {
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly ApplicationDbContext _db;
+    private readonly IJsonDocumentSerializer _serializer;
 
-    public ContactService(IUnitOfWork unitOfWork)
+    public ContactService(ApplicationDbContext db, IJsonDocumentSerializer? serializer = null)
     {
-        _unitOfWork = unitOfWork;
+        _db = db;
+        _serializer = serializer ?? new VersionedJsonSerializer();
+    }
+
+    // Compatibility for tests that still construct via UnitOfWork.
+    public ContactService(IUnitOfWork unitOfWork)
+        : this(((Repositories.UnitOfWork)unitOfWork).Context)
+    {
     }
 
     public async Task<ContactMessage> SendMessageAsync(string name, string email, string message)
     {
-        var contactMessage = new ContactMessage
+        var entry = ContentEntryMapper.FromContact(new ContactMessage
         {
             Name = name,
             Email = email,
-            Message = message
-        };
-
-        await _unitOfWork.Contacts.AddAsync(contactMessage);
-        await _unitOfWork.SaveChangesAsync();
-
-        return contactMessage;
+            Message = message,
+            IsRead = false,
+            CreatedAt = DateTime.UtcNow
+        }, _serializer);
+        _db.ContentEntries.Add(entry);
+        await _db.SaveChangesAsync();
+        entry.Key = ContentEntryMapper.Key("contact", entry.Id);
+        await _db.SaveChangesAsync();
+        return ContentEntryMapper.ToContact(entry, _serializer);
     }
 
     public async Task<List<ContactMessage>> GetAllMessagesAsync()
     {
-        return await _unitOfWork.Contacts.Query()
-            .OrderByDescending(m => m.CreatedAt)
+        var entries = await _db.ContentEntries.AsNoTracking()
+            .Where(entry => entry.EntryType == ContentEntryMapper.ContactType)
+            .OrderByDescending(entry => entry.CreatedAt)
             .ToListAsync();
+        return entries.Select(entry => ContentEntryMapper.ToContact(entry, _serializer)).ToList();
     }
 
     public async Task MarkAsReadAsync(int id)
     {
-        var message = await _unitOfWork.Contacts.GetByIdAsync(id);
-        if (message != null)
-        {
-            message.IsRead = true;
-            await _unitOfWork.SaveChangesAsync();
-        }
+        var entry = await _db.ContentEntries.FirstOrDefaultAsync(item =>
+            item.Id == id && item.EntryType == ContentEntryMapper.ContactType);
+        if (entry == null)
+            return;
+        entry.IsRead = true;
+        entry.UpdatedAt = DateTime.UtcNow;
+        entry.RowVersion = Guid.NewGuid().ToByteArray();
+        await _db.SaveChangesAsync();
     }
 }

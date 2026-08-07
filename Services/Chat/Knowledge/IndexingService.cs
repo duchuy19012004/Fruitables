@@ -59,14 +59,18 @@ public sealed class IndexingService : IIndexingService
     public async Task IndexFaqAsync(int faqId, CancellationToken ct = default)
     {
         var sourceId = faqId.ToString();
-        var faq = await _db.Faqs.AsNoTracking().FirstOrDefaultAsync(f => f.Id == faqId, ct);
+        var entry = await _db.ContentEntries.AsNoTracking()
+            .FirstOrDefaultAsync(item => item.Id == faqId && item.EntryType == "faq", ct);
 
         // Không có / đã tắt → gỡ khỏi sổ tri thức
-        if (faq is null || !faq.IsActive)
+        if (entry is null || !entry.IsActive)
         {
             await DeactivateSourceAsync(KnowledgeSourceType.Faq, sourceId, ct);
             return;
         }
+
+        var serializer = new Fruitables.Services.Infrastructure.Json.VersionedJsonSerializer();
+        var faq = Fruitables.Services.Infrastructure.Content.ContentEntryMapper.ToFaq(entry, serializer);
 
         // Thêm gợi ý từ khóa theo category (ship/sepay/…) để query ngắn của khách match tốt hơn
         var hints = RetrievalText.CategorySearchHints(faq.Category);
@@ -204,7 +208,10 @@ public sealed class IndexingService : IIndexingService
     // Nút Admin "Đồng bộ knowledge": học lại tất cả
     public async Task ReindexAllAsync(CancellationToken ct = default)
     {
-        var faqIds = await _db.Faqs.AsNoTracking().Select(f => f.Id).ToListAsync(ct);
+        var faqIds = await _db.ContentEntries.AsNoTracking()
+            .Where(entry => entry.EntryType == "faq")
+            .Select(entry => entry.Id)
+            .ToListAsync(ct);
         foreach (var id in faqIds)
             await IndexFaqAsync(id, ct);
 

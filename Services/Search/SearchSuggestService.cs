@@ -137,9 +137,13 @@ public sealed class SearchSuggestService : ISearchSuggestService
             })
             .ToList();
 
-        var keywords = await _db.SearchHotKeywords.AsNoTracking()
-            .Where(k => k.IsActive)
+        var keywordEntries = await _db.ContentEntries.AsNoTracking()
+            .Where(entry => entry.EntryType == "search-hot-keyword" && entry.IsActive)
             .ToListAsync(ct);
+        var serializer = _serializer ?? new Fruitables.Services.Infrastructure.Json.VersionedJsonSerializer();
+        var keywords = keywordEntries
+            .Select(entry => Fruitables.Services.Infrastructure.Content.ContentEntryMapper.ToHotKeyword(entry, serializer))
+            .ToList();
 
         response.Keywords = keywords
             .Select(k =>

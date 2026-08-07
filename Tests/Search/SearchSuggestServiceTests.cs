@@ -81,10 +81,11 @@ public class SearchSuggestServiceTests
             ProductId = 1, ImageUrl = "/uploads/tao.jpg", IsPrimary = true, SortOrder = 0
         });
 
-        db.SearchHotKeywords.AddRange(
-            new SearchHotKeyword { Text = "táo fuji", NormalizedText = "tao fuji", Weight = 50, IsActive = true },
-            new SearchHotKeyword { Text = "combo", NormalizedText = "combo", Weight = 10, IsActive = true },
-            new SearchHotKeyword { Text = "hidden", NormalizedText = "hidden", Weight = 99, IsActive = false });
+        var now = DateTime.UtcNow;
+        db.ContentEntries.AddRange(
+            ContentEntryMapperSeed.HotKeyword("táo fuji", "tao fuji", weight: 50, isActive: true, now),
+            ContentEntryMapperSeed.HotKeyword("combo", "combo", weight: 10, isActive: true, now),
+            ContentEntryMapperSeed.HotKeyword("hidden", "hidden", weight: 99, isActive: false, now));
 
         await db.SaveChangesAsync();
     }
@@ -196,5 +197,24 @@ public class SearchSuggestServiceTests
         Assert.Equal(2, result.Products.Count);
         Assert.Equal("tao-do", result.Products[0].Slug);
         Assert.Equal("hop-qua-tao", result.Products[1].Slug);
+    }
+}
+
+internal static class ContentEntryMapperSeed
+{
+    private static readonly VersionedJsonSerializer Serializer = new();
+
+    public static ContentEntry HotKeyword(string text, string normalized, int weight, bool isActive, DateTime now)
+    {
+        return Fruitables.Services.Infrastructure.Content.ContentEntryMapper.FromHotKeyword(
+            new SearchHotKeyword
+            {
+                Text = text,
+                NormalizedText = normalized,
+                Weight = weight,
+                IsActive = isActive,
+                CreatedAt = now
+            },
+            Serializer);
     }
 }
